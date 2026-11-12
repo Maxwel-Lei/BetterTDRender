@@ -21,6 +21,9 @@ Quick start
   2. Drop BTDR.tox into the same network.
   3. Connect its output to a Null TOP. No parameters to fill in.
 
+License
+  MIT (see LICENSE). Source: https://github.com/Maxwel-Lei/BetterTDRender
+
 Credits
   hdri/kloofendal_43d_clear_2k.hdr  Poly Haven (polyhaven.com), CC0.
   Algorithms follow published work: Jimenez 2014 (bloom), Karis 2013/2014 (PBR, TAA),

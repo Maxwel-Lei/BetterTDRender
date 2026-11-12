@@ -7,7 +7,7 @@ volumetric fog, and hardware ray tracing (probe GI + traced reflections, a simpl
 
 ![example](docs/images/example.jpg)
 
-**Private repository.** Branch `release/v0.1.0` = first snapshot (internal build 0.5.0, milestone M5). `main` = build 0.5.1 (performance review: same picture, ~9% less CPU; see docs/IMPLEMENTATION_2.md §10).
+Current build: **0.5.1**. Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 
@@ -35,7 +35,7 @@ build.py        builds release/BTDR.tox from shaders/ and ext/ (sources are file
 shaders/        GLSL (common.glsl is prepended; *.comp are compute shaders)
 ext/            Python extension, uniforms Script CHOP callbacks
 tests/          m1_tests.py (39 regression checks), m5_acceptance.py (7 acceptance checks)
-examples/       demo_scene.py (dev scene), make_example.py (BTDR_Example.tox), hdri/ (CC0)
+examples/       demo_scene.py (dev scene), make_example.py (BTDR_Example.tox), make_showcase.py (4-preset showcase project), hdri/ (CC0)
 tools/          perf_bench, cpu_profile, ab_compare (picture A/B of two builds), hotswap, make_release, ...
 release/        BTDR.tox, BTDR_Example.tox
 ```
@@ -43,6 +43,16 @@ release/        BTDR.tox, BTDR_Example.tox
 All scripts run inside TouchDesigner's Textport with the project folder as the parent of this folder
 (`project.folder + '/btdr/...'`); see IMPLEMENTATION_2.md §11c.
 
-## Credits
+## Status and contributing
 
-`examples/hdri/kloofendal_43d_clear_2k.hdr` — Poly Haven, CC0.
+Developed and measured on one machine (RTX 5080 Laptop, 1080p: about 2 ms GPU at Quality = High).
+Other GPUs, and the automatic fallback on cards without ray tracing, are not tested yet —
+issues with your GPU model, TouchDesigner build and a screenshot are very welcome.
+Known gaps (single directional light, no transparency, no object motion vectors, …) are listed in
+docs/IMPLEMENTATION_2.md §12.
+
+## License
+
+[MIT](LICENSE) © 2026 Xikai Lei. Free for personal and commercial use; keep the copyright notice.
+
+`examples/hdri/kloofendal_43d_clear_2k.hdr` — Poly Haven, CC0 (not covered by the MIT license).

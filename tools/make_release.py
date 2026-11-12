@@ -15,7 +15,8 @@ try:
     _files = [(BT + '/release/BTDR.tox', 'BTDR.tox'),
               (BT + '/release/BTDR_Example.tox', 'BTDR_Example.tox'),
               (BT + '/docs/USER_GUIDE.md', 'USER_GUIDE.md'),
-              (BT + '/docs/RELEASE_README.txt', 'README.txt')]
+              (BT + '/docs/RELEASE_README.txt', 'README.txt'),
+              (BT + '/LICENSE', 'LICENSE.txt')]
     for _f in sorted(os.listdir(BT + '/examples/hdri')):
         _files.append((BT + '/examples/hdri/' + _f, 'hdri/' + _f))
     with zipfile.ZipFile(_zip, 'w', zipfile.ZIP_DEFLATED) as _z:

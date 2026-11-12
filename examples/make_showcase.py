@@ -1,7 +1,7 @@
 # [BTDR:FILE.SHOWCASE] make_showcase.py — builds the distributable showcase project: a folder you can zip and hand
 # over, with BetterTDRender.toe (the showcase), BTDR.tox (the renderer), the CC0 HDRI under Image/ and the docs.
 # Run inside the target project (its project.folder is the package folder), with the source tree given:
-#   SHOW_SRC = 'F:/Projects/Touchdesigner Projects/ue5/btdr'
+#   SHOW_SRC = '<path to this source folder>'   # e.g. 'D:/dev/BetterTDRender'
 #   exec(open(SHOW_SRC + '/examples/make_showcase.py', encoding='utf-8').read())
 # Optional: SHOW_SAVE = True also saves the project as <package>/BetterTDRender.toe after the scene has settled.
 # Log: <package>/showcase_log.txt (first line STATUS ...)
@@ -110,7 +110,8 @@ try:
                  (SRC + '/release/BTDR_Example.tox', PKG + '/BTDR_Example.tox'),
                  (SRC + '/examples/hdri/kloofendal_43d_clear_2k.hdr', PKG + '/Image/kloofendal_43d_clear_2k.hdr'),
                  (SRC + '/docs/USER_GUIDE.md', PKG + '/USER_GUIDE.md'),
-                 (SRC + '/docs/RELEASE_README.txt', PKG + '/README.txt')):
+                 (SRC + '/docs/RELEASE_README.txt', PKG + '/README.txt'),
+                 (SRC + '/LICENSE', PKG + '/LICENSE.txt')):
         shutil.copyfile(a, b)
         LOG.append('copied %s (%d bytes)' % (b[len(PKG) + 1:], os.path.getsize(b)))
 
