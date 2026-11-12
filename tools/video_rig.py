@@ -276,10 +276,15 @@ def mono_setup(c):
 
 
 def mono_update(c, i, n):
-    # slow push in along the axis of the avenue ([BTDR:SCENES.MONOLITH]); stays symmetric
+    # truck from left to right across the light sheets while pushing in ([BTDR:SCENES.MONOLITH]): the camera
+    # passes from shadow into the lit gaps of the screen and back, so the rays sweep around the sun.
+    # The view direction stays fixed (target moves with the camera): the sun holds its place in the frame.
     u = i / max(n - 1, 1)
-    z = _lerp(42.0, 34.0, u)
-    c.look(_P('monolith') + '/cam1', (0.0, 1.2, z), (0.0, 8.0, z - 100.0))
+    e = 0.5 - 0.5 * math.cos(math.pi * u)
+    x = _lerp(-7.0, 7.0, e)
+    y = 1.2 + 0.3 * math.sin(math.pi * u)
+    z = _lerp(41.0, 35.0, e)
+    c.look(_P('monolith') + '/cam1', (x, y, z), (x, y + 6.8, z - 100.0))
     c.set(_P('monolith') + '/renderBTDR1', 'Focusdistance', z - 14.0)
 
 
