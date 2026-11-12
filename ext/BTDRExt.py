@@ -67,9 +67,7 @@ class BTDRExt:
     def _cover_after_refresh(self, cam):
         C = self.ownerComp
         if cam is None:
-            self._cover(1, 1)
-            run("args[0].CoverPoll() if (args[0].valid and hasattr(args[0], 'CoverPoll')) else None",
-                C, delayFrames=COVER_POLL_FRAMES)
+            self._cover(1, 1)               # `scene_watch` refreshes as soon as the camera appears ([BTDR:EXT.WATCH])
         elif not self.warmed:
             self._cover(1, 0)
             run("args[0].CoverDone() if (args[0].valid and hasattr(args[0], 'CoverDone')) else None",
@@ -83,18 +81,21 @@ class BTDRExt:
         cam = C.par.Camera.eval()
         self._cover(0, 0) if (cam is not None and cam.OPType == 'cameraCOMP') else self._cover(1, 1)
 
-    def CoverPoll(self):
-        # waiting for a camera: the Camera parameter may already point at a camera created after the last Refresh
+    def _scene_sig(self):
+        # [BTDR:EXT.WATCH] what Camera / Geometry / Lights resolve to right now
         C = self.ownerComp
-        cs = C.op('cover_state')
-        if cs is None or cs.par.value0.eval() != 1 or cs.par.value1.eval() != 1:
-            return
         cam = C.par.Camera.eval()
-        if cam is not None and cam.OPType == 'cameraCOMP':
+        return (cam.path if (cam is not None and cam.OPType == 'cameraCOMP') else '',
+                tuple(g.path for g in self._find(C.par.Geometry.eval(), ('geometryCOMP',))),
+                tuple(l.path for l in self._find(C.par.Lights.eval(), ('lightCOMP',))))
+
+    def WatchScene(self):
+        # [BTDR:EXT.WATCH] called by `scene_watch` every COVER_POLL_FRAMES frames: a camera, Geometry COMP or light
+        # added, deleted or renamed in the network refreshes the scene by itself (before 0.7.4 that needed Refresh
+        # Scene: a renderer dropped in before the geometry existed stayed empty, and the empty ray-tracing scene
+        # showed compile errors). Costs a few ops() lookups twice a second.
+        if self._scene_sig() != getattr(self, 'sig', None):
             self.Refresh()
-        else:
-            run("args[0].CoverPoll() if (args[0].valid and hasattr(args[0], 'CoverPoll')) else None",
-                C, delayFrames=COVER_POLL_FRAMES)
 
     def ShowInfo(self, once=False):
         # [BTDR:EXT.INFO] the start-up dialog: once per TouchDesigner session for all instances (once=True),
@@ -715,6 +716,7 @@ class BTDRExt:
         """[BTDR:EXT.REFRESH] Re-resolve Camera / Geometry / Lights and rebuild the scene mirror."""
         C = self.ownerComp
         warn = []
+        self.sig = self._scene_sig()        # first, so a Refresh that fails is not retried twice a second
         cam = C.par.Camera.eval()
         if cam is None or cam.OPType != 'cameraCOMP':
             warn.append('Camera: no Camera COMP found for "%s".' % C.par.Camera.val)
@@ -747,7 +749,9 @@ class BTDRExt:
         if hasattr(C.par, 'Blendcount'):
             C.par.Blendcount = sum(1 for d in info if d['kind'] == 'blend')
         nrt = self._rt_build(geos, warn, info)
-        C.par.Rtavailable = True              # re-tested by `uniforms` ([BTDR:UNI.RTCHECK])
+        # re-tested by `uniforms` ([BTDR:UNI.RTCHECK]). [BTDR:EXT.RTEMPTY] an empty proxy scene (no geometry yet) keeps
+        # ray tracing off: its POPs have nothing to trace and fail to compile (0.7.4, found in a new project)
+        C.par.Rtavailable = nrt > 0
         if C.par.Shadowfit.eval():
             fit = self._fit_shadow(geos)
             if fit is not None:

@@ -66,9 +66,10 @@ BTDR.tox 是自包含的，不引用任何外部文件，拖进任何工程都�
 - 改灯光的颜色和 Dimmer
 - 改实例化（Instancing）参数
 
+新增、删除、改名相机 / Geometry COMP / 灯光也不用刷新：节点每半秒检查一次，有变化自动刷新（0.7.4）。
+
 下面这些改动之后要点一次 **Render 页 → Refresh Scene**：
 
-- 新增或删除了匹配 Geometry / Lights 的节点
 - 给几何体换了另一个材质节点
 - 在 Geometry COMP 里换了 Render 标志所在的 SOP / POP
 - 改了节点的名字或路径

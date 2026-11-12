@@ -830,6 +830,10 @@ def build_btdr(dest, name='renderBTDR'):
     warm.text = ('# [BTDR:EXT.COVER] behind the loading screen: pull the render so it warms up\n'
                  'def onFrameStart(frame):\n    op(\'view\').cook(force=True)\n    return\n')
     warm.par.framestart = True; warm.par.active = False
+    sw = place(C.create(executeDAT, 'scene_watch'), X0 - 250, -200)
+    sw.text = ('# [BTDR:EXT.WATCH] pick up cameras / geometry / lights added or removed in the network\n'
+               'def onFrameStart(frame):\n    if int(frame) % 30 == 0:\n        parent().WatchScene()\n    return\n')
+    sw.par.framestart = True; sw.par.active = True
 
     # [BTDR:BUILD.OUT] outputs: 1 final image (sRGB; the cover until the render is up), 2 HDR linear, 3 depth
     for i, src in enumerate((osrc, smb, dep)):
