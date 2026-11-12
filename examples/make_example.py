@@ -85,6 +85,11 @@ try:
             E.op('renderBTDR1').par.Startupinfo = True                 # the dialog switched it off while building ([BTDR:EXT.INFOONCE])
             E.save(BT + '/examples/BTDR_Example.tox')
             E.save(BT + '/release/BTDR_Example.tox')
+            # [BTDR:EXAMPLE.PALETTE] keep the copy in the user's Palette current as well (build.py does it for BTDR.tox)
+            import os, shutil
+            _pal = os.path.join(os.path.expanduser('~'), 'Documents', 'Derivative', 'Palette', 'BTDR')
+            if os.path.isdir(_pal):
+                shutil.copyfile(BT + '/release/BTDR_Example.tox', os.path.join(_pal, 'BTDR_Example.tox'))
             open(BT + '/out/example_log.txt', 'w', encoding='utf-8').write(('STATUS DONE' if not errs else 'STATUS ERR') + '\n' + '\n'.join(LOG))
         except Exception:
             open(BT + '/out/example_log.txt', 'w', encoding='utf-8').write('STATUS ERR\n' + traceback.format_exc())
