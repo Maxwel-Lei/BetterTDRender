@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.7.3。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.7.4。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -40,6 +40,12 @@
 不用填任何参数：Camera、Geometry、Lights 的默认值是 `cam1`、`*`、`*`，会自动找到同一网络里的相机、所有 Geometry COMP 和平行光。
 路径的写法和原生 Render TOP 一致：相对于 `renderBTDR` 所在的网络，也可以写绝对路径或用通配符。
 材质照常用原生 **PBR MAT** 赋给 Geometry COMP，不需要任何专用材质。
+
+**封面和加载画面（0.7.4）**：刚拖进网络或打开工程时，第 1 个输出先显示 TD学长 的封面。
+- 还没找到相机时，封面下方写着 “Waiting for a camera”，节点每半秒检查一次，Camera 参数指向的相机一出现就自动开始。
+- 找到相机后显示约 1 秒的加载动画（Logo 上有一道扫光），这段时间渲染在后台准备（编译着色器、填满时间累积），然后自动切换成渲染画面。
+- 之后改参数、刷新场景都不会再出现封面；下次打开工程会再显示一次。第 2、3 个输出（HDR、深度）不受影响。
+- 每次启动 TouchDesigner 后第一次加载 BTDR 时会弹出作者和联系方式的窗口（同一次运行里只弹一次）；之后可以在 **Info 页**点 **About / Contact...** 再打开。
 
 接下来通常会调的几项：
 - 想要天空和真实的环境反射：**Environment 页**换成 HDRI（§3 Environment 页）。
@@ -163,7 +169,7 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 |---|---|
 | Hardware Ray Tracing | 总开关 |
 | Ray Tracing Available | 只读。显卡不支持光线查询、或光追节点出错时自动变成关，节点上会出现提示，其余功能不受影响 |
-| Probe GI | 探针全局光照：在物体周围摆一个三维网格的光照探针（High 16×8×16，Low 12×6×12），每个探针向四周发 64 / 32 条光线，记下各方向来的光。物体表面的环境漫反射改用探针的结果，所以车底、桌下、墙角这类天光照不到的地方会变暗，被太阳照亮的物体会把颜色"染"到旁边（颜色渗透，color bleeding）。场景和灯不动时只算一次，不占每帧开销 |
+| Probe GI | 探针全局光照：在物体周围摆一个三维网格的光照探针（约 2000 个，High 按场景的长宽高比例分配，例如又宽又浅的场景 40×9×7；Low 每个方向少四分之一），每个探针向四周发 64 / 32 条光线，记下各方向来的光。物体表面的环境漫反射改用探针的结果，所以车底、桌下、墙角这类天光照不到的地方会变暗，被太阳照亮的物体会把颜色"染"到旁边（颜色渗透，color bleeding）。场景和灯不动时只算一次，不占每帧开销 |
 | GI Intensity | 探针光照的强度 |
 | Ray-Traced Reflections | 光追反射：每 4 个像素（Low：6 个）发一条反射光线，算出"实际看到的"和"环境贴图"的亮度比，乘到环境反射上。光滑地面里不会再映出被车挡住的天空，画面外的物体也能映出来。屏幕空间反射（SSR）找得到的地方仍然叠在最上面（它更清晰） |
 | Reflection Intensity | 光追反射的混合程度，0 = 只用环境反射 |
@@ -395,10 +401,10 @@ BTDR 默认按 OpenGL 约定读取，和 Blender、Tripo 等工具的默认导�
 
 用新的 `BTDR.tox` 覆盖 Palette 里的旧文件，然后把工程里的 `renderBTDR` 删掉重新拖入。
 已经在工程里的节点不会自动更新；参数要重新设置（只改过几项的话，可以先记下 Version 和改过的参数）。
-当前版本号在节点的 About 页。
+当前版本号在节点的 Info 页（0.7.4 以前叫 About 页）。
 
 ## 9. 许可和素材
 
-- BTDR 本身：PolyForm Noncommercial 1.0.0 许可（见 `LICENSE`）。**禁止商业用途**；个人学习、研究、艺术创作等非商业用途可以免费使用和修改。转发或再发布（含修改版）时必须保留 `LICENSE` 里那行 `Required Notice:`，即注明出处“BetterTDRender by Xikai Lei”和仓库地址；用它做的作品公开展示时也请注明。商业用途请联系作者。源码：https://github.com/Maxwel-Lei/BetterTDRender
+- BTDR 本身：PolyForm Noncommercial 1.0.0 许可（见 `LICENSE`）。**禁止商业用途**；个人学习、研究、艺术创作等非商业用途可以免费使用和修改。转发或再发布（含修改版）时必须保留 `LICENSE` 里那行 `Required Notice:`，即注明出处“BetterTDRender by Xikai Lei”和仓库地址；用它做的作品公开展示时也请注明。**商业用途需要单独授权**（商业授权），请联系作者 TD学长：微信 TD_Xuezhang、闲鱼搜“TD学长”、邮箱 max_lei_in_london@163.com 或 ginicholaslbert@gmail.com（节点的 Info 页也有）。源码：https://github.com/Maxwel-Lei/BetterTDRender
 - 示例网络只用 TD 自带的几何体，没有外部素材。
 - `hdri/kloofendal_43d_clear_2k.hdr`：Poly Haven（polyhaven.com），CC0。

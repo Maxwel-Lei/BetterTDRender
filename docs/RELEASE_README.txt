@@ -23,7 +23,9 @@ Quick start
 
 License
   PolyForm Noncommercial 1.0.0 (see LICENSE): no commercial use. Keep the "Required Notice:"
-  line (credit "BetterTDRender by Xikai Lei") when passing it on. Source: https://github.com/Maxwel-Lei/BetterTDRender
+  line (credit "BetterTDRender by Xikai Lei") when passing it on.
+  Commercial use needs a commercial license: WeChat TD_Xuezhang, Xianyu (闲鱼) "TD学长",
+  max_lei_in_london@163.com or ginicholaslbert@gmail.com. Source: https://github.com/Maxwel-Lei/BetterTDRender
 
 Credits
   hdri/kloofendal_43d_clear_2k.hdr  Poly Haven (polyhaven.com), CC0.

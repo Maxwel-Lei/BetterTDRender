@@ -27,9 +27,91 @@ REFR_PRESETS = {
 }
 
 
+# [BTDR:EXT.INFO] author / contact, shown on the Info page and in the start-up dialog
+INFO_TEXT = ('BetterTDRender (renderBTDR) 来自 TD学长\n'
+             'BetterTDRender is made by TD学长 (Xikai Lei)\n\n'
+             '微信 WeChat: TD_Xuezhang\n'
+             '闲鱼 Xianyu: 搜索 “TD学长”\n'
+             '邮箱 Email: max_lei_in_london@163.com\n'
+             '            ginicholaslbert@gmail.com\n\n'
+             '免费用于非商业用途；商业使用需要授权，请联系作者。\n'
+             'Free for noncommercial use. Commercial use requires a license from the author.\n'
+             'https://github.com/Maxwel-Lei/BetterTDRender')
+COVER_WARM_FRAMES = 60          # [BTDR:EXT.COVER] frames the loading screen stays up while the pipeline warms up
+COVER_POLL_FRAMES = 30          # how often to look for the camera while waiting for one
+
+
 class BTDRExt:
     def __init__(self, ownerComp):
         self.ownerComp = ownerComp
+        self.warmed = False         # not stored: every project start / new instance shows the loading screen once
+
+    # ------------------------------------------------------------------ cover, loading screen, info
+    def _cover(self, show, mode):
+        # [BTDR:EXT.COVER] output 1 shows the cover (`cover_state`: show 1) until a camera is found and the
+        # pipeline has rendered COVER_WARM_FRAMES frames; mode 0 = loading animation, 1 = waiting for a camera.
+        # While the loading screen is up `cover_warm` pulls `view` every frame, so shaders compile and the
+        # temporal histories fill behind it; with the cover off it is inactive and costs nothing.
+        C = self.ownerComp
+        cs = C.op('cover_state')
+        if cs is None:
+            return
+        if cs.par.value0.eval() != show:
+            cs.par.value0 = show
+        if cs.par.value1.eval() != mode:
+            cs.par.value1 = mode
+        w = C.op('cover_warm')
+        if w is not None and w.par.active.eval() != (show == 1 and mode == 0):
+            w.par.active = (show == 1 and mode == 0)
+
+    def _cover_after_refresh(self, cam):
+        C = self.ownerComp
+        if cam is None:
+            self._cover(1, 1)
+            run("args[0].CoverPoll() if (args[0].valid and hasattr(args[0], 'CoverPoll')) else None",
+                C, delayFrames=COVER_POLL_FRAMES)
+        elif not self.warmed:
+            self._cover(1, 0)
+            run("args[0].CoverDone() if (args[0].valid and hasattr(args[0], 'CoverDone')) else None",
+                C, delayFrames=COVER_WARM_FRAMES)
+        else:
+            self._cover(0, 0)
+
+    def CoverDone(self):
+        C = self.ownerComp
+        self.warmed = True
+        cam = C.par.Camera.eval()
+        self._cover(0, 0) if (cam is not None and cam.OPType == 'cameraCOMP') else self._cover(1, 1)
+
+    def CoverPoll(self):
+        # waiting for a camera: the Camera parameter may already point at a camera created after the last Refresh
+        C = self.ownerComp
+        cs = C.op('cover_state')
+        if cs is None or cs.par.value0.eval() != 1 or cs.par.value1.eval() != 1:
+            return
+        cam = C.par.Camera.eval()
+        if cam is not None and cam.OPType == 'cameraCOMP':
+            self.Refresh()
+        else:
+            run("args[0].CoverPoll() if (args[0].valid and hasattr(args[0], 'CoverPoll')) else None",
+                C, delayFrames=COVER_POLL_FRAMES)
+
+    def ShowInfo(self, once=False):
+        # [BTDR:EXT.INFO] the start-up dialog: once per TouchDesigner session for all instances (once=True),
+        # or every time from the Info page's button
+        import sys
+        if once:
+            if getattr(sys, '_btdr_info_shown', False):
+                return
+            sys._btdr_info_shown = True
+        try:
+            op.TDResources.PopDialog.Open(text=INFO_TEXT, title='BetterTDRender · TD学长', buttons=['OK'],
+                                          escButton=1, enterButton=1, escOnClickAway=True)
+        except Exception:
+            try:
+                ui.messageBox('BetterTDRender · TD学长', INFO_TEXT, buttons=['OK'])
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ helpers
     def _find(self, pattern, optypes):
@@ -709,6 +791,7 @@ class BTDRExt:
         C.par.Status = (('OK: %d geometry' % n) + short) if not warn else \
                        ('%d warning%s: %s' % (len(warn), '' if len(warn) == 1 else 's', warn[0]))
         C.op('status').text = '\n'.join(warn + ['tip: ' + t for t in tips]) if (warn or tips) else 'OK'
+        self._cover_after_refresh(cam)
         return warn
 
     def ApplyQuality(self):

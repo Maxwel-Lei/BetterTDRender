@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.7.3'
+VERSION = '0.7.4'
 BLOG = []
 
 def _read(rel):
@@ -302,8 +302,16 @@ def build_btdr(dest, name='renderBTDR'):
     setup(pg.appendFloat('Vignette', label='Vignette')[0], 0.3, 0, 1, True, True)
     setup(pg.appendFloat('Grain', label='Grain')[0], 0.01, 0, 0.1, True)
 
-    pg = C.appendCustomPage('About')
+    # [BTDR:BUILD.INFO] author, contact, licence (0.7.4: replaces the About page; the dialog is [BTDR:EXT.INFO])
+    pg = C.appendCustomPage('Info')
     p = setup(pg.appendStr('Version', label='Version')[0], VERSION); p.readOnly = True
+    pg.appendPulse('Showinfo', label='About / Contact...')
+    for nm, lab, v in (('Author', 'Author', 'TD学长 (Xikai Lei)'), ('Wechat', 'WeChat 微信', 'TD_Xuezhang'),
+                       ('Xianyu', 'Xianyu 闲鱼', '搜索 “TD学长”'), ('Email1', 'Email', 'max_lei_in_london@163.com'),
+                       ('Email2', 'Email 2', 'ginicholaslbert@gmail.com'),
+                       ('License', 'License', 'Free for noncommercial use; commercial use needs a license (contact the author)'),
+                       ('Source', 'Source', 'https://github.com/Maxwel-Lei/BetterTDRender')):
+        p = setup(pg.appendStr(nm, label=lab)[0], v); p.readOnly = True
 
     # ---------------------------------------------------------------- code + shaders
     X0 = -1400
@@ -780,8 +788,51 @@ def build_btdr(dest, name='renderBTDR'):
     view.par.index.expr = "0 if parent.BTDR.par.Debugview == 'final' else 1"
     dep = glsl('depth', D['depth.frag'], [rs[1], rs[2]], RW, RH, ['r32float', 'mono32float'], 400, 100)
 
-    # [BTDR:BUILD.OUT] outputs: 1 final image (sRGB), 2 HDR linear, 3 depth
-    for i, src in enumerate((view, smb, dep)):
+    # [BTDR:BUILD.COVER] cover / loading screen on output 1 ([BTDR:EXT.COVER], shaders/cover.frag): the TD学长
+    # logo (signed distance field, no image file) with a light sweep while loading, then the render once a camera
+    # is found and the pipeline has warmed up. `out_src` only pulls the selected branch, so the cover costs
+    # nothing once the render is up and the render chain is only pulled behind the loading screen by `cover_warm`.
+    cst = place(C.create(constantCHOP, 'cover_state'), 400, 800)
+    cst.par.name0 = 'show'; cst.par.value0 = 1; cst.par.name1 = 'mode'; cst.par.value1 = 0
+    cfr = dat('cover_frag', _shader('cover.frag'), X0, 300 - (len(names) + 2) * 100)
+    cov = place(C.create(glslTOP, 'cover'), 400, 700)
+    cov.par.pixeldat = cfr
+    undock(cov)
+    res(cov, RW, RH, ['rgba8fixed'])
+    cov.par.vec0name = 'uCover'; cov.par.vec0valuex.expr = 'absTime.seconds'
+    cov.par.vec0valuey.expr = "op('cover_state')['mode']"
+    def ctext(nm, txt, size, y, bold, alpha, x):
+        t = place(C.create(textTOP, nm), x, 850)
+        if isinstance(txt, str) and txt.startswith('='): t.par.text.expr = txt[1:]
+        else: t.par.text = txt
+        try: t.par.font = 'Microsoft YaHei'
+        except Exception as e: BLOG.append('cover font %r' % e)
+        t.par.bold = bold
+        t.par.fontsizexunit = 'fract'; t.par.fontsizex = size; t.par.keepfontratio = True
+        t.par.positionunit = 'fraction'; t.par.positionx = 0; t.par.positiony = y
+        t.par.fontcolorr = t.par.fontcolorg = t.par.fontcolorb = 0.04; t.par.fontalpha = alpha
+        t.par.bgalpha = 0
+        res(t, RW, RH)
+        return t
+    layers = [ctext('cover_title', 'BetterTDRender', 0.05, -0.30, True, 1.0, 600),
+              ctext('cover_status', "=('Loading…' if op('cover_state')['mode'] < 0.5 else "
+                                    "'Waiting for a camera  ·  set Camera on the Render page')", 0.022, -0.372, False, 0.7, 750),
+              ctext('cover_credit', 'TD学长  ·  微信 TD_Xuezhang  ·  闲鱼搜“TD学长”', 0.02, -0.44, False, 0.85, 900)]
+    prev = cov
+    for i, t in enumerate(layers):
+        ov = place(C.create(overTOP, 'cover_ov%d' % i), 600 + 150 * i, 700)
+        t.outputConnectors[0].connect(ov.inputConnectors[0]); prev.outputConnectors[0].connect(ov.inputConnectors[1])
+        prev = ov
+    osrc = place(C.create(switchTOP, 'out_src'), 700, 550)
+    view.outputConnectors[0].connect(osrc); prev.outputConnectors[0].connect(osrc)
+    osrc.par.index.expr = "int(op('cover_state')['show'])"
+    warm = place(C.create(executeDAT, 'cover_warm'), X0 - 250, -100)
+    warm.text = ('# [BTDR:EXT.COVER] behind the loading screen: pull the render so it warms up\n'
+                 'def onFrameStart(frame):\n    op(\'view\').cook(force=True)\n    return\n')
+    warm.par.framestart = True; warm.par.active = False
+
+    # [BTDR:BUILD.OUT] outputs: 1 final image (sRGB; the cover until the render is up), 2 HDR linear, 3 depth
+    for i, src in enumerate((osrc, smb, dep)):
         o = place(C.create(outTOP, 'out%d' % (i + 1)), 800, 400 - i * 150)
         src.outputConnectors[0].connect(o)
     try: C.par.opviewer = './out1'

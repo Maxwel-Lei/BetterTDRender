@@ -23,4 +23,6 @@ def onValueChange(par, prev):
 def onPulse(par):
     if par.name == 'Refresh':
         parent().Refresh()
+    elif par.name == 'Showinfo':
+        parent().ShowInfo()
     return

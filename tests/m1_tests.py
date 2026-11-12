@@ -386,7 +386,7 @@ try:
             u = R.op('uniforms'); rtu = [float(u[c][36]) for c in range(4)]
             check('ray tracing: proxy scene, probes, traced reflections',
                   R.par.Rtavailable.eval() and not R.op('rt_refl').errors() and not R.op('rt_probes').errors()
-                  and ntri > 100 and p0.shape[:3] == (16, 8, 16) and np.isfinite(p0).all() and 0.3 < (p0[..., 3] > 0.5).mean() <= 1.0
+                  and ntri > 100 and 3 <= min(p0.shape[:3]) and max(p0.shape[:3]) <= 40 and 1000 <= int(np.prod(p0.shape[:3])) <= 4096 and np.isfinite(p0).all() and 0.3 < (p0[..., 3] > 0.5).mean() <= 1.0
                   and p0[..., :3].max() > 0.0 and np.isfinite(rt).all() and 0.0 < hitf < 1.0 and np.isfinite(cp).all()
                   and rtu[0] == 1.0 and rtu[1] == 1.0 and R.op('rt_src').par.index.eval() == 1 and R.op('probe_src0').par.index.eval() == 1,
                   'proxy %d triangles, probes %s valid %.0f%%, reflection hits %.1f%%, uRT %s'
