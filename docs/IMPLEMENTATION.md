@@ -25,6 +25,7 @@ btdr/
   ext/execute.py          组件创建 / 工程启动时自动 Refresh
   examples/demo_scene.py  开发用的演示场景 /project1/btdr_demo（测试模型 + HDRI）+ 验证（报错收集、截图、耗时）
   examples/make_example.py  生成发布用的示例网络 BTDR_Example.tox（只用 TD 自带 SOP，§11c）
+  examples/make_showcase.py  在另一个工程里生成可整体打包的展示工程（4 个预设，§11c）
   tests/m1_tests.py       回归测试：39 项检查（M1–M4），结果写 out/m1_tests.txt
   tests/m5_acceptance.py  验收：按使用手册 §2.2 从空网络搭场景 + 示例冷启动检查，结果写 out/m5_acceptance.txt
   tools/make_release.py   打发布包 release/BTDR_<版本>.zip（§11c）
