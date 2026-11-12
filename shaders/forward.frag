@@ -32,6 +32,7 @@ in Vertex {
     vec3 worldNorm;
     vec2 texCoord;
     vec3 camPos;
+    vec4 color;
 } iVert;
 
 layout(location = 0) out vec4 oColor;

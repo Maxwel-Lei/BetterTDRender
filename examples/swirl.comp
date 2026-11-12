@@ -1,0 +1,85 @@
+// [BTDR:FILE.SCENES.SWIRL] swirl.comp — GLSL POP of the particle scene (make_scenes.py, SCENES.PARTICLES).
+// Stateless: every particle is placed from its id, the time uTime.x and the audio features uAudio
+// (x bass, y mid, z high, w kick envelope), so any frame can be rendered on its own (frame-exact recording).
+// Writes P, Color (emission tint, can exceed 1) and PointScale (instance size).
+// uForm.x 0..1 gathers the particles into the text drawn in sText (a Text TOP): every particle samples a
+// target point inside the letters and flies there with its own delay. uForm.yzw = text plane width, centre y, z.
+float hsh(uint n)
+{
+    n = (n << 13U) ^ n;
+    n = n * (n * n * 15731U + 789221U) + 1376312589U;
+    return float(n & 0x7fffffffU) / float(0x7fffffff);
+}
+vec3 noise3(vec3 p, float t)
+{
+    return vec3(TDSimplexNoise(vec4(p, t)), TDSimplexNoise(vec4(p + vec3(17.1, 3.7, 9.2), t)),
+                TDSimplexNoise(vec4(p + vec3(5.3, 21.9, 13.4), t)));
+}
+void main()
+{
+    const uint id = TDIndex();
+    if (id >= TDNumElements()) return;
+    float t = uTime.x;
+    float bass = uAudio.x, mid = uAudio.y, high = uAudio.z, kick = uAudio.w;
+    float a = hsh(id * 5U + 1U), b = hsh(id * 5U + 2U), c = hsh(id * 5U + 3U), d = hsh(id * 5U + 4U), e = hsh(id * 5U + 5U);
+    vec3 p;
+    vec3 col;
+    float sc = 0.0065 * (0.55 + 0.9 * d);
+    if (e < 0.86) {
+        // spiral disk: two arms, inner part turns faster (differential rotation)
+        float r0 = 0.25 + 4.0 * pow(a, 0.75);
+        float arm = floor(b * 2.0);
+        float spread = (c - 0.5) * (0.35 + 0.25 * r0);
+        float ang = arm * 3.14159265 + log(r0 + 0.3) * 2.6 + spread - t * 0.55 / pow(r0 + 0.2, 0.8);
+        // the kick pushes a ring outwards
+        float push = kick * 0.9 * exp(-abs(r0 - 1.8) * 1.2);
+        float r = r0 * (1.0 + 0.12 * bass) + push;
+        float y = 1.45 + (d - 0.5) * 0.12 * (0.3 + r0 * 0.3) + sin(r0 * 2.4 - t * 1.6) * 0.09 * (0.3 + 1.5 * mid);
+        p = vec3(cos(ang) * r, y, sin(ang) * r);
+        float k = clamp(r0 / 4.2, 0.0, 1.0);
+        col = mix(vec3(4.5, 2.4, 0.9), vec3(0.6, 1.6, 4.5), smoothstep(0.05, 0.6, k));
+        col = mix(col, vec3(2.8, 0.6, 3.6), smoothstep(0.6, 1.0, k));
+        col *= 0.55 + 0.6 * bass + 1.2 * push;
+    } else if (e < 0.9) {
+        // central column rising and falling with the music
+        float h = fract(a + t * (0.08 + 0.1 * mid));
+        float ang = b * 6.2831853 + t * 1.3;
+        float rr = 0.05 + 0.1 * c * (1.0 - h) + 0.06 * bass;
+        p = vec3(cos(ang) * rr, 0.1 + h * 3.8, sin(ang) * rr);
+        col = vec3(5.0, 3.6, 2.0) * (0.4 + 1.6 * bass) * (1.0 - h * 0.7);
+        sc *= 0.8;
+    } else {
+        // outer halo: slow sparks that flash on the highs
+        vec3 dir = normalize(vec3(a - 0.5, (b - 0.5) * 0.5, c - 0.5) + 1e-4);
+        float rr = 4.6 + 2.2 * d + 0.6 * kick;
+        p = vec3(dir.x * rr, 1.6 + dir.y * rr * 0.6, dir.z * rr);
+        float tw = step(0.9, fract(d * 37.0 + t * (0.3 + a)));
+        col = vec3(1.2, 1.8, 4.0) * (0.25 + 6.0 * high * tw);
+        sc *= 0.7;
+    }
+    // curl-like turbulence, stronger on bass
+    p += noise3(p * 0.6, t * 0.25) * (0.06 + 0.35 * bass);
+    p.y = max(p.y, 0.03);
+    // [SWIRL.TEXT] gather into the letters
+    float hidden = 0.0;
+    if (uForm.x > 0.0) {
+        vec2 uv = vec2(0.5);
+        hidden = 1.0;
+        for (uint k = 0U; k < 24U; k++) {
+            vec2 q = vec2(hsh(id * 97U + k * 2U + 11U), hsh(id * 97U + k * 2U + 12U));
+            if (textureLod(sText, q, 0.0).r > 0.5) { uv = q; hidden = 0.0; break; }
+        }
+        vec2 ts = vec2(textureSize(sText, 0));
+        float w = uForm.y, h = uForm.y * ts.y / ts.x;
+        vec3 tgt = vec3((uv.x - 0.5) * w, uForm.z + (uv.y - 0.5) * h, uForm.w + (d - 0.5) * 0.06);
+        float f = clamp(uForm.x * 1.7 - e * 0.7, 0.0, 1.0);
+        f = f * f * (3.0 - 2.0 * f);
+        p = mix(p, tgt, f);
+        col = mix(col, vec3(4.2, 3.4, 2.4) * (0.7 + 0.6 * bass), f * (1.0 - hidden));
+        sc *= mix(1.0, 1.0 - hidden, f) * mix(1.0, 0.8, f);
+    }
+    P[id] = p;
+    col *= 0.24;
+    Color[id] = vec4(col, 1.0);
+    PointScale[id] = sc * (1.0 + 0.5 * bass);
+}

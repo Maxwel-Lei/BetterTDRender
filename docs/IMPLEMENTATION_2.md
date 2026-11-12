@@ -91,6 +91,9 @@
 41. Sphere SOP 的 Primitive Type 菜单名是 `prim / poly / mesh / nurbs / bezier`：写 `'polygon'` 不报错、保持默认的 `prim`（一个点、一个图元），拿它做实例化源只有 1 个实例。Ramp TOP 的 Circular 模式默认 Extend = Repeat，超过半径的角落会重复出圆环，做柔和的圆形贴图要把 Extend Left / Right 设成 Hold。
 42. PolyReduce SOP 的 Keep % 对低模物体是灾难：6 个面的盒子 15% 只剩 1 个三角形。另外 Keep # 数的是 Pre-Triangulate 之后的三角形（四边形算两个）。SOP 的 `numPrims` 是属性、POP 的 `numPrims()` 是方法，表达式里写错会报 "'int' object is not callable"。（`EXT.RTMINPOLY`）
 43. 新建的 GLSL POP 在前几帧（尤其负载重时）输出的属性可能是未初始化的值，经 POP to TOP 进入画面就是负数、NaN 的斑点。读 GLSL POP 结果的地方都要做有限值 / 范围检查（`REFR.RT`）。
+44. GLSL POP 只把 Output Attributes 里列出的属性声明成可写数组：写输入就有的 `P` 要在 Output Attributes 里写上 `P`（默认 `*` 只含新建的属性），否则编译报 "'P' : undeclared identifier"（`SCENES.PARTICLES`）。
+45. 透明物体的 PBR MAT 要把 Alpha Front 设成 0：默认 1 等于不透明的漫反射涂层，玻璃看起来像白瓷。
+46. 录制脚本每帧给参数赋相同的值也算"参数变了"：给灯、相机的 Look At 反复赋同一个值会让阴影图每帧重画、体积雾和时间累积每帧重置，画面满是块状噪点。`tools/video_rig.py` 只在值真的变化时赋值（`VIDEO.*`）。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -184,6 +187,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-12 | 0.7.1 | 实例颜色（Instance Color）乘到基础色和自发光上（`GBUF.INSTCOLOR`），实例化的粒子可以各自发光。五个展示场景 `examples/make_scenes.py`（百叶窗室内、雨夜霓虹、落日巨石阵、音频驱动的 40 万 POP 粒子、材质陈列柜，`SCENES.*`）、录制工具 `tools/video_rig.py`、场景测速 `tools/scene_bench.py`、介绍片后期脚本 `tools/video/`。场景实测（1080p High，去掉 gbuf0 等待）：GPU 3.2–4.1 ms，粒子场景 10 ms；CPU 2.0–3.2 ms。新坑 §11 第 44–46 条 |
 | 2026-11-12 | 0.7.0 | M6c 光追折射（§9g）：Transparency 页 Refraction Method（Screen Space / Hybrid / Ray Traced）；玻璃进第二个光追场景 `out_t`，`rt_refr` 从前景透明层穿过玻璃代理（折射进出、全内反射、多块玻璃、按介质吸收），Hybrid 只在屏幕空间找不到背景处用光追。修 M4：光追代理减面有下限（`EXT.RTMINPOLY`），低模物体以前几乎不在光追场景里（示例网络画面因此变化：A/B 平均差 0.016，属于修正）。M6b 混合透明保留在源码、默认不构建（`BUILD.M6B`，用户决定）。回归 39 项、M6 测试（含 `TEST.M6C`）、验收全过。M6c 开销 CPU +0.25 ms、GPU +0.1 ms |
 | 2026-11-12 | 0.7.0-dev | M6b 混合透明（§9f，之后改为默认不构建）：Blended 槽（Alpha / Additive、受光、软粒子覆盖），PBR MAT 开 Blending + Alpha 贴图自动识别；前向材质 `forward.frag`（无方向光照、BTDR 阴影、软粒子、玻璃后压暗），每帧数据经 `ub_tex`（uniform 块的 CHOP to TOP）读入；`tblend` 支持 Sorted / Order Independent（深度剥离）；`blend_comp` 叠在折射之后、雾和 TAA 之前。没有混合类时全部旁路（A/B 与 0.6.0 平均差 0）。回归 39 项、M6a、M6b、验收全过。测试场景 CPU +0.45 ms、GPU +0.25 ms。新坑 §11 第 40、41 条 |
 | 2026-11-12 | 0.6.0 | M6a 透明与折射（`M6_TRANSPARENCY.md`，§9e）：Transparency 页的透明槽（把 Geometry COMP 拖进去，9 个预设）、从 PBR MAT 自动识别、Alpha 测试镂空；前景透明层 `tgbuffer` + 背面 `tback` 测厚度 + `refract`（两次折射、16 步深度步进找背景、按粗糙度取 mip 的磨砂、Beer-Lambert 吸收、菲涅尔、太阳高光）；合并深度给雾和 TAA。没有透明物体时全部旁路（A/B 与 0.5.1 平均差 0）。回归 39 项、M6 测试全过。透明场景 GPU +0.6 ms、CPU +0.85 ms |

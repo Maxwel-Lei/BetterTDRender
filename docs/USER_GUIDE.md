@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.7.0。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.7.1。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -333,6 +333,8 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 | 其他（自定义 GLSL MAT 等） | 默认灰色，节点上有警告 |
 
 和原生 PBR MAT 一样，数值和贴图相乘：只用贴图时把对应数值设成 1。
+
+实例化（Instancing）时 Geometry COMP 的 Instance Color 会乘到基础色和自发光上（0.7.1），粒子可以各自有颜色和亮度。
 
 ### 警告在哪里看
 

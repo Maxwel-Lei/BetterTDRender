@@ -25,6 +25,7 @@ in Vertex {
     vec3 worldNorm;
     vec2 texCoord;
     vec3 camPos;
+    vec4 color;
 } iVert;
 
 layout(location = 0) out vec4 oAlbedo;
@@ -87,6 +88,9 @@ void main()
         tn.xy *= abs(uPBR.w);
         n = normalize(mat3(T * inv, B * inv, n) * tn);
     }
+    // [BTDR:GBUF.INSTCOLOR] the instance colour tints base colour and emission (particles, per-instance glow)
+    base *= max(iVert.color.rgb, 0.0);
+    emit *= max(iVert.color.rgb, 0.0);
     oAlbedo = vec4(base, clamp(metal, 0.0, 1.0));
     oNormal = vec4(n, clamp(rough, 0.04, 1.0));
     oPosition = vec4(iVert.worldPos - iVert.camPos, ao);
