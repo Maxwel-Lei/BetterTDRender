@@ -14,7 +14,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
-**[▶ Watch the 60-second intro video](docs/media/btdr_intro.mp4)** — native Render TOP vs BTDR, debug views, SSAO / SSR, ray tracing, volumetric fog, depth of field and motion blur, all recorded in TouchDesigner.
+**[▶ Watch the 60-second intro video](docs/media/btdr_intro.mp4)** (v0.7.3) — native Render TOP vs BTDR, parameters the native renderer doesn't have (volumetric fog, probe GI, ray-traced refraction, depth of field), screen-space reflections, volumetric light, 400 k Chladni-figure particles and a material showcase, all rendered in TouchDesigner. Music generated for the edit.
 
 ![example](docs/images/example.jpg)
 
