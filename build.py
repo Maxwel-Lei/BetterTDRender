@@ -64,6 +64,7 @@ def build_btdr(dest, name='renderBTDR'):
         dest.op(name).destroy()
     C = dest.create(baseCOMP, name)
     C.par.parentshortcut = 'BTDR'
+    C.color = (0.5, 0.5, 0.05)          # [BTDR:BUILD.NODECOLOR] node colour chosen by the author (TD学长 lime, darkened)
     C.store('version', VERSION)
 
     def place(o, x, y):
