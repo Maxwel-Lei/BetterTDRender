@@ -58,6 +58,8 @@ class Ctx:
         self.set(cam, 'lookat', '')
         self.set(cam, 'xord', 'srt')
         self.set(cam, 'rord', 'xyz')
+        for n in ('px', 'py', 'pz'):        # the viewer's navigation leaves a pivot behind: it rotates the camera around it
+            self.set(cam, n, 0.0)
         for n, v in (('tx', pos[0]), ('ty', pos[1]), ('tz', pos[2]), ('rx', pitch), ('ry', yaw), ('rz', 0.0)):
             self.set(cam, n, v)
         return (dx, dy, dz)
@@ -247,14 +249,12 @@ def blinds_update(c, i, n):
     # nearly static: the volumetric fog accumulates over many frames and stays clean (big moves make it noisy here)
     pos = (_lerp(2.95, 2.75, u), _lerp(1.75, 1.7, u), _lerp(2.7, 2.45, u))
     c.look(_P('blinds') + '/cam1', pos, (-0.6, 0.95, -1.6))
-    c.set(_P('blinds') + '/light1', 'ry', 203.0)
 
 
 def blinds_out_update(c, i, n):
     u = _ease(i / max(n - 1, 1))
     pos = (_lerp(2.2, 3.3, u), _lerp(1.6, 1.85, u), _lerp(1.8, 2.85, u))
     c.look(_P('blinds') + '/cam1', pos, (-0.6, 0.9, -1.6))
-    c.set(_P('blinds') + '/light1', 'ry', 205.0)
 
 
 def neon_setup(on):
