@@ -533,7 +533,8 @@ def build_btdr(dest, name='renderBTDR'):
             t.par.dim = '3d'; t.par.toptype = 'texture3d'
         _menu(t.par.format, ['rgba16float'])
         return t
-    # [BTDR:BUILD.RTPROBES] probe grid (16x8x16 High / 12x6x12 Low) over the scene bounds set by Refresh; cooks only
+    # [BTDR:BUILD.RTPROBES] probe grid (16x8x16 High / 12x6x12 Low until the first Refresh, then about 2048 / 860 probes
+    # spread evenly over the scene bounds, EXT.RTGRIDDIMS); cooks only
     # when the proxy scene or rt_static change (static scene: zero per frame)
     pgd = place(C.create(gridPOP, 'rt_probe_grid'), RX + 200, RY - 400)
     pgd.par.surftype = 'points'; pgd.par.normal = 'none'; pgd.par.texture = 'none'

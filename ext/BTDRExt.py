@@ -431,6 +431,15 @@ class BTDRExt:
             c = (lo2 + hi2) / 2.0; sz = hi2 - lo2
             g.par.tx, g.par.ty, g.par.tz = [float(v) for v in c]
             g.par.sizex, g.par.sizey, g.par.sizez = [float(max(v, 0.1)) for v in sz]
+            # [BTDR:EXT.RTGRIDDIMS] (0.7.3) probe counts follow the shape of the bounds, so the spacing is about the
+            # same on all three axes (budget 16x8x16 = 2048 probes on High, x0.75 per axis on Low). A fixed 16x8x16
+            # over a wide, shallow scene gave 0.1 m spacing in depth and 0.7 m across: the per-probe noise of
+            # neighbouring depth layers showed as coloured stripes on flat surfaces.
+            szc = np.maximum(sz, 0.1)
+            step = float((np.prod(szc) / 2048.0) ** (1.0 / 3.0))
+            for par, v in zip((g.par.cols, g.par.rows, g.par.slices), szc):
+                n = int(min(40, max(3, round(float(v) / step) + 1)))
+                par.expr = "max(3, int(round(%d * (1.0 if parent.BTDR.par.Quality != 'low' else 0.75))))" % n
         return k
 
     def _bounds(self, geos):
