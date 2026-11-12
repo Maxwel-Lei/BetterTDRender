@@ -94,7 +94,10 @@ def onCook(scriptOp):
             if jp['winx'].eval() != wx or jp['winy'].eval() != wy:
                 jp['winx'].val, jp['winy'].val = wx, wy
         a[20] = (Q['Taaweight'].eval(), 1.0 if taa else 0.0, 1.25, 0.0)
-        a[9] = (float(n), 1.0 / max(project.cookRate, 1.0), 1.0 if n < 4 else 0.0, absTime.seconds)
+        # [BTDR:UNI.FRAMEWRAP] (0.7.3) the shaders hash `frame x constant` for their per-frame noise (fog jitter,
+        # dither, SSR / SSGI / shadow rotations). In 32-bit float those products lose their fraction after half an
+        # hour or more without a camera cut (n ~ 1e5-1e6) and the noise turns into fixed patterns; wrap the index.
+        a[9] = (float(n % 4096), 1.0 / max(project.cookRate, 1.0), 1.0 if n < 4 else 0.0, absTime.seconds)
         _STATE[scriptOp.path] = {'cam': cam.path, 'cur': cur, 'prev': prev, 'n': n, 'jit': jit, 'pjit': pj,
                                  'frame': frame}
     else:

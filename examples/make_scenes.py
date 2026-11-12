@@ -120,7 +120,7 @@ def build_blinds():
     s.camlight((2.9, 1.45, 2.4), (-0.7, 1.15, -2.0), (-24, 200, 0), dimmer=9.0, fov=50, shadow=True)
     R = s.render(Envsource='studio', Envintensity=0.35, Background='color', Bgcolorr=0.75, Bgcolorg=0.85, Bgcolorb=1.0,
                  Bgintensity=3.0, Fog=True, Fogdensity=0.06, Fogheightfalloff=0.0, Foganisotropy=0.85, Fogambient=0.03,
-                 Fognoise=0.0, Fogdistance=12.0, Fogres='high', Fogcurweight=0.04, Fogjitter=0.5, Fogshadowblur=2.5, Bloom=0.12, Exposure=0.2, Shadowfit=False, Shadowcenterx=0.0,
+                 Fognoise=0.0, Fogdistance=12.0, Fogres='high', Fogcurweight=0.04, Fogjitter=0.5, Fogshadowblur=1.0, Bloom=0.12, Exposure=0.2, Shadowfit=False, Shadowcenterx=0.0,
                  Shadowcentery=1.5, Shadowcenterz=-0.5, Shadowrange=10.0)
     # native Render TOP of the same scene, for the opening comparison
     amb = s.place(s.C.create(ambientlightCOMP, 'ambient1'), 0, 0)

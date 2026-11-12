@@ -33,13 +33,13 @@
 
 **体积雾（`fog_scatter.comp`、`fog_accum.comp`、`fog_integrate.comp`、`fog_apply.frag`）**
 - 格子（froxel）跟相机视锥对齐：x、y 是屏幕，z 按指数分布切片（`FOG.SLICES`，近 0.1 到 Max Distance）。High 160×90×64，Low 128×72×48。
-- `FOG.DENSITY`：指数高度雾 × 可选的动态噪声。`FOG.SHADOW`：每个格子用 2×2 PCF 查和表面相同的阴影图——被挡住的格子只有环境光，这就是光束。太阳项乘 Henyey-Greenstein 相位函数（各向异性 g）。环境项 = (上方 + 下方辐照度/π) / 2 × Ambient Light。
+- `FOG.DENSITY`：指数高度雾 × 可选的动态噪声。`FOG.SHADOW`：每个格子查和表面相同的阴影图——被挡住的格子只有环境光，这就是光束。0.7.3 起用和表面 `sunShadow` 相同的 PCSS（遮挡搜索 → 半影随遮挡距离变大 → PCF，每格每帧随机旋转、靠 `FOG.ACCUM` 平均），光片离遮挡物越远越软，和地面阴影一致。太阳项乘 Henyey-Greenstein 相位函数（各向异性 g）。环境项 = (上方 + 下方辐照度/π) / 2 × Ambient Light。
 - `FOG.JITTER`：每帧在格子内随机取一个点（x、y、z 三个方向都抖）。
 - `FOG.ACCUM` / `FOG.REPROJECT`（0.3.2）：在 3D 格子里做时间累积——每个格子中心按上一帧相机算出它在上一帧体积里的位置，三线性读历史，按 0.1 混入当前帧（和 UE5 一样）；历史重置或位置落在上一帧体积外时只用当前帧；结果有 NaN 时丢弃历史。**为什么不能只靠 TAA**：一个格子在屏幕上约 12×12 像素，同一格子的噪声在 TAA 的 3×3 邻域里是常数，方差裁剪会把历史判成无效，噪声永远平均不掉，光束被淹没（0.3.1 及以前的问题）。代价：雾对灯光、浓度变化的反应约慢 10 帧。
 - `FOG.INTEGRATE`：每列一个线程从前往后积分（Hillaire 2015 的能量守恒步进），每个切片存"相机到这个切片中点"的累计散射光和透射率。
 - `fog_apply`：按像素深度查积分结果，`颜色 × 透射率 + 散射光`，切片位置加半格随机抖动消除分层。`FOG.EDGE`：查找位置限制在第一个和最后一个切片中心之间（3D 输入在深度方向是重复寻址的，s = 1 会混进第一片，曾在 Max Distance 处出现一条硬边）。
 - `fog_accum` GPU 约 0.025 ms。
-- `FOG.QUALITY`（0.7.2）：格子数（`BUILD.FOGRES`，Fog Resolution）、当前帧权重（`uAcc.w`，Fog Current Frame Weight，替代原来的常量 0.1）、抖动幅度（`uGI.w`，同时缩放 `fog_apply` 的切片抖动）、雾里阴影查表的 3×3 PCF 间距（`uDOF2.w`，Fog Shadow Blur）。细遮挡物（百叶）比格子还细时，单点阴影查表让每个格子随机落在亮 / 暗里，时间累积 0.1 平均不掉，表现为跟格子一样大的块状噪点；模糊阴影 + 更多格子 + 更长历史是解法。
+- `FOG.QUALITY`（0.7.2）：格子数（`BUILD.FOGRES`，Fog Resolution）、当前帧权重（`uAcc.w`，Fog Current Frame Weight，替代原来的常量 0.1）、抖动幅度（`uGI.w`，同时缩放 `fog_apply` 的切片抖动）、雾里阴影的半影倍数（`uDOF2.w`，Fog Shadow Blur，0.7.3 起 1 = 和表面阴影一致；0.7.2 是 3×3 PCF 的间距）。细遮挡物（百叶）比格子还细时，单点阴影查表让每个格子随机落在亮 / 暗里，时间累积 0.1 平均不掉，表现为跟格子一样大的块状噪点；模糊阴影 + 更多格子 + 更长历史是解法。
 - 为什么用计算着色器：像素着色器版本每个切片一次绘制，64 片 × 2 个 TOP 实测 CPU 多 1.2 ms、积分 pass 还是 N²/2 次读取（GPU 0.7 ms）；计算着色器版本整套雾 GPU 约 0.1 ms、CPU 约 0.13 ms。
 
 ## 9d. M4：硬件光追（简化版 Lumen，0.4.0）

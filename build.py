@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.7.2'
+VERSION = '0.7.3'
 BLOG = []
 
 def _read(rel):
@@ -240,7 +240,8 @@ def build_btdr(dest, name='renderBTDR'):
         p = setup(pg.appendFloat(nm, label=lab)[0], d, lo, hi, nm not in ('Fogbaseheight',)); p.enableExpr = 'me.par.Fog'
     for p, v in zip(pg.appendRGB('Fogcolor', label='Fog Color (Albedo)'), (1.0, 1.0, 1.0)):
         setup(p, v); p.enableExpr = 'me.par.Fog'
-    # [BTDR:BUILD.FOGQUALITY] (0.7.2) noise / stability controls: grid resolution, temporal weight, jitter, shadow blur
+    # [BTDR:BUILD.FOGQUALITY] (0.7.2) noise / stability controls: grid resolution, temporal weight, jitter, shadow blur.
+    # 0.7.3: Fog Shadow Blur = penumbra relative to the surface shadows (1 = same contact-hardening PCSS, 0 = hard)
     p = pg.appendMenu('Fogres', label='Fog Resolution')[0]
     p.menuNames = ['auto', 'low', 'medium', 'high', 'ultra']
     p.menuLabels = ['Auto (from Quality)', 'Low 128x72x48', 'Medium 160x90x64', 'High 240x135x96', 'Ultra 320x180x128']

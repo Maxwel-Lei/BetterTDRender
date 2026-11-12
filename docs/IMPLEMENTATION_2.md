@@ -94,6 +94,8 @@
 44. GLSL POP 只把 Output Attributes 里列出的属性声明成可写数组：写输入就有的 `P` 要在 Output Attributes 里写上 `P`（默认 `*` 只含新建的属性），否则编译报 "'P' : undeclared identifier"（`SCENES.PARTICLES`）。
 45. 透明物体的 PBR MAT 要把 Alpha Front 设成 0：默认 1 等于不透明的漫反射涂层，玻璃看起来像白瓷。
 46. 录制脚本每帧给参数赋相同的值也算"参数变了"：给灯、相机的 Look At 反复赋同一个值会让阴影图每帧重画、体积雾和时间累积每帧重置，画面满是块状噪点。`tools/video_rig.py` 只在值真的变化时赋值（`VIDEO.*`）。
+47. 体积雾的“斜条纹”排查方法（0.7.3）：先用 CPU 暴力光线步进（同一张阴影图、每像素几百个采样）做参考图，再用同样的格子算法在 CPU 上模拟一遍，和 GPU 的雾体积逐项对比（`fog_apply` 去掉表面颜色的调试副本）。三者一致说明格子 / 时间累积 / 积分没错，问题在“物理模型”本身：雾里的阴影没有和表面一致的软阴影（PCSS），细遮挡物后面每一层光片都保持硬边，几米外仍是清晰的条带。另：`fog_apply` 的输入 0 是表面颜色，拿 `结果 − 输入0 × 透过率` 估算雾会把表面的东西混进来，调试雾要单独输出积分体积。
+48. 着色器里用 `帧号 × 常数` 做每帧随机数：帧号只在切相机时归零，32 位浮点下乘积到 1e6 左右就没有小数精度，噪声退化成固定图案（时间累积平均不掉）。`uFrame.x` 现在按 4096 取模（`UNI.FRAMEWRAP`）。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -187,6 +189,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-12 | 0.7.3 | 雾里的太阳阴影改用和表面相同的 PCSS（`FOG.SHADOW`）：8 个遮挡搜索 + 12 个 PCF 采样，每格每帧随机旋转，半影随到遮挡物的距离变大；Fog Shadow Blur 改为“相对表面阴影的半影倍数”（1 = 一致，0 = 单点硬阴影）。原因：0.7.2 的固定 3×3 小核让百叶后的每层光片几米外仍是硬边，从斜角看就是一道道斜条纹，而地面上同样的影子是软的（多机位 + CPU 参考图对比，见 §11 #47）。帧号取模 4096（`UNI.FRAMEWRAP`，§11 #48）。百叶窗场景 Fog Shadow Blur 2.5 → 1。High 下 `fog_scatter` 0.16 → 0.27 ms |
 | 2026-11-12 | 0.7.2 | 体积雾噪声控制（`FOG.QUALITY`、`BUILD.FOGQUALITY`、`BUILD.FOGRES`）：Fog 页新增 Fog Resolution（Auto / 128×72×48 … 320×180×128）、Fog Current Frame Weight（原来写死的 0.1）、Fog Jitter（格子内抖动和 `fog_apply` 切片抖动的幅度）、Fog Shadow Blur（雾的阴影查表改 3×3 PCF，间距 0.75 texel × 值，0 = 单点）；uniform 用空槽 `uDOF2.w`、`uGI.w`、`uAcc.w`。默认值下除阴影查表 2×2 → 3×3 外与 0.7.1 一致。百叶窗场景（细遮挡物）用 High / 0.04 / 0.5 / 2.5：块状噪点基本消失，光束更清楚，GPU 3.50 → 3.82 ms |
 | 2026-11-12 | 0.7.1 | 实例颜色（Instance Color）乘到基础色和自发光上（`GBUF.INSTCOLOR`），实例化的粒子可以各自发光。五个展示场景 `examples/make_scenes.py`（百叶窗室内、雨夜霓虹、落日巨石阵、音频驱动的 40 万 POP 粒子、材质陈列柜，`SCENES.*`）、录制工具 `tools/video_rig.py`、场景测速 `tools/scene_bench.py`、介绍片后期脚本 `tools/video/`。场景实测（1080p High，去掉 gbuf0 等待）：GPU 3.2–4.1 ms，粒子场景 10 ms；CPU 2.0–3.2 ms。新坑 §11 第 44–46 条 |
 | 2026-11-12 | 0.7.0 | M6c 光追折射（§9g）：Transparency 页 Refraction Method（Screen Space / Hybrid / Ray Traced）；玻璃进第二个光追场景 `out_t`，`rt_refr` 从前景透明层穿过玻璃代理（折射进出、全内反射、多块玻璃、按介质吸收），Hybrid 只在屏幕空间找不到背景处用光追。修 M4：光追代理减面有下限（`EXT.RTMINPOLY`），低模物体以前几乎不在光追场景里（示例网络画面因此变化：A/B 平均差 0.016，属于修正）。M6b 混合透明保留在源码、默认不构建（`BUILD.M6B`，用户决定）。回归 39 项、M6 测试（含 `TEST.M6C`）、验收全过。M6c 开销 CPU +0.25 ms、GPU +0.1 ms |
