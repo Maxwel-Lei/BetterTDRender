@@ -399,6 +399,6 @@ BTDR 默认按 OpenGL 约定读取，和 Blender、Tripo 等工具的默认导�
 
 ## 9. 许可和素材
 
-- BTDR 本身：MIT 许可（见 `LICENSE`），个人和商业项目都可以免费使用、修改、再发布，保留版权声明即可。源码：https://github.com/Maxwel-Lei/BetterTDRender
+- BTDR 本身：PolyForm Noncommercial 1.0.0 许可（见 `LICENSE`）。**禁止商业用途**；个人学习、研究、艺术创作等非商业用途可以免费使用和修改。转发或再发布（含修改版）时必须保留 `LICENSE` 里那行 `Required Notice:`，即注明出处“BetterTDRender by Xikai Lei”和仓库地址；用它做的作品公开展示时也请注明。商业用途请联系作者。源码：https://github.com/Maxwel-Lei/BetterTDRender
 - 示例网络只用 TD 自带的几何体，没有外部素材。
 - `hdri/kloofendal_43d_clear_2k.hdr`：Poly Haven（polyhaven.com），CC0。

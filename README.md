@@ -64,6 +64,9 @@ docs/IMPLEMENTATION_2.md §12.
 
 ## License
 
-[MIT](LICENSE) © 2026 Xikai Lei. Free for personal and commercial use; keep the copyright notice.
+[PolyForm Noncommercial 1.0.0](LICENSE) © 2026 Xikai Lei. Source-available, **not for commercial use**.
+Personal, study, research, artistic and other noncommercial use is free. If you pass the software (or a modified copy) on,
+keep the `Required Notice:` line from `LICENSE`, i.e. credit *BetterTDRender by Xikai Lei* and link this repository.
+Please also credit it in works you show that were made with it. For commercial use, contact the author.
 
-`examples/hdri/kloofendal_43d_clear_2k.hdr` — Poly Haven, CC0 (not covered by the MIT license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+`examples/hdri/kloofendal_43d_clear_2k.hdr` — Poly Haven, CC0 (not covered by the BetterTDRender license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

@@ -22,7 +22,8 @@ Quick start
   3. Connect its output to a Null TOP. No parameters to fill in.
 
 License
-  MIT (see LICENSE). Source: https://github.com/Maxwel-Lei/BetterTDRender
+  PolyForm Noncommercial 1.0.0 (see LICENSE): no commercial use. Keep the "Required Notice:"
+  line (credit "BetterTDRender by Xikai Lei") when passing it on. Source: https://github.com/Maxwel-Lei/BetterTDRender
 
 Credits
   hdri/kloofendal_43d_clear_2k.hdr  Poly Haven (polyhaven.com), CC0.

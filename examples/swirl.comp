@@ -2,14 +2,14 @@
 // Chladni figures: the particles are sand on an invisible square plate floating in the air. A standing wave of
 // mode (n, m) leaves the sand on its nodal lines, f(x, y) = cos(n pi x) cos(m pi y) +- cos(m pi x) cos(n pi y) = 0.
 // The mode changes every CH_BAR seconds (on the music's bar lines): the sand jumps off the old lines and lands
-// on the new ones. The bass shakes the plate (sand spread around the lines), the kick makes it hop.
+// on the new ones. The bass shakes the plate (sand spread around the lines), the grains rattle across the floor while the figure changes.
 // Stateless: every particle is placed from its id, the time uTime.x and the audio features uAudio
 // (x bass, y mid, z high, w kick envelope), so any frame can be rendered on its own (frame-exact recording).
 // Writes P, Color (white emission, brightness only) and PointScale (instance size).
 // uForm.x 0..1 gathers the particles into the text drawn in sText (a Text TOP): every particle samples a
 // target point inside the letters and flies there with its own delay. uForm.yzw = text plane width, centre y, z.
 #define CH_SIZE 6.0          // plate edge (scene units)
-#define CH_Y 0.8             // plate height: close to the mirror floor, so the screen-space reflection finds the grains
+#define CH_Y 0.0             // the sand lies on the mirror floor itself (the floor is the plate)
 #define CH_BAR 2.0           // seconds per figure
 #define CH_MOVE 0.9          // seconds the sand takes to settle on the new figure
 float hsh(uint n)
@@ -79,10 +79,15 @@ void main()
         // the plate shakes with the bass: grains spread across the line, the kick makes them hop
         // spread around the line: most grains close (sum of two uniforms ~ a soft profile), a few stray ones
         vec2 r2 = vec2(hsh(id * 7U + 11U) + hsh(id * 7U + 13U), hsh(id * 7U + 12U) + hsh(id * 7U + 14U)) - 1.0;
-        vec2 jit = r2 * (0.007 + 0.02 * bass) * (e > 0.82 ? 4.0 : 1.0);
-        q += jit;
-        float hop = sin(3.14159265 * s) * (0.25 + 0.5 * d) + kick * 0.05 * d;
-        p = vec3((q.x - 0.5) * CH_SIZE, CH_Y + hop + (d - 0.5) * 0.015, (q.y - 0.5) * CH_SIZE);
+        vec2 jit = r2 * (0.004 + 0.008 * bass) * (e > 0.82 ? 4.0 : 1.0);
+        // while the figure changes the grains rattle across the floor: small fast bounces and a sideways
+        // buzz, strongest mid-move; settled sand only trembles with the bass
+        float act = sin(3.14159265 * s);
+        vec2 buzz = vec2(sin(t * 37.0 + a * 61.0), cos(t * 43.0 + b * 57.0)) * 0.0035 * (act + 0.3 * bass);
+        q += jit + buzz;
+        float bnc = abs(sin(t * 6.2831853 * (9.0 + 8.0 * a) + 6.2831853 * b));
+        float hop = bnc * (0.016 * act * (0.4 + d) + 0.002 * bass) + kick * 0.003 * d;
+        p = vec3((q.x - 0.5) * CH_SIZE, CH_Y + hop, (q.y - 0.5) * CH_SIZE);
         float lum = 3.6 * (0.6 + 0.8 * d) * (1.0 - smoothstep(0.05, 0.4, miss) * 0.8);
         lum *= 0.8 + 0.5 * bass + 0.6 * sin(3.14159265 * s);
         col = vec3(lum);
@@ -90,13 +95,13 @@ void main()
         // dust drifting around the plate, flashing on the highs
         vec3 dir = normalize(vec3(a - 0.5, (b - 0.5) * 0.6, c - 0.5) + 1e-4);
         float rr = 4.2 + 3.0 * d + 0.4 * kick;
-        p = vec3(dir.x * rr, CH_Y + dir.y * rr * 0.7, dir.z * rr);
-        p += noise3(p * 0.3, t * 0.08) * 0.5;
+        p = vec3(dir.x * rr, CH_Y + abs(dir.y) * 1.2, dir.z * rr);      // low dust just above the floor
+        p += noise3(p * 0.3, t * 0.08) * vec3(0.5, 0.15, 0.5);
         float tw = step(0.9, fract(d * 37.0 + t * (0.3 + a)));
         col = vec3(2.0) * (0.25 + 6.0 * high * tw);
         sc *= 0.7;
     }
-    p.y = max(p.y, 0.03);
+    p.y = max(p.y, sc * 0.5);                 // grains rest on the floor (y = 0)
     // [SWIRL.TEXT] gather into the letters
     float hidden = 0.0;
     if (uForm.x > 0.0) {

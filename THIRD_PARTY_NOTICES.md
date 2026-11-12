@@ -1,6 +1,6 @@
 # Third-party content
 
-Not covered by the MIT license in `LICENSE`.
+Not covered by the PolyForm Noncommercial license in `LICENSE`.
 
 | File | Source | License |
 |---|---|---|

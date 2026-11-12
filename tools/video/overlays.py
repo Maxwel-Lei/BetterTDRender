@@ -80,7 +80,7 @@ def perf_note():
 def endcard():
     im=Image.new('RGBA',(W,H),(8,9,12,255)); d=ImageDraw.Draw(im)
     d.text((W//2,430),'BetterTDRender',font=inter(120,'Bold'),fill=(255,255,255,255),anchor='ms')
-    d.text((W//2,500),'v0.7.3  ·  MIT License  ·  TouchDesigner 2025',font=inter(32),fill=(255,255,255,190),anchor='ms')
+    d.text((W//2,500),'v0.7.3  ·  PolyForm Noncommercial 1.0.0  ·  TouchDesigner 2025',font=inter(32),fill=(255,255,255,190),anchor='ms')
     d.text((W//2,610),'github.com/Maxwel-Lei/BetterTDRender',font=inter(40,'SemiBold'),fill=(90,160,255,255),anchor='ms')
     d.text((W//2,690),'Xikai Lei',font=inter(34,'Medium'),fill=(255,255,255,220),anchor='ms')
     im.convert('RGB').save('ov/end.png')

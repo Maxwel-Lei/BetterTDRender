@@ -315,13 +315,14 @@ def part_update(c, i, n):
     # gather into the text 40.0-44.6 s
     f = _ease((tg - 40.0) / 1.3) * (1.0 - _ease((tg - 44.4) / 1.2))
     c.set(S + '/swirl', 'vec2valuex', f)
-    # Chladni part: a high slow orbit so the figures read; then down to the front for the text
-    a = _lerp(-35.0, -5.0, (tg - PART_T0) / 8.0) if tg < 40.0 else _lerp(-5.0, 0.0, _ease((tg - 40.0) / 1.2)) + max(0.0, tg - 44.6) * 5.0
+    # Chladni part: low over the mirror floor so the ground (and the grains' reflections) carries the shot;
+    # then up to the front for the text
+    a = _lerp(-32.0, -6.0, (tg - PART_T0) / 8.0) if tg < 40.0 else _lerp(-6.0, 0.0, _ease((tg - 40.0) / 1.2)) + max(0.0, tg - 44.6) * 4.0
     u = _ease((tg - 40.0) / 1.2) * (1.0 - _ease((tg - 44.6) / 1.4))
-    r = _lerp(10.0, 10.5, u)
-    y = _lerp(6.0, 1.9, u)
+    r = _lerp(_lerp(13.0, 11.5, _ease((tg - PART_T0) / 8.0)), 10.5, u)
+    y = _lerp(_lerp(2.6, 2.0, _ease((tg - PART_T0) / 8.0)), 1.9, u)
     pos = (r * math.sin(math.radians(a)), y, r * math.cos(math.radians(a)))
-    c.look(S + '/cam1', pos, (0.0, _lerp(0.6, 1.7, u), 0.0))
+    c.look(S + '/cam1', pos, (0.0, _lerp(-0.2, 1.7, u), _lerp(-1.2, 0.0, u)))
 
 
 MDBG = ['basecolor', 'normal', 'roughness']

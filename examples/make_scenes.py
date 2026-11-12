@@ -118,9 +118,9 @@ def build_blinds():
     s.box('bench', m_dark, (1.4, 0.22, 0.6), (2.0, 0.44, 0.5))
     s.box('cabinet', m_white, (-3.55, 0.6, 1.6), (0.7, 1.2, 1.6))
     s.camlight((2.9, 1.45, 2.4), (-0.7, 1.15, -2.0), (-24, 200, 0), dimmer=9.0, fov=50, shadow=True)
-    R = s.render(Envsource='studio', Envintensity=0.35, Background='color', Bgcolorr=0.75, Bgcolorg=0.85, Bgcolorb=1.0,
-                 Bgintensity=3.0, Fog=True, Fogdensity=0.06, Fogheightfalloff=0.0, Foganisotropy=0.85, Fogambient=0.03,
-                 Fognoise=0.0, Fogdistance=12.0, Fogres='high', Fogcurweight=0.04, Fogjitter=0.5, Fogshadowblur=1.0, Bloom=0.12, Exposure=0.2, Shadowfit=False, Shadowcenterx=0.0,
+    R = s.render(Envsource='studio', Envintensity=0.8, Rtgiintensity=1.8, Background='color', Bgcolorr=0.75, Bgcolorg=0.85, Bgcolorb=1.0,
+                 Bgintensity=3.0, Fog=True, Fogdensity=0.06, Fogheightfalloff=0.0, Foganisotropy=0.85, Fogambient=0.1,
+                 Fognoise=0.0, Fogdistance=12.0, Fogres='high', Fogcurweight=0.04, Fogjitter=0.5, Fogshadowblur=1.0, Bloom=0.12, Exposure=0.35, Shadowfit=False, Shadowcenterx=0.0,
                  Shadowcentery=1.5, Shadowcenterz=-0.5, Shadowrange=10.0)
     # native Render TOP of the same scene, for the opening comparison
     amb = s.place(s.C.create(ambientlightCOMP, 'ambient1'), 0, 0)
@@ -306,14 +306,15 @@ def build_particles():
     pg.par.instancesx = 'PointScale'; pg.par.instancesy = 'PointScale'; pg.par.instancesz = 'PointScale'
     pg.par.instancecolorop = g; pg.par.instancecolormode = 'multiply'
     pg.par.instancer = 'Color(0)'; pg.par.instanceg = 'Color(1)'; pg.par.instanceb = 'Color(2)'; pg.par.instancea = 'Color(3)'
-    m_floor = s.mat('m_floor', (0.012, 0.012, 0.014), rough=0.06)
+    # glossy metal floor: the sand lies on it (the floor is the Chladni plate), its sheen carries the shot
+    m_floor = s.mat('m_floor', (0.5, 0.5, 0.5), metal=1.0, rough=0.2)
     s.geo('floor', m_floor, gridSOP, sizex=60, sizey=60, orient='zx', rows=2, cols=2)
     m_ring = s.mat('m_ring', (0.6, 0.6, 0.62), metal=1.0, rough=0.2)
     s.geo('ring', m_ring, torusSOP, t=(0, 0.02, 0), radx=4.6, rady=0.05, rows=8, cols=96, type='poly')
     s.camlight((0.0, 2.6, 9.5), (0.0, 1.4, 0.0), (-60, 30, 0), dimmer=0.25, fov=42)
-    R = s.render(Envsource='studio', Envintensity=0.06, Background='color', Bgcolorr=0.005, Bgcolorg=0.005,
+    R = s.render(Envsource='studio', Envintensity=0.6, Background='color', Bgcolorr=0.005, Bgcolorg=0.005,
                  Bgcolorb=0.008, Bloom=0.4, Bloomradius=0.7, Bloomthreshold=0.8, Exposure=0.0,
-                 Ssrmaxdistance=12.0, Fog=True, Fogdensity=0.015, Fogambient=0.3, Fogdistance=40.0, Fogheightfalloff=0.0)
+                 Ssrmaxdistance=4.0, Ssrthickness=0.2, Fog=True, Fogdensity=0.015, Fogambient=0.3, Fogdistance=40.0, Fogheightfalloff=0.0)
     return R
 
 
