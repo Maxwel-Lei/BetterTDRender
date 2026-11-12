@@ -276,11 +276,11 @@ def mono_setup(c):
 
 
 def mono_update(c, i, n):
-    # slow push in at eye level towards the hero group, into the sun ([BTDR:SCENES.MONOLITH])
+    # slow push in along the axis of the avenue ([BTDR:SCENES.MONOLITH]); stays symmetric
     u = i / max(n - 1, 1)
-    pos = (_lerp(-0.8, 0.6, u), 1.7, _lerp(35.0, 29.0, u))
-    c.look(_P('monolith') + '/cam1', pos, (9.0, 4.2, -40.0))
-    c.set(_P('monolith') + '/renderBTDR1', 'Focusdistance', math.dist(pos, (7.6, 4.0, 2.0)))
+    z = _lerp(42.0, 34.0, u)
+    c.look(_P('monolith') + '/cam1', (0.0, 1.2, z), (0.0, 8.0, z - 100.0))
+    c.set(_P('monolith') + '/renderBTDR1', 'Focusdistance', z - 14.0)
 
 
 PART_T0 = 27.0       # global video time (s) of the first recorded particle frame

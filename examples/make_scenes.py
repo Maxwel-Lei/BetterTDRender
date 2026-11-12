@@ -190,42 +190,40 @@ def build_neon():
 # ------------------------------------------------------------------ 3. monolith
 def build_monolith():
     s = S('monolith', 800)
-    # [BTDR:SCENES.MONOLITH] monoliths on a plain at sunset, shot into the sun (generated sunset HDRI
-    # examples/hdri/sunset_btdr.hdr, sun 3.4 deg above the horizon straight down -Z). Composition in depth layers:
-    # a huge slab close to the camera (cropped, out of focus), the hero group in the focus plane with two
-    # human-sized blocks for scale, larger slabs further back fading into the haze, and a giant monolith on the
-    # horizon next to the sun. The light comes FROM the sun (travels +Z, towards the camera): back light, the
-    # faces we see are in shadow and the shadows run long towards the camera.
+    # [BTDR:SCENES.MONOLITH] one-point perspective into the sunset sun (generated HDRI examples/hdri/sunset_btdr.hdr,
+    # sun 3.4 deg above the horizon straight down -Z). Composition: horizon on the lower third, an avenue of
+    # identical slabs repeating towards the vanishing point (rhythm, size falling off with distance, fading into the
+    # haze), one slab in the right row leaning out (the break in the rhythm), a screen of tall slabs on the horizon
+    # with the sun just behind the middle one (rays), a small block on the axis in the foreground (scale). Back light:
+    # the light travels from the sun towards the camera, so every shadow is a line running to the vanishing point.
     hd = s.place(s.C.create(moviefileinTOP, 'hdri_file'), 900, -400)
     hd.par.file = BT + '/examples/hdri/sunset_btdr.hdr'
     m_ground = s.mat('m_ground', (0.5, 0.36, 0.26), rough=0.85)
     m_stone = s.mat('m_stone', (0.025, 0.025, 0.028), rough=0.35)
     m_pale = s.mat('m_pale', (0.62, 0.6, 0.56), rough=0.6)
-    s.geo('ground', m_ground, gridSOP, sizex=600, sizey=600, orient='zx', rows=2, cols=2)
-    # name, material, centre, size (w, h, d), rotation
-    slabs = [
-        ('fg_slab', m_stone, (-3.2, 5.5, 21.0), (2.4, 11.0, 0.6), (0, -10, 0)),     # foreground, cropped left
-        ('hero_lean', m_stone, (4.5, 4.3, 0.0), (1.6, 9.0, 0.5), (0, -14, -18)),     # focus plane, leaning
-        ('hero', m_pale, (7.6, 4.0, 2.0), (1.4, 8.0, 0.45), (0, 8, 0)),
-        ('block_a', m_pale, (9.6, 0.8, 4.5), (0.7, 1.6, 0.4), (0, 25, 0)),          # human scale
-        ('block_b', m_stone, (10.7, 0.55, 5.8), (0.5, 1.1, 0.35), (0, -10, 0)),
-        ('mid_l', m_stone, (-11.8, 7.0, -70.0), (2.0, 14.0, 0.6), (0, 6, 0)),      # middle distance, hazy
-        ('mid_r', m_pale, (38.9, 6.0, -60.0), (2.2, 12.0, 0.7), (0, -20, 0)),
-        ('far_l', m_stone, (-29.7, 4.0, -130.0), (1.6, 8.0, 0.5), (0, 10, 0)),     # horizon
-        ('far_r', m_stone, (69.6, 3.0, -120.0), (1.2, 6.0, 0.4), (0, -5, 0)),
-        ('giant', m_stone, (3.4, 27.5, -200.0), (9.0, 55.0, 2.0), (0, 4, 0)),      # half covers the sun
-    ]
-    for nm, m, c, sz, r in slabs:
-        s.box(nm, m, c, sz, r=r)
-    # camera 1.7 m high (eye level) looking slightly up and right of the sun; the sun sits on the left third.
-    # light: rx -3.4 = the HDRI sun elevation, ry 180 = travelling +Z from the sun towards the camera
-    s.camlight((0.0, 1.7, 32.0), (9.0, 4.2, -40.0), (-3.4, 180, 0), dimmer=3.0, fov=40)
-    # into the sun the fog scatters strongly forward: low anisotropy keeps the near slabs dark (silhouettes)
-    # while the distance still fades them (aerial perspective)
-    R = s.render(Envsource='hdri', Envmap='hdri_file', Envintensity=1.0, Background='env', Bgblur=0.0,
-                 Fog=True, Fogdensity=0.008, Fogheightfalloff=0.04, Foganisotropy=0.2, Fogambient=0.15,
-                 Fogdistance=220.0, Dof=True, Focusdistance=31.0, Fstop=2.8, Bloom=0.1, Exposure=-0.8,
-                 Shadowfit=False, Shadowcenterx=4.0, Shadowcentery=0.0, Shadowcenterz=10.0, Shadowrange=80.0)
+    s.geo('ground', m_ground, gridSOP, sizex=1200, sizey=1200, orient='zx', rows=2, cols=2)
+    for side, x in (('l', -4.5), ('r', 4.5)):
+        for k in range(9):
+            z = 22.0 - 14.0 * k
+            lean = (0, 0, -12) if (side == 'r' and k == 2) else (0, 0, 0)      # the one that breaks the row
+            y = 2.9 if lean[2] else 3.0
+            s.box('slab_%s%d' % (side, k), m_stone, (x + (0.6 if lean[2] else 0.0), y, z), (1.4, 6.0, 0.4), r=lean)
+    # the screen: a row of tall slabs across the horizon, the middle one exactly in front of the sun. Their shadows
+    # are vertical sheets running straight at the camera: in the fog they read as rays fanning out from the sun
+    # (crepuscular rays), on the ground as stripes converging on the vanishing point
+    for i in range(9):
+        s.box('screen%d' % i, m_stone, (-40.0 + 10.0 * i, 17.0, -160.0), (5.0, 34.0, 1.0))
+    s.box('block', m_pale, (0.0, 0.3, 20.0), (0.6, 0.6, 0.6), r=(0, 30, 0))
+    # camera 1.2 m high on the axis, pitched up 3.9 deg so the horizon sits on the lower third
+    cam, _ = s.camlight((0.0, 1.2, 40.0), (0.0, 8.0, -60.0), (-3.4, 180, 0), dimmer=3.0, fov=40)
+    cam.par.far = 1500
+    # shafts need the camera in shadow looking at lit fog: low ambient, strong forward scattering, warm albedo;
+    # the shadow map has to reach the screen 200 m away (Shadow Range 130, centred between camera and screen)
+    R = s.render(Envsource='hdri', Envmap='hdri_file', Envintensity=1.0, Background='env', Bgblur=0.03,
+                 Fog=True, Fogdensity=0.01, Fogheightfalloff=0.03, Foganisotropy=0.7, Fogambient=0.02,
+                 Fogcolorr=1.0, Fogcolorg=0.82, Fogcolorb=0.62, Fogres='high',
+                 Fogdistance=320.0, Dof=True, Focusdistance=26.0, Fstop=4.0, Bloom=0.1, Exposure=-2.2,
+                 Shadowfit=False, Shadowcenterx=0.0, Shadowcentery=8.0, Shadowcenterz=-60.0, Shadowrange=130.0)
     return R
 
 
