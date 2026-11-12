@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.7.5。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.7.6。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -410,6 +410,12 @@ BTDR 默认按 OpenGL 约定读取，和 Blender、Tripo 等工具的默认导�
 用新的 `BTDR.tox` 覆盖 Palette 里的旧文件，然后把工程里的 `renderBTDR` 删掉重新拖入。
 已经在工程里的节点不会自动更新；参数要重新设置（只改过几项的话，可以先记下 Version 和改过的参数）。
 当前版本号在节点的 Info 页（0.7.4 以前叫 About 页）。
+
+## 8b. 加密发布（给作者，0.7.6）
+
+想用 TD 的 Privacy（组件隐私密码）隐藏内部实现时，用 `BTDR_Shell.tox`，不要直接给 `BTDR.tox` 加密：加密后的组件不能把内部的 TOP 当作节点预览，节点方块上会是空的。
+
+`BTDR_Shell.tox` 是一个两层的组件：外层 `renderBTDR` 是不加密的壳，上面有全部参数页、三个输出口和节点预览；里层 `core` 是完整的渲染器。做法：把 `BTDR_Shell.tox` 拖进网络 → 进入 `renderBTDR` → 右键 `core` 设置 Privacy 密码 → 回到上一层，右键 `renderBTDR` 另存为 tox 发布。用法和普通版完全一样；壳里只有三个 Out TOP 和一个转发按钮的小脚本，看不到着色器和代码。
 
 ## 9. 许可和素材
 

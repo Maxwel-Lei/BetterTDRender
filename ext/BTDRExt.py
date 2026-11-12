@@ -105,7 +105,7 @@ class BTDRExt:
         # Render flag (0.7.5) refreshes the scene by itself (before 0.7.4 that needed Refresh
         # Scene: a renderer dropped in before the geometry existed stayed empty, and the empty ray-tracing scene
         # showed compile errors). Costs a few ops() lookups twice a second.
-        if self._scene_sig() != getattr(self, 'sig', None):
+        if self.SyncShell() or self._scene_sig() != getattr(self, 'sig', None):
             self.Refresh()
 
     def ShowInfo(self, once=False):
@@ -133,11 +133,46 @@ class BTDRExt:
             except Exception:
                 pass
 
+    # ------------------------------------------------------------------ shell (0.7.6)
+    def _shell(self):
+        # [BTDR:EXT.SHELL] the renderer can sit inside a thin public Base COMP (tools/make_shell.py, tag BTDRshell)
+        # so that the core can be made private (TD Privacy): a private COMP cannot show an inner TOP as its node
+        # viewer, the shell can. The shell carries a copy of every custom parameter; the core's parameters are bound
+        # to them (OP-type ones by expression, so relative paths resolve next to the shell).
+        p = self.ownerComp.parent()
+        return p if (p is not None and 'BTDRshell' in p.tags) else None
+
+    def SyncShell(self):
+        # keep the sequences (Refractive / Blended slots) the same length as the shell's and bind new blocks
+        C = self.ownerComp
+        shell = self._shell()
+        if shell is None:
+            return False
+        changed = False
+        for s in C.seq:
+            if s.name in ('ext', 'iop'):
+                continue
+            t = getattr(shell.seq, s.name, None)
+            if t is not None and s.numBlocks != t.numBlocks:
+                s.numBlocks = t.numBlocks
+                changed = True
+        for p in C.customPars:
+            q = getattr(shell.par, p.name, None)
+            if q is None or p.isPulse:
+                continue
+            if p.style in ('OP', 'OBJ', 'Object', 'TOP', 'COMP', 'SOP', 'CHOP', 'DAT', 'MAT', 'PanelCOMP'):
+                if p.mode != ParMode.EXPRESSION:
+                    p.expr = 'parent().par.%s.eval()' % p.name; p.mode = ParMode.EXPRESSION; changed = True
+            elif p.mode != ParMode.BIND:
+                p.bindExpr = 'parent().par.%s' % p.name; p.mode = ParMode.BIND; changed = True
+        return changed
+
     # ------------------------------------------------------------------ helpers
     def _find(self, pattern, optypes):
         # [BTDR:EXT.RESOLVE] patterns are resolved like the native Render TOP: relative to the network
         # that contains renderBTDR, space separated, wildcards allowed, absolute paths allowed.
-        base = self.ownerComp.parent()
+        shell = self._shell()
+        base = (shell or self.ownerComp).parent()        # [BTDR:EXT.SHELL] inside a shell: the shell's network
         found = []
         for tok in str(pattern).split():
             try:
@@ -145,7 +180,7 @@ class BTDRExt:
             except Exception:
                 hits = []
             for o in hits:
-                if o.OPType in optypes and o not in found and o is not self.ownerComp:
+                if o.OPType in optypes and o not in found and o is not self.ownerComp and o is not shell:
                     found.append(o)
         return found
 
@@ -760,6 +795,7 @@ class BTDRExt:
         """[BTDR:EXT.REFRESH] Re-resolve Camera / Geometry / Lights and rebuild the scene mirror."""
         C = self.ownerComp
         warn = []
+        self.SyncShell()
         self.sig = self._scene_sig()        # first, so a Refresh that fails is not retried twice a second
         cam = C.par.Camera.eval()
         if cam is None or cam.OPType != 'cameraCOMP':
