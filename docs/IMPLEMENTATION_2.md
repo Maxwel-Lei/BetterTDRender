@@ -88,9 +88,9 @@
 38. 自定义序列参数（`page.appendSequence`）**最少 1 块**（`numBlocks = 0` 抛 "Minimum size is 1 block"）；在 appendSequence 之后追加的参数进入块，名字自动变成 `<序列名><序号><小写的基础名>`（追加 `Geo` 得到 `Refr0geo`；追加时写了完整名字会变成 `Refr0refr0geo`），再设 `blockSize`。
 39. GLSL MAT 的输出数可以多于 Render TOP 的颜色缓冲数：多出的 `layout(location = 4)` 被丢弃，不报错（`gbuffer.frag` 同时供 4 缓冲的 `gbuffer` 和 5 缓冲的 `tgbuffer` 使用）。
 40. **GLSL MAT 的采样器引用的 TOP 每帧计算时，MAT 也每帧计算**（实测 `totalCooks` 每帧 +1），和 uniform 数组绑 CHOP 一样。想让材质不重算，材质里就不能引用任何每帧变化的 OP——M1–M6a 的材质都做到了（`GBUF.SHARED`），混合类的前向材质做不到（要读深度、阴影），代价每个约 0.03 ms CPU。
-43. 新建的 GLSL POP 在前几帧（尤其负载重时）输出的属性可能是未初始化的值，经 POP to TOP 进入画面就是负数、NaN 的斑点。读 GLSL POP 结果的地方都要做有限值 / 范围检查（`REFR.RT`）。
-42. PolyReduce SOP 的 Keep % 对低模物体是灾难：6 个面的盒子 15% 只剩 1 个三角形。另外 Keep # 数的是 Pre-Triangulate 之后的三角形（四边形算两个）。SOP 的 `numPrims` 是属性、POP 的 `numPrims()` 是方法，表达式里写错会报 "'int' object is not callable"。（`EXT.RTMINPOLY`）
 41. Sphere SOP 的 Primitive Type 菜单名是 `prim / poly / mesh / nurbs / bezier`：写 `'polygon'` 不报错、保持默认的 `prim`（一个点、一个图元），拿它做实例化源只有 1 个实例。Ramp TOP 的 Circular 模式默认 Extend = Repeat，超过半径的角落会重复出圆环，做柔和的圆形贴图要把 Extend Left / Right 设成 Hold。
+42. PolyReduce SOP 的 Keep % 对低模物体是灾难：6 个面的盒子 15% 只剩 1 个三角形。另外 Keep # 数的是 Pre-Triangulate 之后的三角形（四边形算两个）。SOP 的 `numPrims` 是属性、POP 的 `numPrims()` 是方法，表达式里写错会报 "'int' object is not callable"。（`EXT.RTMINPOLY`）
+43. 新建的 GLSL POP 在前几帧（尤其负载重时）输出的属性可能是未初始化的值，经 POP to TOP 进入画面就是负数、NaN 的斑点。读 GLSL POP 结果的地方都要做有限值 / 范围检查（`REFR.RT`）。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
