@@ -55,4 +55,4 @@ docs/IMPLEMENTATION_2.md §12.
 
 [MIT](LICENSE) © 2026 Xikai Lei. Free for personal and commercial use; keep the copyright notice.
 
-`examples/hdri/kloofendal_43d_clear_2k.hdr` — Poly Haven, CC0 (not covered by the MIT license).
+`examples/hdri/kloofendal_43d_clear_2k.hdr` — Poly Haven, CC0 (not covered by the MIT license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

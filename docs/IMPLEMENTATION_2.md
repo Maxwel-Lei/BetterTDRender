@@ -194,7 +194,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
-| 2026-11-12 | 0.5.1 | 开源：MIT 许可（`LICENSE`，HDRI 另列为 CC0 第三方素材），README 去掉“私有仓库”、加上测试现状和许可；使用手册 §9、发布包 README 写明许可和源码地址；`make_showcase.py` 注释里的本机路径换成占位符 |
+| 2026-11-12 | 0.5.1 | 开源：MIT 许可（`LICENSE` 只放标准 MIT 全文，GitHub 才能识别；HDRI 的 CC0 列在 `THIRD_PARTY_NOTICES.md`），README 去掉“私有仓库”、加上测试现状和许可；使用手册 §9、发布包 README 写明许可和源码地址；`make_showcase.py` 注释里的本机路径换成占位符 |
 | 2026-11-12 | 0.5.1 | 展示工程 `examples/make_showcase.py`：独立文件夹 BetterTDRender（BetterTDRender.toe + BTDR.tox + HDRI + 文档），一个程序化场景加凉棚，4 个预设可切换 / 自动轮播，体积雾预设用逆光（光束只在亮暗的雾交界、暗背景前才看得见）；预设逻辑放在 Text DAT 模块里（不往 storage 存函数，§11 第 37 条）。新坑：`connect(op)` 连到空闲输入时把 0 号输入顶掉了，要用 `inputConnectors[i]` 指定 |
 | 2026-11-12 | 0.5.1 | 全局性能审查（GitHub 私有仓库 `Maxwel-Lei/BetterTDRender` 的 v0.1.0 = 0.5.0）：`uniforms` 缓存 Par 对象（`UNI.PARCACHE`）、`rt_static` 键直接比较元组（`UNI.RTSTATICKEY`）；自动曝光关闭时测光链不计算（`BUILD.AEOFF`）；光照项在 composite 里现算（`COMP.INLINE`，新文件 `lighting_core.glsl`，`lighting` 只给 Debug View）；主光开着原生阴影时 Status 给出提示（`EXT.TIPS`）。demo 场景 CPU 2.13 → 1.94 ms，每帧计算的节点 58 → 50，画面不变（新工具 `tools/ab_compare.py`）。`cpu_profile.py` 只统计每帧都计算的节点。回归测试 39 项、验收 7 项全过。审查中测过但未采用的方案见 §10 |
 | 2026-11-12 | 0.5.0 | M5 发布：示例网络 `BTDR_Example.tox`（`examples/make_example.py`）、验收测试 `tests/m5_acceptance.py`（7 项全过，含 `TEST.COLDSTART`）、发布包 `release/BTDR_0.5.0.zip`（`tools/make_release.py`）。使用手册改成纯用户手册：五分钟上手、性能建议、素材建议；开发内容（演示场景、回归测试、构建）移到 §11c。修复：渲染器第一次被拉取时 SSR / SSGI 读到未初始化的 Feedback 历史，画面满是彩色亮点（`SS.HISTRESET`，§11 第 32 条）。Quality = Low 时 Bloom 少算两级（`BUILD.BLOOMLOW`）。旧管线 `ue5r/` 归档到工程目录 `archive/`，工程里的 `/project1/ue5r` 删除。回归测试 39 项全过 |
