@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）实现参考 · 第 2 份
 
-第 1 份 `IMPLEMENTATION.md`（§0–§9d，含维护规则）。本份：性能、已知的坑、测试、开发者流程、尚未实现、变更记录。
+第 1 份 `IMPLEMENTATION.md`（§0–§9b，含维护规则）、第 1b 份 `IMPLEMENTATION_1b.md`（§9c–§9e）。本份：性能、已知的坑、测试、开发者流程、尚未实现、变更记录。
 
 ## 10. 性能（5080 Laptop，1080p，示例场景，Quality = High）
 

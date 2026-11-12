@@ -9,7 +9,7 @@
 - 硬件光追（简化版 Lumen）：探针全局光照和光追反射，画面外、被挡住的东西也参与反射和间接光
 - 透明与折射（0.6.0）：玻璃、水、冰、宝石、磨砂玻璃，真实的折射、按厚度变深的颜色和菲涅尔反射；Alpha 测试镂空
 
-想了解内部实现，看 `IMPLEMENTATION.md` 和 `IMPLEMENTATION_2.md`（面向开发者）。
+想了解内部实现，看 `IMPLEMENTATION.md`、`IMPLEMENTATION_1b.md` 和 `IMPLEMENTATION_2.md`（面向开发者）。
 
 ## 1. 运行环境
 

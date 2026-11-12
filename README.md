@@ -33,7 +33,7 @@ Ray tracing needs an RTX 20 series or newer card and switches itself off otherwi
 | File | For |
 |---|---|
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Users: quick start, every parameter, performance tips |
-| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | Maintainers: structure, anchors `[BTDR:XXX]`, every pass (§0–§9d) |
+| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) · [1b](docs/IMPLEMENTATION_1b.md) | Maintainers: structure, anchors `[BTDR:XXX]`, every pass (§0–§9e) |
 | [docs/IMPLEMENTATION_2.md](docs/IMPLEMENTATION_2.md) | Maintainers: performance, pitfalls, tests, developer workflow, changelog (§10–§13) |
 
 ## Layout
