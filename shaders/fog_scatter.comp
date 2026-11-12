@@ -66,7 +66,10 @@ void main()
     // [BTDR:FOG.JITTER] a different random point inside the froxel every frame (all three axes); fog_accum.comp
     // ([BTDR:FOG.ACCUM]) averages them, which smooths both the noise and the froxel steps of light shafts
     vec2 hk = vec2(gid.xy) + float(gid.z) * 97.0 + uFrame.x * 13.1;
-    vec3 j = (vec3(hash12(hk), hash12(hk + 41.7), hash12(hk + 83.3)) - 0.5) * uGI.w;   // Fog Jitter
+    // 0.7.3: Fog Jitter scales only the screen-plane part. The depth part always spans the whole slice: a slice is
+    // tens of centimetres thick, thinner light sheets (blinds) alias against the slices when only part of each
+    // slice is sampled, and the moire shows as broad diagonal bands across the fog that do not follow the light
+    vec3 j = (vec3(hash12(hk), hash12(hk + 41.7), hash12(hk + 83.3)) - 0.5) * vec3(uGI.w, uGI.w, 1.0);
     float rnd = hash12(hk.yx + 17.3);
     vec3 uvw = (vec3(gid) + 0.5 + j) / vec3(sz);
     vec2 ndc = uvw.xy * 2.0 - 1.0;
