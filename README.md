@@ -3,11 +3,15 @@
 A single TouchDesigner operator, `renderBTDR`, that renders like Unreal Engine 5's defaults:
 a deferred pipeline with PBR (native PBR MAT), soft shadows, studio / HDRI image-based lighting,
 TAA, bloom, auto exposure, depth of field, motion blur, screen-space AO / bounce light / reflections,
-volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplified Lumen), and — new in 0.6.0 —
-**refraction**: glass, water, ice, gems and frosted glass with measured thickness, absorption and Fresnel
-(drag a Geometry COMP into a Refractive slot, or just give its PBR MAT an alpha below 1).
+volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplified Lumen), and transparency:
+- **refraction** (0.6.0): glass, water, ice, gems and frosted glass with measured thickness, absorption and Fresnel
+  (drag a Geometry COMP into a Refractive slot, or just give its PBR MAT an alpha below 1);
+- **blended transparency** (0.7.0): smoke, sprites, holograms and particles, lit and shadowed, alpha or additive,
+  with soft particles and sorted or order-independent (depth-peeled) blending (Blended slot, or a PBR MAT with
+  Blending + an alpha map).
 
 ![refraction test scene: glass ball, frosted panel, tinted cube, water block](docs/images/m6_refraction.jpg)
+![blended transparency test scene: smoke cards, additive sparks, hologram, glass ball](docs/images/m6b_blended.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
@@ -15,7 +19,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.6.0** (M6a transparency; design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.7.0** (M6a refraction + M6b blended transparency; design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 

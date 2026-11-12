@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）实现参考（第 1b 份）
 
-第 1 份 `IMPLEMENTATION.md`（§0–§9b，含维护规则和锚点约定）。本份：§9c M3 屏幕空间间接光和体积雾、§9d M4 硬件光追、§9e M6a 透明与折射。第 2 份 `IMPLEMENTATION_2.md`（§10–§13）。
+第 1 份 `IMPLEMENTATION.md`（§0–§9b，含维护规则和锚点约定）。本份：§9c M3 屏幕空间间接光和体积雾、§9d M4 硬件光追、§9e M6a 透明与折射、§9f M6b 混合透明。第 2 份 `IMPLEMENTATION_2.md`（§10–§13）。
 
 ## 9c. M3：屏幕空间间接光和体积雾（0.3.0）
 
@@ -116,5 +116,37 @@
 **旁路**：`trans_src` / `tpos_src` / `tnrm_src` 的表达式 `Transparency and Transcount > 0`。为 0 时 `refract`、`tgbuffer`、`tback` 都不被拉取。实测：A/B 和 0.5.1 比（示例网络，没有透明物体）最终画面平均差 0.00000，99.9% 分位 0.00012，只有 0.004% 的像素差超过 1/255。
 
 **还没做（M6a 剩余）**：3 个 Debug View（透明层、厚度、折射偏移）、材质库 tox、拖到节点方块上自动建槽、Quality Low 半分辨率、把 RT4 打包进 RT0.a / RT2.a（省一个 Render Select）、镂空物体在阴影里也镂空。
+
+## 9f. M6b：混合透明（0.7.0）
+
+烟雾、贴片、全息、粒子：不折射、半透明叠加的物体。做法同 UE5 的前向半透明，设计见 `M6_TRANSPARENCY.md` §4。
+
+**分类（`EXT.SLOTS`、`EXT.TRANSCLASS`）**
+- 第二个序列参数 `Blend`：每块 4 个参数（`Blend<i>geo / mode / lit / soft`）。两种槽按 Refractive → Blended 的顺序解析，一个物体以第一个匹配的槽为准。
+- 自动识别：PBR MAT 开 Blending 且有 Alpha 贴图 → 混合类（0.6.0 这种情况按折射类画并警告）。
+- 页面上普通参数（`Blendcount`、`Blendmethod`、`Peellayers`、`Softdist`、`Glassdim`）都放在两个序列之前：序列之后追加的参数会进它的块（§11 第 38 条）。
+
+**镜像和材质（`EXT.FWDMAT`、`EXT.FWDSTATE`）**
+- 混合类镜像命名 `scene/b<i>`，只被 `tblend` 画；不进阴影列表、不进光追代理。
+- 材质 = `gbuffer.vert` + `forward.frag`。uniform `uBase / uEmit / uChan / uTrans / uTrans2` 读 PBR MAT（也支持 Constant MAT：颜色当自发光），`uBlend` = 受光、软粒子距离、叠加、玻璃后压暗，都是表达式。
+- 混合状态：Blending 开，src = one、dst = one minus src alpha（预乘），Post-Multiply Alpha 关，Cull Face = Neither（贴片两面可见），Sorted 时不写深度，Order Independent 时写深度（`depthwriting` 表达式）。
+
+**每帧数据（`FWD.UB`、`BUILD.FWDUB`）**
+- 材质着色器需要相机、太阳、阴影相机、环境、近裁剪等每帧数据。`ub_tex` = `uniforms` 的 CHOP to TOP（40×1，rgba32float，r/g/b/a = 通道 0–3，已逐值验证）；`forward.frag` 构建时 `uniform vec4 uB[40]` 被换成 `uniform sampler2D sUB` + `loadUB()`（只读前 20 个槽，`FWD_SLOTS`），`common.glsl` 的宏原样可用。
+- 本来以为"采样器引用的 TOP 变化不会让 MAT 重新计算"，实测会：混合类材质每帧计算一次（每个约 0.03 ms CPU），和用 uniform 数组一样。保留纹理方式是因为材质读的另外几张图（`gbuf2`、`tpos_src`、`shadow_src`）本来就每帧变化。M6a 的折射类和不透明材质不受影响（§11 第 40 条）。
+
+**`forward.frag`（`FWD.*`）**
+- `FWD.SOFT`：自己做深度测试——读不透明位置 `gbuf2`，片元视深大于不透明表面就 discard；按 `(不透明视深 − 片元视深) / 软粒子距离` 和到近裁剪面的距离淡出（软粒子）。片元在折射层（`tpos_src`）后面时乘 `Glassdim`：只有前景一层折射，后面的混合类不折射、只压暗。
+- `FWD.LIGHT`：无方向光照（UE5 Volumetric NonDirectional）：环境 = 法线两侧辐照度的平均，太阳 = 颜色 × 强度 × `FWD.SHADOW` × (0.5 + 0.5|N·L|) / π。不受光时只输出自发光。
+- `FWD.SHADOW`：8 点 PCF 查 BTDR 的阴影图（同 `LIGHT.SHADOW` 的映射，不做遮挡体搜索）。
+- 不透明度 = `alphafront` × Alpha 贴图（RGB 读 r）× Base Color Map 的 alpha。输出：Alpha 模式 (rgb·a, a)，叠加模式 (rgb·a, 0)；两种模式用同一个混合状态，可以在同一个 Render TOP 里画。
+- 开头调用 `TDCheckDiscard()`、`TDCheckOrderIndTrans()`（Render TOP 的 Order Independent 模式需要）。
+
+**渲染和合成（`BUILD.BLEND`、`FWD.COMP`）**
+- `tblend`：Render TOP，相机 `cam_jit`（同 G-Buffer 的抖动），几何体 `scene/b*`，1 个 rgba16float 缓冲，背景 (0,0,0,0)；Transparency = `sortedblending` 或 `orderind`（Blend Method），Transparency Peel Layers 跟随 Peel Layers。TD 的"顺序无关"模式就是深度剥离。
+- `blend_comp`：`画面 × (1 − a) + rgb`，NaN 保护。接在 `refract` 之后、体积雾和 TAA 之前；`blend_src` 的表达式 `Transparency and Blendcount > 0`，为 0 时 `tblend`、`blend_comp`、`ub_tex` 都不被拉取。
+- TAA 用的位置仍是不透明 / 折射层的：混合类在运动时略有拖影（UE5 同样）。SSR、SSGI 读的上一帧画面里有混合类，所以地面能反射出火花。
+
+**实测**：A/B 和 0.6.0 比（示例网络，没有混合类）最终画面平均差 0.00000，0.001% 的像素差超过 1/255。测试场景（7 张烟雾贴片 + 362 个实例化火花 + 全息盒）：`tblend` CPU 0.22 / GPU 0.21 ms，`ub_tex` CPU 0.08，3 个混合类材质各约 0.03，`blend_comp` 0.03 / 0.03；合计 CPU 约 +0.45 ms、GPU 约 +0.25 ms。
 
 （§10 起见 `IMPLEMENTATION_2.md`。）

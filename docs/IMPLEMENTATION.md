@@ -10,7 +10,7 @@
 - **源码是文件，`.tox` 是产物**：只改 `btdr/shaders/` 和 `btdr/ext/`，然后跑 `build.py`。不要直接改 `.tox` 里的节点。
 - **改完必须验证**：`tests/m1_tests.py` → `out/m1_tests.txt` 第一行 `STATUS PASS`；`build.py` → `out/build_log.txt` 第一行 `STATUS DONE`；`examples/demo_scene.py` → `out/demo_log.txt` 第一行 `STATUS DONE` 且没有 `ERR` / `--- compile` 行；看 `out/demo.jpg`。发布前再跑 `examples/make_example.py`（重新生成 `BTDR_Example.tox`）和 `tests/m5_acceptance.py`（`out/m5_acceptance.txt` 第一行 `STATUS PASS`）。开发者流程（构建、测试、示例、发布打包）见 §11c。
 - **文档跟着代码走**：行为、默认值、限制有变化时，同一轮里更新 `USER_GUIDE.md` 和本文件，并在 `IMPLEMENTATION_2.md` 的"变更记录"加一行。
-- **本文件分三份**（单个文件超过约 40 KB 时读取会被截断）：本文件是 §0–§9b（维护规则、结构、G-Buffer 到 M2 的各 pass）；`IMPLEMENTATION_1b.md` 是 §9c–§9e（M3 屏幕空间间接光和雾、M4 光追、M6 透明）；`IMPLEMENTATION_2.md` 是 §10–§13（性能、已知的坑、测试、尚未实现、变更记录）。章节号连续，引用 "§9d"、"§11" 等时到对应的那份找。任何一份接近 40 KB 时再拆。
+- **本文件分三份**（单个文件超过约 40 KB 时读取会被截断）：本文件是 §0–§9b（维护规则、结构、G-Buffer 到 M2 的各 pass）；`IMPLEMENTATION_1b.md` 是 §9c–§9f（M3 屏幕空间间接光和雾、M4 光追、M6 透明）；`IMPLEMENTATION_2.md` 是 §10–§13（性能、已知的坑、测试、尚未实现、变更记录）。章节号连续，引用 "§9d"、"§11" 等时到对应的那份找。任何一份接近 40 KB 时再拆。
 - 提交文件到设备时，同一个本地暂存路径重复提交有时不生效；每次用新的暂存文件名（放在 `btdr/stage/`）。
 
 ## 1. 文件结构
@@ -29,6 +29,8 @@ btdr/
   tests/m1_tests.py       回归测试：39 项检查（M1–M4），结果写 out/m1_tests.txt
   tests/m6_scene.py       M6 透明测试场景 /project1/m6_test（玻璃球、磨砂板、有色方块、水块、薄窗）
   tests/m6_tests.py       M6 透明检查（§11b-3），结果写 out/m6_tests.txt
+  tests/m6b_scene.py      M6b 混合透明测试场景 /project1/m6b_test（烟雾贴片、叠加火花、全息、玻璃球）
+  tests/m6b_tests.py      M6b 混合透明检查（§11b-4），结果写 out/m6b_tests.txt
   tests/m5_acceptance.py  验收：按使用手册 §2.2 从空网络搭场景 + 示例冷启动检查，结果写 out/m5_acceptance.txt
   tools/make_release.py   打发布包 release/BTDR_<版本>.zip（§11c）
   tools/perf_bench.py     性能测量（逐渲染器），结果写 out/perf_bench.txt
@@ -72,9 +74,11 @@ gbuf0..3 + shadow_src + env_src + ssgi_src + ssr_src + hf_src + rt_src + env_atl
 scene/t* ─▶ tgbuffer (5 个颜色缓冲) ─▶ tgbuf0..4;  scene/t* ─▶ tback (剔除正面) ─▶ tback1/2      （M6a，§9e）
 composite + gbuf2 + gbuf1 + tgbuf0..4 + tback2/1 + shadow_src + env_src + env_atlas ─▶ refract (3 个输出) ─▶ refract1/2
 trans_src (Switch: composite / refract)、tpos_src (gbuf2 / refract1)、tnrm_src (gbuf1 / refract2)：没有透明物体时都在左边
+uniforms ─▶ ub_tex (CHOP to TOP, 40×1);  scene/b* ─▶ tblend (前向材质，预乘)       （M6b，§9f）
+trans_src + tblend ─▶ blend_comp;  blend_src (Switch: trans_src / blend_comp)
 shadow_src + env_src + env_atlas ─▶ fog_scatter (3D 计算) ─▶ fog_accum (3D 计算) ◀─ fog_hist (Feedback, Target TOP = fog_accum)
 fog_accum ─▶ fog_integrate (3D 计算)
-trans_src + tpos_src + fog_integrate ─▶ fog_apply;  fog_src (Switch: trans_src / fog_apply)
+blend_src + tpos_src + fog_integrate ─▶ fog_apply;  fog_src (Switch: blend_src / fog_apply)
 fog_src + tpos_src + tnrm_src ─▶ taa ◀─ taa_hist (Feedback, Target TOP = taa, 输入接 gbuf0 只用来定尺寸)
 taa ─▶ post_dof (Switch: taa / dof) ─▶ post_mb (Switch: 上一级 / mblur) ═▶ out2 (HDR，alpha = 视深)
 post_mb ─▶ bloom_pre (½) ─▶ bloom_d1 (¼) ─▶ … ─▶ bloom_d6 (1/128) ─▶ bloom_u5 ─▶ … ─▶ bloom_u0 (½)；bloom_src (Switch: bloom_off / bloom_u0)
@@ -131,6 +135,7 @@ composite 接 rt_src（2D 第 9 个）和 probe_src0..3（3D 1–4）；debug �
 | `BUILD.RTPARS` | Ray Tracing 页（M4） |
 | `BUILD.RT` / `BUILD.RTPROBES` / `BUILD.RTREFL` / `BUILD.RTAS` | M4 光追：`rtscene`、两个 GLSL POP、POP to TOP、Switch、累积；加速结构的构建方式（§9d） |
 | `BUILD.TRANSPARS` / `BUILD.TRANS` | M6a：Transparency 页（含序列参数 `Refr`，每块 8 个参数）；`tgbuffer`、`tback`、`refract` 和三个 Switch（§9e） |
+| `BUILD.BLEND` / `BUILD.FWDUB` | M6b：`ub_tex`、`tblend`、`blend_comp`、`blend_src`；前向材质着色器把 `uB` 数组换成纹理读取（§9f） |
 
 构建流程：在 `/project1/btdr_build` 里生成 `renderBTDR` → 存成 `release/BTDR.tox` → 复制到 Palette → 删掉构建副本。tox 不引用任何外部文件（已验证：从 Palette 载入后没有 DAT 的 File 参数指向外部）。
 注意：脚本新建的 GLSL TOP / GLSL MAT 会自带几个停靠的模板 DAT，`undock()` 把它们删掉，否则会被存进 `.tox`。
@@ -199,6 +204,7 @@ composite 接 rt_src（2D 第 9 个）和 probe_src0..3（3D 1–4）；debug �
 | `EXT.SHADOWWATCH` / `EXT.CASTERS` | 阴影缓存要监视的对象；投射阴影的物体列表（见下） |
 | `EXT.RTPROXY` / `EXT.RTMAT` / `EXT.RTGRID` | M4：光追代理链、每物体材质表、探针网格范围（§9d） |
 | `EXT.SLOTS` / `EXT.TRANSCLASS` / `EXT.TRANSSPLIT` / `EXT.TRANSMAT` / `EXT.TRANSSHADOW` / `EXT.REFRPRESET` | M6a：透明槽解析、透明分类、镜像分流到 `scene/t*`、材质的透明 uniform、玻璃不投影、预设（§9e） |
+| `EXT.FWDMAT` / `EXT.FWDSTATE` | M6b：混合类的前向材质（`forward.frag`）和它的混合状态（§9f） |
 | `EXT.TIPS` | 0.5.1：不算问题、但白白耗时的场景设置，写进 Status（不加警告标记）和 `status` DAT（`tip:` 开头），`status` 存储里是 `tips`。目前一条：主光开着原生阴影（Shadow Type ≠ Off） |
 
 ### 场景镜像（`EXT.MIRROR`）
@@ -339,4 +345,4 @@ Cache TOP 不激活（Active 关）时不拉取输入，`shadow` 就不再重画
 - `AE.ADAPT`：1×1 的 `ae_exposure` 读自己的上一帧（Feedback `ae_hist`），在 log2 空间按帧时长指数逼近目标曝光 = 目标灰 / clamp(测光亮度, 2^Min EV, 2^Max EV)；画面变亮、变暗用不同速度。打开自动曝光的那一帧（重置标志）直接跳到目标值。关闭时输出 1 倍。输出 r = log2 曝光、g = 曝光倍数、b = 测光亮度。
 - 示例场景测光亮度约 0.16，和目标灰 0.18 接近，所以开自动曝光后画面只亮约 15%；对暗场景 / 亮场景的效果更明显。
 
-（§9c–§9e 见 `IMPLEMENTATION_1b.md`，§10 起见 `IMPLEMENTATION_2.md`。）
+（§9c–§9f 见 `IMPLEMENTATION_1b.md`，§10 起见 `IMPLEMENTATION_2.md`。）

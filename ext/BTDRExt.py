@@ -122,15 +122,76 @@ class BTDRExt:
         self._bind_material(m, src, warn, tr)
         return m
 
-    # ------------------------------------------------------------------ transparency (M6a)
-    def _slots(self):
-        """[BTDR:EXT.SLOTS] the Refractive slots of the Transparency page: [(index, geometry pattern), ...]"""
+    def _new_forward_material(self, scene, name, src, warn, slot):
+        """[BTDR:EXT.FWDMAT] M6b: forward-lit material of a blended mirror (forward.frag, premultiplied output).
+        Per-frame data comes in through textures (uniform block `ub_tex`, positions, shadow, environment), so the
+        material does not re-cook every frame ([BTDR:FWD.UB])."""
+        C = self.ownerComp
+        m = scene.create(glslMAT, name)
+        m.par.vdat = C.op('gbuffer_vert')
+        m.par.pdat = C.op('forward_frag')
+        for d in list(m.docked):
+            d.destroy()
+        white = "parent.BTDR.op('white')"
+        S = "op('%s')" % src.path if src is not None else None
+        tex = lambda par: "%s.par.%s.eval() or %s" % (S, par, white)
+        base, emit, chan = (0.5, 0.5, 0.5, 1), (0, 0, 0, 0), (1, 1, 1, SRGB)
+        trans, trans2 = (1, 0, 0, 0), (0, 0, 0, 0)
+        maps = dict(sBaseColor=white, sAlpha=white, sEmit=white)
+        if src is not None and src.OPType == 'pbrMAT':
+            base = tuple('%s.par.basecolor%s' % (S, c) for c in 'rgb') + (1,)
+            emit = tuple('%s.par.emit%s' % (S, c) for c in 'rgb') + ('1 if %s.par.emitmap.eval() else 0' % S,)
+            maps = dict(sBaseColor=tex('basecolormap'), sAlpha=tex('alphamap'), sEmit=tex('emitmap'))
+            trans = ('%s.par.alphafront' % S, 0, 0, 0)
+            trans2 = ('1 if %s.par.alphamap.eval() else 0' % S, 0, 0, 0)
+        elif src is not None and src.OPType == 'constantMAT':
+            emit = tuple('%s.par.color%s' % (S, c) for c in 'rgb') + (0,)
+            base = (0, 0, 0, 1)
+            maps['sBaseColor'] = tex('colormap')
+            trans = ('%s.par.alpha' % S, 0, 0, 0) if hasattr(src.par, 'alpha') else trans
+        elif src is not None:
+            warn.append('%s (%s): blended objects read PBR MAT or Constant MAT; using grey.' % (src.path, src.OPType))
+        if slot is None:
+            blend = (1, 'parent.BTDR.par.Softdist', 0, 'parent.BTDR.par.Glassdim')
+        else:
+            P = 'parent.BTDR.par.Blend%d' % slot
+            blend = ('1 if %slit else 0' % P,
+                     '(%ssoft.eval() if %ssoft.eval() >= 0 else parent.BTDR.par.Softdist.eval())' % (P, P),
+                     "1 if %smode == 'additive' else 0" % P, 'parent.BTDR.par.Glassdim')
+        self._vecs(m, [('uBase', base), ('uEmit', emit), ('uChan', chan), ('uTrans', trans), ('uTrans2', trans2),
+                       ('uBlend', blend)])
+        P = "parent.BTDR.op('%s')"
+        self._samplers(m, list(maps.items()) + [('sUB', P % 'ub_tex'), ('sOpaquePos', P % 'gbuf2'),
+                       ('sFrontPos', P % 'tpos_src'), ('sShadow', P % 'shadow_src'), ('sEnvSharp', P % 'env_src'),
+                       ('sEnvAtlas', P % 'env_atlas')])
+        # ub_tex / positions must be read exactly (no filtering between texels); maps keep the default filtering
+        for i in range(m.seq.sampler.numBlocks):
+            nm = getattr(m.par, 'sampler%dname' % i).eval()
+            if nm in ('sUB', 'sOpaquePos', 'sFrontPos'):
+                f = getattr(m.par, 'sampler%dfilter' % i, None)
+                if f is not None:
+                    try: f.val = 'nearest'
+                    except Exception: pass
+        # [BTDR:EXT.FWDSTATE] premultiplied blending, no depth writes (Sorted); the Render TOP's Order Independent mode
+        # depth-peels on its own
+        m.par.blending = True
+        m.par.srcblend = 'one'; m.par.destblend = 'omsa'
+        m.par.postmultalpha = False
+        m.par.depthwriting.expr = "parent.BTDR.par.Blendmethod == 'orderind'"
+        try: m.par.cullface = 'neither'          # two-sided cards
+        except Exception: pass
+        return m
+
+    # ------------------------------------------------------------------ transparency (M6a / M6b)
+    def _slots(self, seq='Refr'):
+        """[BTDR:EXT.SLOTS] the Refractive (Refr) or Blended (Blend) slots of the Transparency page:
+        [(index, geometry pattern), ...]"""
         C = self.ownerComp
         try:
-            n = C.seq.Refr.numBlocks
+            n = getattr(C.seq, seq).numBlocks
         except Exception:
             return []
-        return [(i, str(getattr(C.par, 'Refr%dgeo' % i).eval() or '').strip()) for i in range(n)]
+        return [(i, str(getattr(C.par, '%s%dgeo' % (seq, i)).eval() or '').strip()) for i in range(n)]
 
     def _slot_exprs(self, slot):
         if slot is None:
@@ -146,38 +207,43 @@ class BTDRExt:
         on = bool(C.par.Transparency.eval())
         slot_of = {}
         extra = []
-        for i, pat in self._slots():
-            if not pat:
-                continue
-            hits = self._find(pat, ('geometryCOMP',))
-            if not hits:
-                warn.append('Refractive slot %d: nothing matches "%s".' % (i + 1, pat))
-            for g in hits:
-                if g.path in slot_of:
-                    warn.append('%s is in Refractive slots %d and %d: slot %d is used.' % (g.path, slot_of[g.path] + 1, i + 1, slot_of[g.path] + 1))
+        label = dict(Refr='Refractive', Blend='Blended')
+        for seq in ('Refr', 'Blend'):
+            for i, pat in self._slots(seq):
+                if not pat:
                     continue
-                slot_of[g.path] = i
-                if g not in geos and g not in extra:
-                    extra.append(g)
+                hits = self._find(pat, ('geometryCOMP',))
+                if not hits:
+                    warn.append('%s slot %d: nothing matches "%s".' % (label[seq], i + 1, pat))
+                for g in hits:
+                    if g.path in slot_of:
+                        s0, i0 = slot_of[g.path]
+                        warn.append('%s is in %s slot %d and %s slot %d: the first is used.' % (g.path, label[s0], i0 + 1, label[seq], i + 1))
+                        continue
+                    slot_of[g.path] = (seq, i)
+                    if g not in geos and g not in extra:
+                        extra.append(g)
         geos = list(geos) + extra
         info = []
         for g in geos:
             d = dict(kind='opaque', slot=None, cast=True, inrt=True)
             if on and g.path in slot_of:
-                i = slot_of[g.path]
-                d.update(kind='refr', slot=i, cast=getattr(C.par, 'Refr%dshadow' % i).eval() == 'opaque',
-                         inrt=bool(getattr(C.par, 'Refr%dinrt' % i).eval()))
+                seq, i = slot_of[g.path]
+                if seq == 'Refr':
+                    d.update(kind='refr', slot=i, cast=getattr(C.par, 'Refr%dshadow' % i).eval() == 'opaque',
+                             inrt=bool(getattr(C.par, 'Refr%dinrt' % i).eval()))
+                else:
+                    d.update(kind='blend', slot=i, cast=False, inrt=False)
             elif on:
                 m = g.par.material.eval()
                 if m is not None and m.OPType == 'pbrMAT':
                     try:
                         if m.par.alphatest.eval():
                             pass                 # alpha test = opaque cut-out ([BTDR:GBUF.ALPHA])
+                        elif m.par.blending.eval() and m.par.alphamap.eval() is not None:
+                            d.update(kind='blend', cast=False, inrt=False)    # sprite / smoke card ([BTDR:FWD.*])
                         elif m.par.alphafront.eval() < 0.999 or m.par.alphamap.eval() is not None:
                             d.update(kind='refr', cast=False, inrt=False)
-                            if m.par.blending.eval() and m.par.alphamap.eval() is not None:
-                                warn.append('%s looks like a blended (sprite) material: blended transparency comes in M6b, '
-                                            'drawn as refractive for now.' % g.path)
                     except Exception:
                         pass
             info.append(d)
@@ -211,7 +277,8 @@ class BTDRExt:
         for i, src in enumerate(geos):
             # [BTDR:EXT.TRANSSPLIT] refractive objects become scene/t<i>: not drawn by `gbuffer` (scene/g*), drawn by
             # `tgbuffer` / `tback` (scene/t*)
-            g = scene.create(geometryCOMP, ('t%d' if info[i]['kind'] == 'refr' else 'g%d') % i)
+            # blended objects become scene/b<i>, drawn by `tblend` with the forward material
+            g = scene.create(geometryCOMP, dict(refr='t%d', blend='b%d').get(info[i]['kind'], 'g%d') % i)
             for c in list(g.children):
                 c.destroy()
             g.nodeX, g.nodeY = 200, -i * 120
@@ -239,7 +306,10 @@ class BTDRExt:
             slot = info[i].get('slot')
             key = (msrc.path if msrc is not None else '', info[i]['kind'], slot)
             if key not in mats:
-                mats[key] = self._new_material(scene, 'm%d' % len(mats), msrc, warn, self._slot_exprs(slot))
+                if info[i]['kind'] == 'blend':
+                    mats[key] = self._new_forward_material(scene, 'm%d' % len(mats), msrc, warn, slot)
+                else:
+                    mats[key] = self._new_material(scene, 'm%d' % len(mats), msrc, warn, self._slot_exprs(slot))
                 mats[key].nodeX, mats[key].nodeY = 0, -(len(mats) - 1) * 120
             g.par.material = mats[key]
             # [BTDR:EXT.INSTANCING] every parameter of the Instance pages follows the source by expression;
@@ -452,13 +522,15 @@ class BTDRExt:
                 low = min(o[1] for o in others)
                 size = max(max(o[3] for o in others) - min(o[0] for o in others), max(o[4] for o in others) - low, 1e-6)
                 ground = (b[4] - b[1]) < 0.02 * w and b[4] <= low + 0.01 * size
+            if info is not None and info[i]['kind'] == 'blend':
+                continue                     # blended objects never cast ([BTDR:FWD.*])
             refr = info is not None and info[i]['kind'] == 'refr'
             if refr and not info[i]['cast']:
                 continue                     # [BTDR:EXT.TRANSSHADOW] glass casts no shadow unless its slot says Opaque
             if not ground:
                 casters.append(('scene/t%d' if refr else 'scene/g%d') % i)
         sh = self.ownerComp.op('shadow')
-        nopaque = sum(1 for d in (info or [dict(kind='opaque')] * len(geos)) if d['kind'] != 'refr')
+        nopaque = sum(1 for d in (info or [dict(kind='opaque')] * len(geos)) if d['kind'] == 'opaque')
         allg = len(casters) == nopaque == len(geos)
         sh.par.geometry = 'scene/g*' if allg else (' '.join(casters) or 'none')
         self.ownerComp.store('shadow_casters', casters)
@@ -550,7 +622,8 @@ class BTDRExt:
         n = self._mirror(geos, warn, info)
         ntr = sum(1 for d in info if d['kind'] == 'refr')
         C.par.Transcount = ntr
-        nrt = self._rt_build([g for g, d in zip(geos, info) if d['kind'] != 'refr' or d['inrt']], warn)
+        C.par.Blendcount = sum(1 for d in info if d['kind'] == 'blend')
+        nrt = self._rt_build([g for g, d in zip(geos, info) if d['kind'] == 'opaque' or (d['kind'] == 'refr' and d['inrt'])], warn)
         C.par.Rtavailable = True              # re-tested by `uniforms` ([BTDR:UNI.RTCHECK])
         if C.par.Shadowfit.eval():
             fit = self._fit_shadow(geos)

@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.6.0'
+VERSION = '0.7.0'
 BLOG = []
 
 def _read(rel):
@@ -16,6 +16,9 @@ MAT_SHADERS = ('gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag')
 
 # shaders that render into a 3D texture read the uniforms from a texture buffer ([BTDR:BUILD.TBUF])
 TBUF_SHADERS = ['fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp']
+# the forward material of blended transparency reads the uniforms from a 40 x 1 texture ([BTDR:BUILD.FWDUB])
+FWD_SHADERS = ['forward.frag']
+FWD_SLOTS = 20                  # slots 0..19 are all the forward material needs (camera, sun, environment, clip)
 
 def _shader(name):
     # [BTDR:BUILD.SHADER] common.glsl is prepended (material shaders are self-contained);
@@ -34,6 +37,14 @@ def _shader(name):
         common = common.replace('uniform vec4 uB[%s];' % n,
                                 'uniform samplerBuffer uBbuf;\nvec4 uB[%s];\n'
                                 'void loadUB() { for (int i = 0; i < %s; i++) uB[i] = texelFetch(uBbuf, i); }' % (n, n))
+    if name in FWD_SHADERS:
+        # [BTDR:BUILD.FWDUB] a GLSL MAT with a uniform array bound to the per-frame CHOP would re-cook every frame;
+        # a sampler whose TOP changes does not ([BTDR:FWD.UB]). main() calls loadUB() first.
+        n = re.search(r'uniform vec4 uB\[(\d+)\];', common).group(1)
+        common = common.replace('uniform vec4 uB[%s];' % n,
+                                'uniform sampler2D sUB;\nvec4 uB[%s];\n'
+                                'void loadUB() { for (int i = 0; i < %d; i++) uB[i] = texelFetch(sUB, ivec2(i, 0), 0); }'
+                                % (n, FWD_SLOTS))
     return common + '\n' + src
 
 def _menu(par, cands):
@@ -232,6 +243,14 @@ def build_btdr(dest, name='renderBTDR'):
     p = setup(pg.appendInt('Transcount', label='Transparent Objects')[0], 0); p.readOnly = True
     setup(pg.appendFloat('Defaultior', label='Default IOR')[0], 1.5, 1.0, 3.0, True)
     setup(pg.appendFloat('Absorbdist', label='Absorption Distance')[0], 1.0, 0.01, 10, True)
+    # M6b blended transparency globals ([BTDR:FWD.*]); custom parameters appended after a sequence join its block,
+    # so every plain parameter of the page comes before the two sequences
+    p = setup(pg.appendInt('Blendcount', label='Blended Objects')[0], 0); p.readOnly = True
+    menu(pg.appendMenu('Blendmethod', label='Blend Method')[0], ['sorted', 'orderind'],
+         ['Sorted', 'Order Independent (Depth Peeling)'], 'sorted')
+    p = setup(pg.appendInt('Peellayers', label='Peel Layers')[0], 4, 2, 8, True); p.enableExpr = "me.par.Blendmethod == 'orderind'"
+    setup(pg.appendFloat('Softdist', label='Soft Particles Distance')[0], 0.1, 0.0, 2.0, True)
+    setup(pg.appendFloat('Glassdim', label='Behind Glass Dimming')[0], 0.75, 0.0, 1.0, True, True)
     sq = pg.appendSequence('Refr', label='Refractive')
     setup(pg.appendStr('Geo', label='Geometry')[0], '')
     menu(pg.appendMenu('Preset', label='Preset')[0],
@@ -247,6 +266,16 @@ def build_btdr(dest, name='renderBTDR'):
         C.seq.Refr.blockSize = 8       # a sequence keeps at least one block: an empty slot is ignored
     except Exception as e:
         BLOG.append('refr seq %r' % e)
+    # M6b blended transparency: Blended slots + how they are layered ([BTDR:FWD.*])
+    pg.appendSequence('Blend', label='Blended')
+    setup(pg.appendStr('Geo', label='Geometry')[0], '')
+    menu(pg.appendMenu('Mode', label='Mode')[0], ['alpha', 'additive'], ['Alpha', 'Additive'], 'alpha')
+    setup(pg.appendToggle('Lit', label='Lit')[0], True)
+    setup(pg.appendFloat('Soft', label='Soft Distance Override')[0], -1.0, -1.0, 2.0, True)
+    try:
+        C.seq.Blend.blockSize = 4
+    except Exception as e:
+        BLOG.append('blend seq %r' % e)
 
     pg = C.appendCustomPage('Grade')
     setup(pg.appendFloat('Exposure', label='Exposure (EV)')[0], 0.0, -5, 5)
@@ -262,7 +291,7 @@ def build_btdr(dest, name='renderBTDR'):
     names = ['gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag', 'env_studio.frag', 'env_prefilter.frag',
              'lighting.frag', 'composite.frag', 'taa.frag', 'grade.frag', 'debug.frag', 'depth.frag',
              'dof.frag', 'mblur.frag', 'bloom_pre.frag', 'bloom_down.frag', 'bloom_up.frag', 'lum.frag', 'exposure.frag',
-             'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag', 'refract.frag']
+             'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag', 'refract.frag', 'forward.frag', 'blend_comp.frag']
     D = {}
     for i, n in enumerate(names):
         D[n] = dat(n.replace('.', '_'), _shader(n), X0, 400 - i * 100)
@@ -566,6 +595,27 @@ def build_btdr(dest, name='renderBTDR'):
     tpos = tsw('tpos_src', rs[2], rsel[0], -400)
     tnrm = tsw('tnrm_src', rs[1], rsel[1], -480)
 
+    # [BTDR:BUILD.BLEND] M6b blended transparency ([BTDR:FWD.*]): the blended mirrors scene/b* are drawn forward-lit
+    # by `tblend` (premultiplied, Render TOP Transparency = Sorted or Order Independent), then `blend_comp` lays them
+    # over the image. `ub_tex` is the uniform block as a texture for the forward material ([BTDR:FWD.UB]).
+    BON = '1 if (parent.BTDR.par.Transparency and parent.BTDR.par.Blendcount > 0) else 0'
+    ubt = place(C.create(choptoTOP, 'ub_tex'), -1000, 700)
+    ubt.par.chop = uni
+    try: _menu(ubt.par.dataformat, ['rgba'])
+    except Exception as e: BLOG.append('ub_tex dataformat %r' % e)
+    _menu(ubt.par.format, ['rgba32float'])
+    tbl = place(C.create(renderTOP, 'tblend'), -600, -1000)
+    tbl.par.camera = 'cam_jit'; tbl.par.geometry = 'scene/b*'; tbl.par.lights = ''
+    res(tbl, RW, RH, ['rgba16float'])
+    _menu(tbl.par.antialias, ['aa1', '1x', '1'])
+    tbl.par.bgcolorr = tbl.par.bgcolorg = tbl.par.bgcolorb = tbl.par.bgcolora = 0
+    tbl.par.transparency.expr = "'orderind' if parent.BTDR.par.Blendmethod == 'orderind' else 'sortedblending'"
+    tbl.par.transpeellayers.expr = 'parent.BTDR.par.Peellayers'
+    bcm = glsl('blend_comp', D['blend_comp.frag'], [tsrc, tbl], RW, RH, ['rgba16float'], 900, -150, shared=False)
+    bsrc = place(C.create(switchTOP, 'blend_src'), 1000, -200)
+    tsrc.outputConnectors[0].connect(bsrc); bcm.outputConnectors[0].connect(bsrc)
+    bsrc.par.index.expr = BON
+
     # [BTDR:BUILD.FOG] volumetric fog: froxel scattering (3D) -> front-to-back integration (3D) -> apply per pixel,
     # before TAA (it resolves the slice dither). Bypassed by a Switch TOP when off.
     FX = "160 if parent.BTDR.par.Quality != 'low' else 128"
@@ -591,10 +641,10 @@ def build_btdr(dest, name='renderBTDR'):
     fac = vol('fog_accum', 'fog_accum.comp', [fsc, fhi], 100, 1300, True)
     fhi.par.top = fac
     fin = vol('fog_integrate', 'fog_integrate.comp', [fac], 200, 1200, False)
-    fap = glsl('fog_apply', D['fog_apply.frag'], [tsrc, tpos, fin], RW, RH, ['rgba16float'], 200, 1050)
+    fap = glsl('fog_apply', D['fog_apply.frag'], [bsrc, tpos, fin], RW, RH, ['rgba16float'], 200, 1050)
     _menu(fap.par.inputextenduv, ['hold'])
     fsw = place(C.create(switchTOP, 'fog_src'), 250, 300)
-    tsrc.outputConnectors[0].connect(fsw); fap.outputConnectors[0].connect(fsw)
+    bsrc.outputConnectors[0].connect(fsw); fap.outputConnectors[0].connect(fsw)
     fsw.par.index.expr = '1 if parent.BTDR.par.Fog else 0'
     taa = glsl('taa', D['taa.frag'], [fsw, fbk, tpos, tnrm], RW, RH, ['rgba16float'], 300, 400)
     fbk.par.top = taa
