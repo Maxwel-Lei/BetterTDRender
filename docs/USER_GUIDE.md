@@ -120,13 +120,16 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 
 ### Environment 页
 
-用 HDRI 的步骤：用 Movie File In TOP 读入 `.hdr` / `.exr` 全景图 → Source 选 HDRI Map → 把这个 TOP 拖到 HDRI Map → 想看到环境就把 Background 改成 Environment。
+**最简单（0.7.4）**：和原生 Render TOP 一样，在网络里放一个 **Environment Light COMP**、给它的 Environment Light Map 指定全景图，BTDR 会自动使用（Source 默认是 Auto；它的 Dimmer 和 Rotate Y 也生效，用到的是哪一盏显示在 Environment Light 一栏）。
+
+手动指定的步骤：用 Movie File In TOP 读入 `.hdr` / `.exr` 全景图 → Source 选 HDRI Map → 把这个 TOP 拖到 HDRI Map → 想看到环境就把 Background 改成 Environment。
 带太阳的户外 HDRI：让 Light COMP 的方向和图里的太阳一致，影子才对得上——可以转灯，也可以用 Rotate 转 HDRI（见 §7）。觉得影子太浅就降低 Intensity 或提高灯的 Dimmer。
 发布包的 `hdri/` 里放了一张晴天全景 `kloofendal_43d_clear_2k.hdr`（Poly Haven，CC0，可随意使用），可以拿来试。
 
 | 参数 | 作用 |
 |---|---|
-| Source | Studio：内置的程序化摄影棚（渐变 + 4 个柔光箱）。HDRI Map：用你指定的全景图 |
+| Source | Auto（默认）：Lights 匹配到带贴图的 Environment Light COMP 时用它的贴图，否则用 Studio。Studio：内置的程序化摄影棚（渐变 + 4 个柔光箱）。HDRI Map：用你指定的全景图 |
+| Environment Light | 只读：Auto 模式下正在使用的 Environment Light COMP |
 | HDRI Map | 一个等距柱状投影（equirectangular，2:1）的全景 TOP，建议 32 位浮点的 HDR 图。图里很亮的太阳只会产生高光和环境光，不会投射阴影；阴影只来自 Lights 里的那盏灯 |
 | Intensity | 环境光强度 |
 | Rotate | 绕竖直轴旋转环境（度） |

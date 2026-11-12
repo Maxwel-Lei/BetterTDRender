@@ -87,7 +87,8 @@ class BTDRExt:
         cam = C.par.Camera.eval()
         return (cam.path if (cam is not None and cam.OPType == 'cameraCOMP') else '',
                 tuple(g.path for g in self._find(C.par.Geometry.eval(), ('geometryCOMP',))),
-                tuple(l.path for l in self._find(C.par.Lights.eval(), ('lightCOMP',))))
+                tuple(l.path for l in self._find(C.par.Lights.eval(), ('lightCOMP',))),
+                tuple((e.path, bool(e.par.envlightmap.eval())) for e in self._find(C.par.Lights.eval(), ('environmentlightCOMP',))))
 
     def WatchScene(self):
         # [BTDR:EXT.WATCH] called by `scene_watch` every COVER_POLL_FRAMES frames: a camera, Geometry COMP or light
@@ -740,6 +741,9 @@ class BTDRExt:
         C.store('cam_path', cam.path if cam is not None else '')
         C.store('light_path', light.path if light is not None else '')
         C.par.Mainlight = light.path if light is not None else '(built-in key light)'
+        # [BTDR:EXT.ENVLIGHT] the first Environment Light COMP matched by Lights that has a map (used by Source = Auto)
+        envl = [e for e in self._find(C.par.Lights.eval(), ('environmentlightCOMP',)) if e.par.envlightmap.eval() is not None]
+        C.par.Envlight = envl[0].path if envl else ''
         self._setup_jitcam(cam)
         C.op('gbuffer').par.camera = 'cam_jit'
         geos, info = self._classify(geos, warn)

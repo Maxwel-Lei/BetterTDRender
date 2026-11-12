@@ -159,7 +159,11 @@ def build_btdr(dest, name='renderBTDR'):
     setup(p, 1, 1, 4, True, True); p.enableExpr = "me.par.Shadowupdate == 'auto'"
 
     pg = C.appendCustomPage('Environment')
-    menu(pg.appendMenu('Envsource', label='Source')[0], ['studio', 'hdri'], ['Studio (built-in)', 'HDRI Map'], 'studio')
+    # [BTDR:BUILD.ENVAUTO] 0.7.4: Auto (default) uses an Environment Light COMP matched by Lights, like the native
+    # Render TOP (its Environment Light Map, Dimmer and Rotate Y); without one it is the built-in studio
+    menu(pg.appendMenu('Envsource', label='Source')[0], ['auto', 'studio', 'hdri'],
+         ['Auto (Environment Light COMP, else Studio)', 'Studio (built-in)', 'HDRI Map'], 'auto')
+    p = pg.appendStr('Envlight', label='Environment Light')[0]; p.readOnly = True
     p = pg.appendTOP('Envmap', label='HDRI Map')[0]; p.enableExpr = "me.par.Envsource == 'hdri'"
     setup(pg.appendFloat('Envintensity', label='Intensity')[0], 1.0, 0, 4, True)
     setup(pg.appendFloat('Envrotate', label='Rotate')[0], 0.0, -180, 180)
@@ -424,13 +428,15 @@ def build_btdr(dest, name='renderBTDR'):
     hfo.outputConnectors[0].connect(hfs); hfc.outputConnectors[0].connect(hfs)
     hfs.par.index.expr = '1 if parent.BTDR.par.Heightfieldao else 0'
 
-    # [BTDR:BUILD.ENV] environment: studio or user HDRI -> sharp equirect + pre-filtered 3D atlas
+    # [BTDR:BUILD.ENV] environment: studio, user HDRI or an Environment Light COMP -> sharp equirect + pre-filtered 3D atlas
+    ENVAUTO = "(parent.BTDR.par.Envsource == 'auto' and op(parent.BTDR.par.Envlight.eval() or '/__none') is not None and op(parent.BTDR.par.Envlight.eval()).par.envlightmap.eval() is not None)"
     est = glsl('env_studio', D['env_studio.frag'], [], 1024, 512, ['rgba16float'], -600, -300, shared=False)
     eus = place(C.create(selectTOP, 'env_user'), -600, -400)
-    eus.par.top.expr = "parent.BTDR.par.Envmap.eval() or op('env_studio')"
+    eus.par.top.expr = ("(op(parent.BTDR.par.Envlight.eval()).par.envlightmap.eval() if %s "
+                        "else parent.BTDR.par.Envmap.eval()) or op('env_studio')" % ENVAUTO)
     esw = place(C.create(switchTOP, 'env_src'), -400, -300)
     est.outputConnectors[0].connect(esw); eus.outputConnectors[0].connect(esw)
-    esw.par.index.expr = "1 if (parent.BTDR.par.Envsource == 'hdri' and parent.BTDR.par.Envmap.eval()) else 0"
+    esw.par.index.expr = "1 if (%s or (parent.BTDR.par.Envsource == 'hdri' and parent.BTDR.par.Envmap.eval())) else 0" % ENVAUTO
     eat = glsl('env_atlas', D['env_prefilter.frag'], [esw], 256, 128, ['rgba16float'], -200, -300, shared=False)
     eat.par.type = 'texture3d'; eat.par.depth = 'custom'; eat.par.customdepth = 6
     _menu(eat.par.inputfiltertype, ['mipmap'])

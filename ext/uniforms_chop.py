@@ -205,7 +205,14 @@ def onCook(scriptOp):
     a[14] = (v[4], v[5], v[6], ss['mapfar'])
 
     # [BTDR:UNI.PARAMS] parameter pages -> shader constants
-    a[15] = (Q['Envintensity'].eval(), math.radians(Q['Envrotate'].eval()),
+    # [BTDR:UNI.ENVAUTO] Source = Auto with an Environment Light COMP: its Dimmer and Rotate Y apply on top
+    ei, er = Q['Envintensity'].eval(), Q['Envrotate'].eval()
+    if Q['Envsource'].eval() == 'auto':
+        el = op(Q['Envlight'].eval() or '/__none')
+        if el is not None and el.par.envlightmap.eval() is not None:
+            ei *= el.par.dimmer.eval()
+            er += el.par.envlightmaprotatey.eval()
+    a[15] = (ei, math.radians(er),
              1.0 if Q['Background'].eval() == 'env' else 0.0, Q['Bgblur'].eval())
     a[16] = (Q['Bgcolorr'].eval(), Q['Bgcolorg'].eval(), Q['Bgcolorb'].eval(), Q['Bgintensity'].eval())
     a[17] = (2.0 ** Q['Exposure'].eval(), Q['Vignette'].eval(), Q['Grain'].eval(),
