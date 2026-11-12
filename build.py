@@ -18,6 +18,10 @@ MAT_SHADERS = ('gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag')
 TBUF_SHADERS = ['fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp']
 # the forward material of blended transparency reads the uniforms from a 40 x 1 texture ([BTDR:BUILD.FWDUB])
 FWD_SHADERS = ['forward.frag']
+# [BTDR:BUILD.M6B] M6b blended transparency is kept in the source but not built into the release (the user found it
+# not good enough yet, 2026-11-12): no Blended page section, no tblend / blend_comp, auto-detection treats sprite
+# materials as refractive again (0.6.0 behaviour). Set True to build it ([BTDR:FWD.*], IMPLEMENTATION_1b §9f).
+M6B = False
 FWD_SLOTS = 20                  # slots 0..19 are all the forward material needs (camera, sun, environment, clip)
 
 def _shader(name):
@@ -245,12 +249,16 @@ def build_btdr(dest, name='renderBTDR'):
     setup(pg.appendFloat('Absorbdist', label='Absorption Distance')[0], 1.0, 0.01, 10, True)
     # M6b blended transparency globals ([BTDR:FWD.*]); custom parameters appended after a sequence join its block,
     # so every plain parameter of the page comes before the two sequences
-    p = setup(pg.appendInt('Blendcount', label='Blended Objects')[0], 0); p.readOnly = True
-    menu(pg.appendMenu('Blendmethod', label='Blend Method')[0], ['sorted', 'orderind'],
-         ['Sorted', 'Order Independent (Depth Peeling)'], 'sorted')
-    p = setup(pg.appendInt('Peellayers', label='Peel Layers')[0], 4, 2, 8, True); p.enableExpr = "me.par.Blendmethod == 'orderind'"
-    setup(pg.appendFloat('Softdist', label='Soft Particles Distance')[0], 0.1, 0.0, 2.0, True)
-    setup(pg.appendFloat('Glassdim', label='Behind Glass Dimming')[0], 0.75, 0.0, 1.0, True, True)
+    # [BTDR:BUILD.REFRMETHOD] M6c: how refractive objects find what is behind them ([BTDR:REFR.RT])
+    p = menu(pg.appendMenu('Refrmethod', label='Refraction Method')[0], ['screen', 'hybrid', 'raytraced'],
+             ['Screen Space', 'Hybrid (Screen Space + Ray Traced)', 'Ray Traced'], 'screen')
+    if M6B:
+        p = setup(pg.appendInt('Blendcount', label='Blended Objects')[0], 0); p.readOnly = True
+        menu(pg.appendMenu('Blendmethod', label='Blend Method')[0], ['sorted', 'orderind'],
+             ['Sorted', 'Order Independent (Depth Peeling)'], 'sorted')
+        p = setup(pg.appendInt('Peellayers', label='Peel Layers')[0], 4, 2, 8, True); p.enableExpr = "me.par.Blendmethod == 'orderind'"
+        setup(pg.appendFloat('Softdist', label='Soft Particles Distance')[0], 0.1, 0.0, 2.0, True)
+        setup(pg.appendFloat('Glassdim', label='Behind Glass Dimming')[0], 0.75, 0.0, 1.0, True, True)
     sq = pg.appendSequence('Refr', label='Refractive')
     setup(pg.appendStr('Geo', label='Geometry')[0], '')
     menu(pg.appendMenu('Preset', label='Preset')[0],
@@ -266,16 +274,17 @@ def build_btdr(dest, name='renderBTDR'):
         C.seq.Refr.blockSize = 8       # a sequence keeps at least one block: an empty slot is ignored
     except Exception as e:
         BLOG.append('refr seq %r' % e)
-    # M6b blended transparency: Blended slots + how they are layered ([BTDR:FWD.*])
-    pg.appendSequence('Blend', label='Blended')
-    setup(pg.appendStr('Geo', label='Geometry')[0], '')
-    menu(pg.appendMenu('Mode', label='Mode')[0], ['alpha', 'additive'], ['Alpha', 'Additive'], 'alpha')
-    setup(pg.appendToggle('Lit', label='Lit')[0], True)
-    setup(pg.appendFloat('Soft', label='Soft Distance Override')[0], -1.0, -1.0, 2.0, True)
-    try:
-        C.seq.Blend.blockSize = 4
-    except Exception as e:
-        BLOG.append('blend seq %r' % e)
+    # M6b blended transparency: Blended slots + how they are layered ([BTDR:FWD.*], built only with M6B)
+    if M6B:
+        pg.appendSequence('Blend', label='Blended')
+        setup(pg.appendStr('Geo', label='Geometry')[0], '')
+        menu(pg.appendMenu('Mode', label='Mode')[0], ['alpha', 'additive'], ['Alpha', 'Additive'], 'alpha')
+        setup(pg.appendToggle('Lit', label='Lit')[0], True)
+        setup(pg.appendFloat('Soft', label='Soft Distance Override')[0], -1.0, -1.0, 2.0, True)
+        try:
+            C.seq.Blend.blockSize = 4
+        except Exception as e:
+            BLOG.append('blend seq %r' % e)
 
     pg = C.appendCustomPage('Grade')
     setup(pg.appendFloat('Exposure', label='Exposure (EV)')[0], 0.0, -5, 5)
@@ -291,7 +300,7 @@ def build_btdr(dest, name='renderBTDR'):
     names = ['gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag', 'env_studio.frag', 'env_prefilter.frag',
              'lighting.frag', 'composite.frag', 'taa.frag', 'grade.frag', 'debug.frag', 'depth.frag',
              'dof.frag', 'mblur.frag', 'bloom_pre.frag', 'bloom_down.frag', 'bloom_up.frag', 'lum.frag', 'exposure.frag',
-             'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag', 'refract.frag', 'forward.frag', 'blend_comp.frag']
+             'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag', 'refract.frag', 'rt_refr.comp'] + (['forward.frag', 'blend_comp.frag'] if M6B else [])
     D = {}
     for i, n in enumerate(names):
         D[n] = dat(n.replace('.', '_'), _shader(n), X0, 400 - i * 100)
@@ -456,6 +465,13 @@ def build_btdr(dest, name='renderBTDR'):
     rmg.outputConnectors[0].connect(rtq)
     rout = place(rsc.create(nullPOP, 'out'), 1200, 0)
     rtq.outputConnectors[0].connect(rout)
+    # [BTDR:BUILD.RTREFR] M6c: the same scene plus the glass (only for the ray-traced refraction pass, [BTDR:EXT.RTREFR])
+    rmt = place(rsc.create(mergePOP, 'merge_t'), 800, 200)
+    rout.outputConnectors[0].connect(rmt)
+    rtqt = place(rsc.create(convertPOP, 'tri_t'), 1000, 200); rtqt.par.convert = 'quadstotriangles'
+    rmt.outputConnectors[0].connect(rtqt)
+    routt = place(rsc.create(nullPOP, 'out_t'), 1200, 200)
+    rtqt.outputConnectors[0].connect(routt)
     asel = place(rsc.create(selectTOP, 'avg_sel'), 800, -300)              # map averages for rt_mat ([BTDR:EXT.RTMAT])
     ares = place(rsc.create(resolutionTOP, 'avg_res'), 1000, -300)
     asel.outputConnectors[0].connect(ares)
@@ -463,6 +479,8 @@ def build_btdr(dest, name='renderBTDR'):
     _menu(ares.par.inputfiltertype, ['mipmap']); _menu(ares.par.format, ['rgba32float'])
     scn = place(C.create(selectPOP, 'rt_scene'), RX + 200, RY)
     scn.par.pop = 'rtscene/out'
+    scnt = place(C.create(selectPOP, 'rt_scene_t'), RX + 200, RY + 100)
+    scnt.par.pop = 'rtscene/out_t'
     # per-object materials ([BTDR:EXT.RTMAT]) and the probe uniforms ([BTDR:UNI.RTSTATIC]) as CHOPs from tables
     def tchop(nm, x, y):
         t = place(C.create(tableDAT, nm), x, y)
@@ -473,15 +491,16 @@ def build_btdr(dest, name='renderBTDR'):
     rmat = tchop('rt_mat', RX, RY - 150)
     rsta = tchop('rt_static', RX, RY - 250)
     zf = dat('zero_frag', 'out vec4 fragColor;\nvoid main() { fragColor = vec4(0.0); }\n', X0 - 250, -200)
-    def rtpop(nm, comp, src, attrs, chop, samplers, x, y, build):
+    def rtpop(nm, comp, src, attrs, chop, samplers, x, y, build, scene=None):
+        scene = scene or scn
         g = place(C.create(glslPOP, nm), x, y)
         undock(g)
         g.par.computedat = D[comp]
-        src.outputConnectors[0].connect(g); scn.outputConnectors[0].connect(g)
+        src.outputConnectors[0].connect(g); scene.outputConnectors[0].connect(g)
         # [BTDR:BUILD.RTAS] a GLSL POP rebuilds its acceleration structure on every cook. Fast Trace costs ~0.65 ms per
         # build for a 32k-triangle proxy (5080 Laptop, measured), Fast Build ~0.03 ms including 130k rays: the pass that
         # cooks every frame (reflections) uses Fast Build; the probes (cook on change, many rays) use Fast Trace.
-        g.par.asname = 'uScene'; g.par.colpop = scn; g.par.buildflag = build; g.par.opaquecolgeo = True
+        g.par.asname = 'uScene'; g.par.colpop = scene; g.par.buildflag = build; g.par.opaquecolgeo = True
         g.par.attrclass = 'point'
         g.seq.attr.numBlocks = len(attrs)
         for i, a in enumerate(attrs):
@@ -576,7 +595,30 @@ def build_btdr(dest, name='renderBTDR'):
         r = place(C.create(renderselectTOP, 'tback%d' % i), -400, -760 - i * 80)
         r.par.top = tb; r.par.bufferindex = i
         tbs.append(r)
-    refr = glsl('refract', D['refract.frag'], [comp, rs[2], rs[1]] + tgs + [tbs[1], tbs[0], shs, esw, eat],
+    # [BTDR:BUILD.RTREFR] M6c ray-traced refraction: rt_refr traces the glass scene from the front layer at the
+    # reflection grid's resolution, accumulated like the traced reflections; `rtr_src` keeps it bypassed unless the
+    # Refraction Method is Hybrid / Ray Traced, ray tracing is available and there is glass.
+    RTRON = ("1 if (parent.BTDR.par.Transparency and parent.BTDR.par.Transcount > 0 and parent.BTDR.par.Raytracing "
+             "and parent.BTDR.par.Rtavailable and parent.BTDR.par.Refrmethod != 'screen') else 0")
+    rrr = rtpop('rt_refr', 'rt_refr.comp', rgd, ['Refr'], C.op('uniforms'),
+                [('sTNrm', 'tgbuf1'), ('sTPos', 'tgbuf2'), ('sTIor', 'tgbuf4'), ('sTBase', 'tgbuf0'), ('sPos', 'gbuf2'), ('sEnv', 'env_src'),
+                 ('sEnvAtlas', 'env_atlas')] + [('sProbe%d' % i, 'probe_src%d' % i) for i in range(4)],
+                RX + 400, RY - 1200, 'fastbuild', scene=scnt)
+    for i in range(rrr.seq.sampler.numBlocks):        # positions must not be blended between texels
+        if getattr(rrr.par, 'sampler%dname' % i).eval() in ('sTNrm', 'sTPos', 'sTIor', 'sTBase', 'sPos'):
+            getattr(rrr.par, 'sampler%dfilter' % i).val = 'nearest'
+    rrt = p2t('rt_refr_top', rrr, 'Refr', RX + 600, RY - 1200, False)
+    rrh = place(C.create(feedbackTOP, 'rt_refr_hist'), RX + 800, RY - 1300)
+    rrt.outputConnectors[0].connect(rrh)
+    rra = glsl('rt_refr_acc', D['rt_accum.frag'], [rrt, rrh, tgs[2], tgs[1]], TW, TH, ['rgba16float'], RX + 800, RY - 1200)
+    rrh.par.top = rra
+    rroff = place(C.create(constantTOP, 'rt_refr_off'), RX + 800, RY - 1100)
+    rroff.par.colorr = rroff.par.colorg = rroff.par.colorb = 0; rroff.par.alpha = 0
+    res(rroff, 4, 4, ['rgba16float'])
+    rrs = place(C.create(switchTOP, 'rtr_src'), RX + 1000, RY - 1200)
+    rroff.outputConnectors[0].connect(rrs); rra.outputConnectors[0].connect(rrs)
+    rrs.par.index.expr = RTRON
+    refr = glsl('refract', D['refract.frag'], [comp, rs[2], rs[1]] + tgs + [tbs[1], tbs[0], shs, esw, rrs, eat],
                 RW, RH, ['rgba16float'], 400, -300)
     refr.par.numcolorbufs = 3
     try: _menu(refr.par.inputfiltertype, ['mipmap'])
@@ -598,23 +640,26 @@ def build_btdr(dest, name='renderBTDR'):
     # [BTDR:BUILD.BLEND] M6b blended transparency ([BTDR:FWD.*]): the blended mirrors scene/b* are drawn forward-lit
     # by `tblend` (premultiplied, Render TOP Transparency = Sorted or Order Independent), then `blend_comp` lays them
     # over the image. `ub_tex` is the uniform block as a texture for the forward material ([BTDR:FWD.UB]).
-    BON = '1 if (parent.BTDR.par.Transparency and parent.BTDR.par.Blendcount > 0) else 0'
-    ubt = place(C.create(choptoTOP, 'ub_tex'), -1000, 700)
-    ubt.par.chop = uni
-    try: _menu(ubt.par.dataformat, ['rgba'])
-    except Exception as e: BLOG.append('ub_tex dataformat %r' % e)
-    _menu(ubt.par.format, ['rgba32float'])
-    tbl = place(C.create(renderTOP, 'tblend'), -600, -1000)
-    tbl.par.camera = 'cam_jit'; tbl.par.geometry = 'scene/b*'; tbl.par.lights = ''
-    res(tbl, RW, RH, ['rgba16float'])
-    _menu(tbl.par.antialias, ['aa1', '1x', '1'])
-    tbl.par.bgcolorr = tbl.par.bgcolorg = tbl.par.bgcolorb = tbl.par.bgcolora = 0
-    tbl.par.transparency.expr = "'orderind' if parent.BTDR.par.Blendmethod == 'orderind' else 'sortedblending'"
-    tbl.par.transpeellayers.expr = 'parent.BTDR.par.Peellayers'
-    bcm = glsl('blend_comp', D['blend_comp.frag'], [tsrc, tbl], RW, RH, ['rgba16float'], 900, -150, shared=False)
-    bsrc = place(C.create(switchTOP, 'blend_src'), 1000, -200)
-    tsrc.outputConnectors[0].connect(bsrc); bcm.outputConnectors[0].connect(bsrc)
-    bsrc.par.index.expr = BON
+    if M6B:
+        BON = '1 if (parent.BTDR.par.Transparency and parent.BTDR.par.Blendcount > 0) else 0'
+        ubt = place(C.create(choptoTOP, 'ub_tex'), -1000, 700)
+        ubt.par.chop = uni
+        try: _menu(ubt.par.dataformat, ['rgba'])
+        except Exception as e: BLOG.append('ub_tex dataformat %r' % e)
+        _menu(ubt.par.format, ['rgba32float'])
+        tbl = place(C.create(renderTOP, 'tblend'), -600, -1000)
+        tbl.par.camera = 'cam_jit'; tbl.par.geometry = 'scene/b*'; tbl.par.lights = ''
+        res(tbl, RW, RH, ['rgba16float'])
+        _menu(tbl.par.antialias, ['aa1', '1x', '1'])
+        tbl.par.bgcolorr = tbl.par.bgcolorg = tbl.par.bgcolorb = tbl.par.bgcolora = 0
+        tbl.par.transparency.expr = "'orderind' if parent.BTDR.par.Blendmethod == 'orderind' else 'sortedblending'"
+        tbl.par.transpeellayers.expr = 'parent.BTDR.par.Peellayers'
+        bcm = glsl('blend_comp', D['blend_comp.frag'], [tsrc, tbl], RW, RH, ['rgba16float'], 900, -150, shared=False)
+        bsrc = place(C.create(switchTOP, 'blend_src'), 1000, -200)
+        tsrc.outputConnectors[0].connect(bsrc); bcm.outputConnectors[0].connect(bsrc)
+        bsrc.par.index.expr = BON
+    else:
+        bsrc = tsrc
 
     # [BTDR:BUILD.FOG] volumetric fog: froxel scattering (3D) -> front-to-back integration (3D) -> apply per pixel,
     # before TAA (it resolves the slice dither). Bypassed by a Switch TOP when off.

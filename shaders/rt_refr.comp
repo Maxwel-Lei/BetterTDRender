@@ -1,0 +1,116 @@
+// [BTDR:FILE.RT.REFR] rt_refr.comp — M6c ray-traced refraction (Refraction Method = Hybrid / Ray Traced), GLSL POP,
+// one thread per pixel of the reduced-resolution grid (same grid as rt_refl). Traces the scene WITH the glass
+// (rtscene/out_t, [BTDR:EXT.RTREFR]) from the front transparent layer: refract in, find the exit face in the proxy,
+// refract out, up to RTR_MAX segments (several panes, glass behind glass, objects off screen), Beer-Lambert absorption
+// per segment inside glass, total internal reflection stays inside. The first opaque hit is shaded like a traced
+// reflection hit ([BTDR:RT.SHADE]), a miss reads the environment. Output: transmitted radiance | valid (1 = traced).
+// `refract` uses it where the screen-space ray found nothing (Hybrid) or everywhere (Ray Traced), [BTDR:REFR.RT].
+// rtMat for glass objects: [2i] base colour rgb | absorption distance, [2i+1] 0 | IOR (negative = thin walled).
+#define ENV_SHARP sEnv
+#define ENV_ATLAS sEnvAtlas
+#define PROBE_SH0 sProbe0
+#define PROBE_SH1 sProbe1
+#define PROBE_SH2 sProbe2
+#define PROBE_SH3 sProbe3
+//#include env_lookup
+//#include probe_lookup
+#define RT_AMBIENT(p, n) (uRT.x > 0.5 ? probeIrradiance(p, n) : envIrradiance(n) * 0.5)
+//#include rt_common
+#define RTR_MAX 8
+uint hashu(uint n) { n = (n << 13U) ^ n; return n * (n * n * 15731U + 789221U) + 1376312589U; }
+float hash1(uint n) { return float(hashu(n) & 0x7fffffffU) / float(0x7fffffff); }
+vec3 importanceGGX(vec2 xi, vec3 N, float a)
+{
+    float phi = 2.0 * PI * xi.x;
+    float cosT = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+    float sinT = sqrt(1.0 - cosT * cosT);
+    vec3 h = vec3(cos(phi) * sinT, sin(phi) * sinT, cosT);
+    vec3 up = abs(N.z) < 0.999 ? vec3(0, 0, 1) : vec3(1, 0, 0);
+    vec3 tx = normalize(cross(up, N));
+    vec3 ty = cross(N, tx);
+    return normalize(tx * h.x + ty * h.y + N * h.z);
+}
+// refract with total internal reflection: returns the reflected direction when refraction is impossible
+vec3 refractTIR(vec3 d, vec3 n, float eta, out bool tir)
+{
+    vec3 t = refract(d, n, eta);
+    tir = dot(t, t) < 1e-6;
+    return tir ? reflect(d, n) : normalize(t);
+}
+void main()
+{
+    const uint id = TDIndex();
+    if (id >= TDNumElements()) return;
+    uint W = uint(uRT4.x + 0.5), H = uint(uRT4.y + 0.5);
+    vec2 uv = (vec2(float(id % W), float(id / W)) + 0.5) / vec2(float(W), float(H));
+    vec4 tn = textureLod(sTNrm, uv, 0.0);                 // front layer normal | roughness
+    vec4 tp = textureLod(sTPos, uv, 0.0);                 // front layer camera-relative position
+    vec4 op = textureLod(sPos, uv, 0.0);                  // opaque camera-relative position
+    vec4 t4 = textureLod(sTIor, uv, 0.0);                 // IOR, absorption distance, thin
+    vec4 t0 = textureLod(sTBase, uv, 0.0);                // base colour | metallic
+    bool hasT = dot(tn.xyz, tn.xyz) > 0.25;
+    float zt = dot(tp.xyz, uCamFwd.xyz);
+    float zo = dot(op.xyz, op.xyz) > 1e-8 ? dot(op.xyz, uCamFwd.xyz) : 1e9;
+    if (!hasT || zt > zo - 1e-4) { Refr[id] = vec4(0.0); return; }
+
+    float dist = length(tp.xyz);
+    vec3 P = tp.xyz + uCamPos.xyz;
+    vec3 V = tp.xyz / max(dist, 1e-6);                    // camera -> surface
+    vec3 N = normalize(tn.xyz);
+    if (dot(N, V) > 0.0) N = -N;
+    float rough = clamp(tn.w, 0.0, 1.0);
+    float ior = max(t4.x, 1.0001);
+    bool thin = t4.z > 0.5;
+    // rough glass: one GGX-sampled microfacet normal per frame, the temporal accumulation averages them
+    uint seed = hashu(id * 747796405U + uint(uFrame.x) * 2891336453U);
+    if (rough > 0.02) {
+        vec2 xi = vec2(hash1(seed), hash1(seed ^ 0x9e3779b9U) * 0.85);
+        vec3 m = importanceGGX(xi, N, max(rough * rough, 0.002));
+        if (dot(m, V) < 0.0) N = m;
+    }
+    bool tir;
+    vec3 d = thin ? V : refractTIR(V, N, 1.0 / ior, tir);
+    bool inside = !thin;
+    // the glass the ray is in: starts as the front layer's (its base colour / absorption distance), then whatever glass
+    // it enters ([BTDR:RT.REFRMEDIUM]); absorption always uses the medium, not the surface that ends the segment
+    vec4 med = vec4(clamp(t0.rgb, 0.0, 1.0), max(t4.y, 1e-3));
+    float eps = 0.004 + 0.002 * dist;
+    vec3 O = P + d * eps;
+    vec3 thr = vec3(1.0);
+    vec3 L = vec3(0.0);
+    bool done = false;
+    // [BTDR:RT.REFRWALK] walk through the glass proxy. The proxy is decimated: a front face met while inside (or a back
+    // face met while outside) is the proxy disagreeing with the rendered surface by a few mm, so it is crossed unbent.
+    for (int k = 0; k < RTR_MAX; k++) {
+        Hit h = traceScene(O, d, 0.0005, 100.0);
+        if (!h.hit) { L += thr * envRadiance(d, rough); done = true; break; }
+        vec4 m0 = texelFetch(rtMat, 2 * max(h.obj, 0));
+        vec4 m1 = texelFetch(rtMat, 2 * max(h.obj, 0) + 1);
+        vec3 hp = O + d * h.t;
+        if (inside) thr *= exp(log(max(med.rgb, vec3(1e-3))) * (h.t / med.w));
+        if (abs(m1.w) < 1.0) {                            // opaque: shade the hit and stop
+            L += thr * shadeHit(O, d, h);
+            done = true; break;
+        }
+        float eta = abs(m1.w);
+        bool thinHit = m1.w < 0.0;
+        if (thinHit) {                                    // a window pane: tint, keep going straight
+            thr *= m0.rgb;
+            O = hp + d * eps; continue;
+        }
+        if (inside) {
+            if (!h.backface) { O = hp + d * eps; continue; }          // proxy mismatch, still inside
+            d = refractTIR(d, -h.n, eta, tir);                          // leave the glass (or reflect back inside)
+            inside = tir;
+        } else {
+            if (h.backface) { O = hp + d * eps; continue; }            // proxy mismatch, still outside
+            d = refractTIR(d, h.n, 1.0 / eta, tir);                     // enter the next piece of glass
+            inside = !tir;
+            if (inside) med = vec4(clamp(m0.rgb, 0.0, 1.0), max(m0.w, 1e-3));
+        }
+        O = hp + d * eps;
+    }
+    if (!done) L += thr * envRadiance(d, rough);          // ran out of segments: assume it leaves to the sky
+    bool bad = any(isnan(L)) || any(isinf(L));
+    Refr[id] = bad ? vec4(0.0) : vec4(max(L, vec3(0.0)), 1.0);
+}

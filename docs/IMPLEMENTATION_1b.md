@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）实现参考（第 1b 份）
 
-第 1 份 `IMPLEMENTATION.md`（§0–§9b，含维护规则和锚点约定）。本份：§9c M3 屏幕空间间接光和体积雾、§9d M4 硬件光追、§9e M6a 透明与折射、§9f M6b 混合透明。第 2 份 `IMPLEMENTATION_2.md`（§10–§13）。
+第 1 份 `IMPLEMENTATION.md`（§0–§9b，含维护规则和锚点约定）。本份：§9c M3 屏幕空间间接光和体积雾、§9d M4 硬件光追、§9e M6a 透明与折射、§9f M6b 混合透明（默认不构建）、§9g M6c 光追折射。第 2 份 `IMPLEMENTATION_2.md`（§10–§13）。
 
 ## 9c. M3：屏幕空间间接光和体积雾（0.3.0）
 
@@ -86,7 +86,7 @@
 **分类（`EXT.SLOTS`、`EXT.TRANSCLASS`）**
 - Transparency 页的序列参数 `Refr`：每块 8 个参数（`Refr<i>geo / preset / ior / rough / thin / absorb / shadow / inrt`）。序列最少 1 块，空的 Geometry 被忽略。
 - Refresh 时先解析槽：一个物体可能被多个槽匹配，以第一个槽为准，后面的给警告。槽里的物体不在 Geometry 匹配范围内时会补进场景。
-- 没进槽的物体看 PBR MAT 自动判断：Alpha Test 开 → 不透明（镂空）；`alphafront` < 1 或有 Alpha 贴图 → 折射类。开了 Blending 又有 Alpha 贴图 → 警告（混合类在 M6b）。
+- 没进槽的物体看 PBR MAT 自动判断：Alpha Test 开 → 不透明（镂空）；`alphafront` < 1 或有 Alpha 贴图 → 折射类。开了 Blending 又有 Alpha 贴图 → 混合类（0.7.0 起，§9f；0.6.0 时按折射类画并警告）。
 - Transparency 关闭时全部按不透明处理。只读参数 `Transcount` 是 Switch 的开关依据（参数表达式能跟踪依赖，storage 不行）。
 
 **镜像和材质（`EXT.TRANSSPLIT`、`EXT.TRANSMAT`、`EXT.REFRPRESET`）**
@@ -117,7 +117,9 @@
 
 **还没做（M6a 剩余）**：3 个 Debug View（透明层、厚度、折射偏移）、材质库 tox、拖到节点方块上自动建槽、Quality Low 半分辨率、把 RT4 打包进 RT0.a / RT2.a（省一个 Render Select）、镂空物体在阴影里也镂空。
 
-## 9f. M6b：混合透明（0.7.0）
+## 9f. M6b：混合透明（实验，默认不构建）
+
+**状态**：2026-11-12 实现并通过测试，但用户看了效果后决定先不放进发布版：`build.py` 的 `M6B = False`（`BUILD.M6B`）时不建 Blended 参数和 `ub_tex` / `tblend` / `blend_comp` / `blend_src`，`forward.frag`、`blend_comp.frag` 也不进 tox；扩展用 `hasattr(C.par, 'Blendcount')` 判断，没有时开 Blending + Alpha 贴图的材质照 0.6.0 按折射类画并警告。代码和 `tests/m6b_*.py` 保留，打开开关重新构建即可。以后要改进的地方：真正的烟雾素材、按面排序、体积雾按混合类自身深度作用。
 
 烟雾、贴片、全息、粒子：不折射、半透明叠加的物体。做法同 UE5 的前向半透明，设计见 `M6_TRANSPARENCY.md` §4。
 
@@ -148,5 +150,30 @@
 - TAA 用的位置仍是不透明 / 折射层的：混合类在运动时略有拖影（UE5 同样）。SSR、SSGI 读的上一帧画面里有混合类，所以地面能反射出火花。
 
 **实测**：A/B 和 0.6.0 比（示例网络，没有混合类）最终画面平均差 0.00000，0.001% 的像素差超过 1/255。测试场景（7 张烟雾贴片 + 362 个实例化火花 + 全息盒）：`tblend` CPU 0.22 / GPU 0.21 ms，`ub_tex` CPU 0.08，3 个混合类材质各约 0.03，`blend_comp` 0.03 / 0.03；合计 CPU 约 +0.45 ms、GPU 约 +0.25 ms。
+
+## 9g. M6c：光追折射（0.7.0）
+
+Transparency 页的 Refraction Method：Screen Space（M6a，默认）/ Hybrid / Ray Traced。设计见 `M6_TRANSPARENCY.md` §5。
+
+**场景（`EXT.RTREFR`、`BUILD.RTREFR`）**
+- 第二个光追场景：`rtscene/merge_t` 接 `out`（不透明代理）再加每个折射类物体的链 → `tri_t` → `out_t`，`rt_scene_t` 选它。只有 `rt_refr` 用它；`rt_refl`、`rt_probes` 仍追 `out`，所以玻璃不挡探针的光、不出现在光追反射里（槽的 In Ray Tracing 打开的玻璃照旧进 `out`）。Method = Screen Space 时玻璃不建链。
+- `_rt_build` 现在拿全部物体和分类：ObjId = 在完整列表里的序号，`rt_mat` 每个物体都有两行。玻璃的两行：基础色 rgb | 吸收距离，0 | IOR（薄壁为负）。不透明物体的第二行 w 是 0，所以 `abs(w) < 1` = 不透明。值在 Refresh 时取；改槽的 IOR / 吸收 / 薄壁时（Method ≠ Screen Space）`parexec` 触发 Refresh。
+- 探针网格的范围只看进 `out` 的物体（不透明 + In Ray Tracing 的玻璃）。
+- `EXT.RTMINPOLY`（修 M4 的问题）：PolyReduce 改用 Keep #（三角形数，Pre-Triangulate 之后一个四边形算两个）= max(原面数 × 2 × Proxy Detail %, min(原面数 × 2, 800))。0.4.0 用百分比，6 个面的盒子被减成 1 个三角形、球只剩一两个：低模物体在光追里几乎不存在（示例网络的墙、拱门都是）。修复后示例网络的探针 GI 和光追反射有明显变化（A/B 与 0.6.0：平均差 0.016，墙上出现球的反弹光、金球映出红墙），属于修正。
+
+**`rt_refr.comp`（`RT.REFRWALK`、`RT.REFRMEDIUM`）**
+- 每帧一个 GLSL POP，和 `rt_refl` 共用 `rt_refl_grid`（1/4，Low 1/6），Fast Build。从前景透明层（`tgbuf1/2/4/0`）出发：不透明表面在前面或没有透明层时输出 0（无效）。
+- 粗糙玻璃每帧按 GGX 取一个微表面法线（时间累积平均掉），薄壁不折射。
+- 最多 8 段：没打中 → 环境；打到不透明 → `shadeHit`（同光追反射的着色）结束；打到薄壁玻璃 → 乘基础色、直穿；在玻璃里打到背面 → 折射出去（全内反射时反射、仍在里面）；在玻璃外打到正面 → 折射进去，介质换成这块玻璃。代理和渲染网格差几毫米：在里面碰到正面、在外面碰到背面，都当作不一致直接穿过。
+- 吸收按"当前介质"算：每段 `thr *= 基础色^(段长 / 吸收距离)`，起始介质取前景层的基础色和吸收距离。第一版用了线段末端那个物体的材质，打到不透明物体时把它的金属度（0）当吸收距离，结果全黑。
+- 输出透射辐射度 | 有效。`rt_refr_acc` = `rt_accum.frag`（`ACCUM.RT`，输入 2/3 用 `tgbuf2` / `tgbuf1`：不能用 `tpos_src`，它来自 `refract`，会成环）。
+
+**合成（`REFR.RT`，`refract.frag`）**：`uRT4.w` = 方法（0 / 1 / 2，光追不可用时为 0，`UNI.RT`）。`transT = 屏幕空间透射 × 吸收`；Ray Traced：有效处直接用光追结果（已含所有玻璃段的弯折和吸收）；Hybrid：`mix(光追, 屏幕空间, 屏幕空间命中且不在边缘的权重)`。表面项（菲涅尔反射、高光、涂层）照旧。
+
+**启动保护**：刚构建 / 重新载入的 `rt_refr`，前几帧的 POP to TOP 可能是垃圾（负数、NaN，在负载重时测试里出现过）：`rt_refr` 输出前把 NaN / Inf 置为无效，`refract` 只接受有限、非负、有效的值；`UNI.RTCHECK` 在 Refresh 后第 30 帧也强制计算一次 `rt_refr`（清掉残留的编译错误）。
+
+**旁路**：`rtr_src` 的表达式 `Transparency and Transcount > 0 and Raytracing and Rtavailable and Refrmethod != 'screen'`，为 0 时 `rt_refr` 链不计算（测试确认）。
+
+**实测**（m6_scene，Hybrid）：`rt_refr` GPU 0.03 ms、CPU 0.14，`rt_refr_acc` 0.07 / 0.02，`rt_refr_top` 0.04 / 0.02，`refract` 多读一张图可忽略：合计 CPU 约 +0.25 ms、GPU 约 +0.1 ms。
 
 （§10 起见 `IMPLEMENTATION_2.md`。）

@@ -6,7 +6,8 @@
 //            3..7 transparent front layer (tgbuffer): 3 base | metal, 4 normal | roughness, 5 camera-relative position,
 //            6 emissive | opacity, 7 x IOR, y absorption distance, z thin walled, w unused
 //            8 back faces of the transparent objects (tback): camera-relative position, 9 their normals,
-//            10 shadow map (shadow_src), 11 sharp environment
+//            10 shadow map (shadow_src), 11 sharp environment,
+//            12 ray-traced transmission (rtr_src, M6c: radiance | valid, reduced resolution; [BTDR:REFR.RT])
 // 3D inputs: 0 pre-filtered environment atlas
 // outputs: 0 image, 1 combined camera-relative position (front layer where it is in front), 2 combined normal | roughness
 //   (fog_apply, TAA, depth of field and motion blur read 1 / 2, so glass edges get the glass depth)
@@ -133,6 +134,25 @@ void main()
 
     // [BTDR:REFR.ABSORB] Beer-Lambert: the base colour is the transmittance after `absorption distance` of material
     vec3 tint = thin ? base : exp(log(max(base, vec3(1e-3))) * (thick / absd));
+    vec3 transT = trans * tint;
+    // [BTDR:REFR.RT] M6c (uRT4.w: 1 Hybrid, 2 Ray Traced): the traced transmission already contains the bending and the
+    // absorption of every glass segment it crossed. Hybrid keeps the sharper screen-space result where it found the
+    // background on screen and uses the traced one where it did not (off screen, behind other glass); Ray Traced uses
+    // the traced result everywhere (glass behind glass, objects off screen; softer: reduced resolution, proxy meshes).
+    if (uRT4.w > 0.5) {
+        vec4 rt = texture(sTD2DInputs[12], uv);
+        // the POP-to-TOP of a freshly built / reloaded rt_refr can hold garbage for its first frames (negative, NaN):
+        // ignore anything that is not a finite, non-negative radiance
+        bool ok = rt.a > 0.5 && !any(isnan(rt)) && !any(isinf(rt)) && all(greaterThanEqual(rt.rgb, vec3(0.0)));
+        if (ok) {
+            float ssw = 0.0;
+            if (uRT4.w < 1.5 && (found || inScreen(ruv))) {
+                vec2 e2 = min(ruv, 1.0 - ruv);
+                ssw = found ? clamp(min(e2.x, e2.y) * 20.0, 0.0, 1.0) : 0.0;
+            }
+            transT = mix(rt.rgb, transT, ssw);
+        }
+    }
 
     // [BTDR:REFR.SURFACE] surface terms: environment reflection, sun highlight (shadowed), opacity as a diffuse coat
     vec3 L = normalize(uSunDir.xyz);
@@ -146,7 +166,7 @@ void main()
     vec3 refl = envRadiance(R, rough) * Fenv;
     vec3 coat = base * (envIrradiance(N) + sun / PI);
 
-    vec3 col = (1.0 - Fenv) * ((1.0 - alpha) * trans * tint + alpha * coat) + refl + spec + t3.rgb;
+    vec3 col = (1.0 - Fenv) * ((1.0 - alpha) * transT + alpha * coat) + refl + spec + t3.rgb;
     oColor = vec4(max(col, 0.0), scene.a);
     oPos = vec4(tp.xyz, 1.0);
     oNrm = vec4(N, rough);

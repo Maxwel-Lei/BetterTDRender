@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）实现参考 · 第 2 份
 
-第 1 份 `IMPLEMENTATION.md`（§0–§9b，含维护规则）、第 1b 份 `IMPLEMENTATION_1b.md`（§9c–§9f）。本份：性能、已知的坑、测试、开发者流程、尚未实现、变更记录。
+第 1 份 `IMPLEMENTATION.md`（§0–§9b，含维护规则）、第 1b 份 `IMPLEMENTATION_1b.md`（§9c–§9g）。本份：性能、已知的坑、测试、开发者流程、尚未实现、变更记录。
 
 ## 10. 性能（5080 Laptop，1080p，示例场景，Quality = High）
 
@@ -13,7 +13,9 @@
 
 **0.6.0 透明（M6a）实测（2026-11-12，`tests/m6_scene.py`：5 个透明物体约占画面 1/3，`cpu_profile.py`）：** GPU `tgbuffer` 0.18 ms、`tback` 0.09、`refract` 0.34，合计约 0.6 ms；CPU `tgbuffer` 0.37、`tback` 0.23、`refract` 0.09、7 个 Render Select 约 0.18，合计约 0.85 ms。没有透明物体时 0（A/B 见 §9e）。`tback2` 的 GPU 读数 5.2 ms 是等待 GPU 队列的时间算到它头上（§11 第 17 条），不是它的开销。CPU 的大头是两个额外的 Render TOP；把 RT4 并进 RT0.a / RT2.a 可以省一个 Render Select。
 
-**0.7.0 混合透明（M6b）实测（2026-11-12，`tests/m6b_scene.py`：7 张烟雾贴片、362 个实例化火花、全息盒，加 1 个玻璃球，`cpu_profile.py`）：** `tblend` CPU 0.22 / GPU 0.21 ms，`ub_tex` CPU 0.08，3 个前向材质各约 0.03（每帧计算，§11 第 40 条），`blend_comp` 0.03 / 0.03：合计 CPU 约 +0.45 ms、GPU 约 +0.25 ms。没有混合类物体时 0（A/B 见 §9f）。整个测试场景（折射 + 混合 + 默认全部效果）CPU 2.1 ms、GPU 2.9 ms。
+**0.7.0 光追折射（M6c）实测（2026-11-12，`tests/m6_scene.py`，Hybrid）：** `rt_refr` GPU 0.03 / CPU 0.14 ms，累积和 POP to TOP 约 0.1 ms CPU：合计 CPU 约 +0.25 ms、GPU 约 +0.1 ms；Screen Space 时 0。
+
+**M6b 混合透明（默认不构建）实测（2026-11-12，`tests/m6b_scene.py`：7 张烟雾贴片、362 个实例化火花、全息盒，加 1 个玻璃球，`cpu_profile.py`）：** `tblend` CPU 0.22 / GPU 0.21 ms，`ub_tex` CPU 0.08，3 个前向材质各约 0.03（每帧计算，§11 第 40 条），`blend_comp` 0.03 / 0.03：合计 CPU 约 +0.45 ms、GPU 约 +0.25 ms。没有混合类物体时 0（A/B 见 §9f）。整个测试场景（折射 + 混合 + 默认全部效果）CPU 2.1 ms、GPU 2.9 ms。
 
 **0.5.1 全局性能审查（2026-11-12，demo 场景：雾和运动模糊开，`cpu_profile.py` 只统计每帧都计算的节点）：**
 
@@ -36,40 +38,7 @@
 | ssgi_acc / ssr_acc 合成一个双输出 pass | 估计 CPU −0.03 ms | 收益太小，暂不做 |
 | 静态画面冻结（相机、场景、参数都不变时停在收敛后的画面） | 未实现 | TD 的作品大多一直在动；颗粒、雾的噪声动画会停，属于行为变化 |
 
-**0.4.0（M4）实测（2026-11-12，示例场景，相机环绕；每种情况先把参数设回出厂默认，机器 CPU 处在慢的状态；`perf_bench.py` 从 0.4.0 起 GPU 也计入 POP）：**
-
-| 情况 | GPU 中位数（去掉 gbuf0 等待） | CPU 中位数 |
-|---|---|---|
-| TD 原生 Render TOP，1080p | 0.66 ms | 0.78 ms |
-| BTDR High，M3 默认（光追关） | 1.98 ms | 2.63 ms |
-| BTDR High，0.4.0 默认（+ 探针 GI + 光追反射） | 2.09 ms | 2.40 ms |
-| BTDR Low，默认 | 0.99 ms | 2.52 ms |
-| BTDR Low，光追关 | 0.90 ms | 1.88 ms |
-| BTDR High，1440p，默认 | 3.75 ms | 2.53 ms |
-| BTDR High，2160p，默认 | 8.85 ms | 2.50 ms |
-
-- 这一轮各情况之间的 CPU 读数噪声约 ±0.3 ms（两次测量的同一设置差这么多），单项看 `cpu_profile.py`：`rt_refl` 约 0.27 ms、`rt_refl_top` 0.04、`rt_acc` 0.05，光追每帧约 +0.35 ms CPU；GPU 约 +0.1 ms（反射 pass 0.03 ms，Fast Build）。探针静态时 0 开销，重算一次约 0.4 ms GPU。
-- 按同时段原生 Render TOP 换算（快的状态约 0.47 ms），BTDR 默认约 1.4 ms CPU，贴着 1.5 ms 预算。Bloom 的 13 个 TOP 约 0.3 ms CPU；0.5.0 起 Low 档少算两级（`BUILD.BLOOMLOW`，4 个 TOP），未单独复测。
-- 0.5.0 没有改动每帧的计算量（`SS.HISTRESET` 只在重置帧生效），性能沿用 0.4.0 的数字；使用手册 §3b 的 CPU 是按快的状态换算后的值。
-
-**0.3.0（M3）实测（2026-11-12，同一新场景，相机环绕、灯光和物体静止，同一时段测；这时机器的 CPU 处在慢的状态）：**
-
-| 情况 | GPU 中位数（去掉 gbuf0 等待） | CPU 中位数 |
-|---|---|---|
-| TD 原生 Render TOP，1080p | 0.73 ms | 0.89 ms |
-| BTDR High，全部关闭 | 0.63 ms | 1.92 ms |
-| BTDR High，0.2.0 的默认（屏幕空间关） | 0.68 ms | 2.04 ms |
-| BTDR High，0.3.0 默认（+ AO、反弹光、SSR） | 1.82 ms | 2.24 ms |
-| BTDR Low，默认 | 0.85 ms | 2.25 ms |
-| BTDR High，默认 + 体积雾 | 1.92 ms | 2.37 ms |
-| BTDR Low，默认 + 体积雾 | 0.91 ms | 2.33 ms |
-| BTDR High，全开（+ 自动曝光、景深、运动模糊） | 2.39 ms | 2.12 ms |
-| BTDR High，1440p，默认 | 3.19 ms | 1.86 ms |
-| BTDR High，2160p，默认 | 7.20 ms | 1.91 ms |
-
-- GPU 分项（High 1080p）：`ssgi` 0.56、`ssr` 0.44、两个累积各约 0.05；Low（半分辨率）`ssgi` 0.08、`ssr` 0.10。体积雾 High 约 0.1。
-- CPU：屏幕空间链多出 7 个 TOP，约 +0.2 ms；体积雾约 +0.13 ms。按同一时段原生 Render TOP 的读数换算（快的状态 0.47 ms），BTDR 默认约 1.2 ms，在 1.5 ms 预算内。
-- 优化余地：High 档的 SSGI 改成半分辨率 + 按深度的上采样（约省 0.4 ms）；SSR 在粗糙度高的像素提前退出已经做了（Max Roughness）。
+0.3.0（M3）、0.4.0（M4）的整套实测表移到了 `PERF_HISTORY.md`。
 
 剩下的方向：
 - 1080p 到 2160p 像素是 4 倍，GPU 是 4 倍（M3 的屏幕空间 pass 和像素数成正比）。
@@ -119,6 +88,8 @@
 38. 自定义序列参数（`page.appendSequence`）**最少 1 块**（`numBlocks = 0` 抛 "Minimum size is 1 block"）；在 appendSequence 之后追加的参数进入块，名字自动变成 `<序列名><序号><小写的基础名>`（追加 `Geo` 得到 `Refr0geo`；追加时写了完整名字会变成 `Refr0refr0geo`），再设 `blockSize`。
 39. GLSL MAT 的输出数可以多于 Render TOP 的颜色缓冲数：多出的 `layout(location = 4)` 被丢弃，不报错（`gbuffer.frag` 同时供 4 缓冲的 `gbuffer` 和 5 缓冲的 `tgbuffer` 使用）。
 40. **GLSL MAT 的采样器引用的 TOP 每帧计算时，MAT 也每帧计算**（实测 `totalCooks` 每帧 +1），和 uniform 数组绑 CHOP 一样。想让材质不重算，材质里就不能引用任何每帧变化的 OP——M1–M6a 的材质都做到了（`GBUF.SHARED`），混合类的前向材质做不到（要读深度、阴影），代价每个约 0.03 ms CPU。
+43. 新建的 GLSL POP 在前几帧（尤其负载重时）输出的属性可能是未初始化的值，经 POP to TOP 进入画面就是负数、NaN 的斑点。读 GLSL POP 结果的地方都要做有限值 / 范围检查（`REFR.RT`）。
+42. PolyReduce SOP 的 Keep % 对低模物体是灾难：6 个面的盒子 15% 只剩 1 个三角形。另外 Keep # 数的是 Pre-Triangulate 之后的三角形（四边形算两个）。SOP 的 `numPrims` 是属性、POP 的 `numPrims()` 是方法，表达式里写错会报 "'int' object is not callable"。（`EXT.RTMINPOLY`）
 41. Sphere SOP 的 Primitive Type 菜单名是 `prim / poly / mesh / nurbs / bezier`：写 `'polygon'` 不报错、保持默认的 `prim`（一个点、一个图元），拿它做实例化源只有 1 个实例。Ramp TOP 的 Circular 模式默认 Extend = Repeat，超过半径的角落会重复出圆环，做柔和的圆形贴图要把 Extend Left / Right 设成 Hold。
 
 ## 11b. 测试（`tests/m1_tests.py`）
@@ -171,9 +142,9 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 ## 11b-3. M6 透明测试（`tests/m6_tests.py`）
 
-在 `tests/m6_scene.py` 的场景上检查：5 个槽都解析到、镜像是 `t*`、三个 Switch 打开、无报错、`refract` 全是有限值、玻璃像素占比 > 2% 且画面有变化、**非玻璃像素和 composite 完全一样**、背面有内容、玻璃默认不进阴影列表；关掉 Transparency 后 `Transcount` 为 0、Switch 旁路、`refract` 不再计算；选 Diamond 预设后 IOR = 2.42。0.6.0：全过。
+在 `tests/m6_scene.py` 的场景上检查：5 个槽都解析到、镜像是 `t*`、三个 Switch 打开、无报错、`refract` 全是有限值、玻璃像素占比 > 2% 且画面有变化、**非玻璃像素和 composite 完全一样**、背面有内容、玻璃默认不进阴影列表；关掉 Transparency 后 `Transcount` 为 0、Switch 旁路、`refract` 不再计算；选 Diamond 预设后 IOR = 2.42。`TEST.M6C`（0.7.0）：Screen Space 时 `rtr_src` 旁路；切到 Ray Traced 后无报错、`rtr_src` 打开且 `uRT4.w` = 2、`out_t` 比 `out` 多（玻璃只在折射场景）、光追有效像素 5%–90%、有限且平均亮度 > 0.05（不是全黑）、`refract` 有限；切回 Screen Space 后 `rt_refr` 不再计算。0.7.0：全过。
 
-## 11b-4. M6b 混合透明测试（`tests/m6b_tests.py`）
+## 11b-4. M6b 混合透明测试（`tests/m6b_tests.py`，只在 `M6B = True` 的构建上能跑）
 
 在 `tests/m6b_scene.py` 的场景上检查：9 个混合类物体（7 个由 PBR MAT 自动识别、2 个来自 Blended 槽）、玻璃仍是折射类、镜像是 `b*`、`blend_src` 打开、无报错、`ub_tex` 和 `uniforms` 逐值一致、`tblend` 有限值且 alpha ≤ 1、烟雾覆盖率在 5%–90%、存在叠加像素（rgb 亮、alpha 为 0）、**没有混合类的像素和 `trans_src` 完全一样**、混合类不进阴影列表；切到 Order Independent 后无报错、Render TOP 模式正确、有画面；关掉 Transparency 后 `Blendcount` 为 0、Switch 旁路、`tblend` 不再计算。0.7.0：全过。
 
@@ -205,7 +176,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - M4 遗留：实例化几何体进光追代理；命中点用逐纹素的贴图颜色（现在是每物体平均色）和高光；探针可见性（DDGI 的深度矩，防薄墙漏光）；光追阴影；探针多次反弹；不支持光追的机器上实测降级路径。
 - M3 遗留：High 档 SSGI 半分辨率 + 深度感知上采样；雾里的局部光源；屏幕空间光束（太阳在画面里时的径向光芒，便宜的补充）。
 - M2 遗留：物体运动矢量（物体自身运动的运动模糊、TAA 更少拖影）、景深的散景形状（目前是圆盘）、镜头切换的自动检测（现在只在换相机节点时重置历史）。
-- M6 遗留：M6a 剩余项见 §9e 末尾；M6b：混合类逐面排序、体积雾按混合类自身深度作用、运动矢量；M6c 光追折射（Hybrid / Ray Traced）。
+- M6 遗留：M6a 剩余项见 §9e 末尾；M6b 混合透明默认不构建（§9f 写了要改进的地方）；M6c：命中点用贴图颜色、色散、光追玻璃投彩色阴影（焦散）。
 - 之后：多盏灯、点光 / 聚光、贴图平铺 / 偏移、嵌套几何体、场景变化自动检测。
 
 ## 13. 变更记录
@@ -213,7 +184,8 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
-| 2026-11-12 | 0.7.0 | M6b 混合透明（§9f）：Blended 槽（Alpha / Additive、受光、软粒子覆盖），PBR MAT 开 Blending + Alpha 贴图自动识别；前向材质 `forward.frag`（无方向光照、BTDR 阴影、软粒子、玻璃后压暗），每帧数据经 `ub_tex`（uniform 块的 CHOP to TOP）读入；`tblend` 支持 Sorted / Order Independent（深度剥离）；`blend_comp` 叠在折射之后、雾和 TAA 之前。没有混合类时全部旁路（A/B 与 0.6.0 平均差 0）。回归 39 项、M6a、M6b、验收全过。测试场景 CPU +0.45 ms、GPU +0.25 ms。新坑 §11 第 40、41 条 |
+| 2026-11-12 | 0.7.0 | M6c 光追折射（§9g）：Transparency 页 Refraction Method（Screen Space / Hybrid / Ray Traced）；玻璃进第二个光追场景 `out_t`，`rt_refr` 从前景透明层穿过玻璃代理（折射进出、全内反射、多块玻璃、按介质吸收），Hybrid 只在屏幕空间找不到背景处用光追。修 M4：光追代理减面有下限（`EXT.RTMINPOLY`），低模物体以前几乎不在光追场景里（示例网络画面因此变化：A/B 平均差 0.016，属于修正）。M6b 混合透明保留在源码、默认不构建（`BUILD.M6B`，用户决定）。回归 39 项、M6 测试（含 `TEST.M6C`）、验收全过。M6c 开销 CPU +0.25 ms、GPU +0.1 ms |
+| 2026-11-12 | 0.7.0-dev | M6b 混合透明（§9f，之后改为默认不构建）：Blended 槽（Alpha / Additive、受光、软粒子覆盖），PBR MAT 开 Blending + Alpha 贴图自动识别；前向材质 `forward.frag`（无方向光照、BTDR 阴影、软粒子、玻璃后压暗），每帧数据经 `ub_tex`（uniform 块的 CHOP to TOP）读入；`tblend` 支持 Sorted / Order Independent（深度剥离）；`blend_comp` 叠在折射之后、雾和 TAA 之前。没有混合类时全部旁路（A/B 与 0.6.0 平均差 0）。回归 39 项、M6a、M6b、验收全过。测试场景 CPU +0.45 ms、GPU +0.25 ms。新坑 §11 第 40、41 条 |
 | 2026-11-12 | 0.6.0 | M6a 透明与折射（`M6_TRANSPARENCY.md`，§9e）：Transparency 页的透明槽（把 Geometry COMP 拖进去，9 个预设）、从 PBR MAT 自动识别、Alpha 测试镂空；前景透明层 `tgbuffer` + 背面 `tback` 测厚度 + `refract`（两次折射、16 步深度步进找背景、按粗糙度取 mip 的磨砂、Beer-Lambert 吸收、菲涅尔、太阳高光）；合并深度给雾和 TAA。没有透明物体时全部旁路（A/B 与 0.5.1 平均差 0）。回归 39 项、M6 测试全过。透明场景 GPU +0.6 ms、CPU +0.85 ms |
 | 2026-11-12 | 0.5.1 | 开源：MIT 许可（`LICENSE` 只放标准 MIT 全文，GitHub 才能识别；HDRI 的 CC0 列在 `THIRD_PARTY_NOTICES.md`），README 去掉“私有仓库”、加上测试现状和许可；使用手册 §9、发布包 README 写明许可和源码地址；`make_showcase.py` 注释里的本机路径换成占位符 |
 | 2026-11-12 | 0.5.1 | 展示工程 `examples/make_showcase.py`：独立文件夹 BetterTDRender（BetterTDRender.toe + BTDR.tox + HDRI + 文档），一个程序化场景加凉棚，4 个预设可切换 / 自动轮播，体积雾预设用逆光（光束只在亮暗的雾交界、暗背景前才看得见）；预设逻辑放在 Text DAT 模块里（不往 storage 存函数，§11 第 37 条）。新坑：`connect(op)` 连到空闲输入时把 0 号输入顶掉了，要用 `inputConnectors[i]` 指定 |

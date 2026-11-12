@@ -70,8 +70,44 @@ def step4():
     try:
         check('preset fills the slot', abs(R.par.Refr0ior.eval() - 2.42) < 1e-3)
         check('back on', R.par.Transcount.eval() == 5)
+        check('screen space: traced refraction bypassed', R.op('rtr_src').par.index.eval() == 0)
+        R.par.Refrmethod = 'raytraced'
+        run('args[0]()', step5, delayFrames=40)
     except Exception:
-        check('step4 exception', False, traceback.format_exc()[-400:])
+        check('step4 exception', False, traceback.format_exc()[-400:]); finish()
+
+def step5():
+    # [BTDR:TEST.M6C] ray-traced refraction: glass in the second proxy scene, traced pixels where the glass is, not black
+    try:
+        errs = [o.path for o in R.findChildren() if o.errors()]
+        check('M6c: no errors', not errs, ' '.join(errs[:5]))
+        check('M6c: switch on', R.op('rtr_src').par.index.eval() == 1 and R.op('uniforms')[3][39] > 1.5)
+        n0, n1 = R.op('rtscene/out').numPrims(), R.op('rtscene/out_t').numPrims()
+        check('M6c: glass only in the refraction scene', n1 > n0 > 0, 'out %d out_t %d' % (n0, n1))
+        a = px(R.op('rt_refr_top'))
+        v = a[..., 3] > 0.5
+        check('M6c: traced pixels', 0.05 < v.mean() < 0.9, 'valid %.3f' % v.mean())
+        m = a[v][:, :3].mean() if v.any() else 0.0
+        check('M6c: finite, not black', bool(np.isfinite(a).all()) and m > 0.05, 'mean %.3f' % m)
+        img = px(R.op('refract'))
+        check('M6c: refract finite', bool(np.isfinite(img).all()))
+        R.par.Refrmethod = 'screen'
+        run('args[0]()', step6, delayFrames=15)
+    except Exception:
+        check('step5 exception', False, traceback.format_exc()[-400:]); finish()
+
+def step6():
+    try:
+        c0 = R.op('rt_refr').totalCooks
+        run('args[0](args[1])', step7, c0, delayFrames=10)
+    except Exception:
+        check('step6 exception', False, traceback.format_exc()[-400:]); finish()
+
+def step7(c0):
+    try:
+        check('M6c: screen space again -> rt_refr does not cook', R.op('rt_refr').totalCooks == c0 and R.op('rtr_src').par.index.eval() == 0)
+    except Exception:
+        check('step7 exception', False, traceback.format_exc()[-400:])
     finish()
 
 run('args[0]()', step1, delayFrames=60)

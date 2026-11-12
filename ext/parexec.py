@@ -1,7 +1,7 @@
 # [BTDR:FILE.PAREXEC] Parameter Execute DAT: custom parameters of renderBTDR -> extension
 def onValueChange(par, prev):
     n = par.name
-    if n in ('Camera', 'Geometry', 'Lights', 'Shadowfit', 'Transparency', 'Refr', 'Blend'):
+    if n in ('Camera', 'Geometry', 'Lights', 'Shadowfit', 'Transparency', 'Refr', 'Blend', 'Refrmethod'):
         parent().Refresh()
     elif n.startswith('Blend') and n[5:6].isdigit():
         # [BTDR:EXT.SLOTS] Blended slots: the geometry pattern rebuilds; mode / lit / soft are bound by expression
@@ -14,6 +14,8 @@ def onValueChange(par, prev):
             parent().ApplyPreset(i)
         elif n.endswith(('geo', 'shadow', 'inrt')):
             parent().Refresh()
+        elif n.endswith(('ior', 'absorb', 'thin')) and parent().par.Refrmethod.eval() != 'screen':
+            parent().Refresh()           # the traced glass reads IOR / absorption from rt_mat ([BTDR:EXT.RTREFR])
     elif n == 'Quality':
         parent().ApplyQuality()
     return

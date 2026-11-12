@@ -84,3 +84,41 @@ CPU 在新场景贴着 1.5 ms 预算：Geometry COMP 从 5 个变成 9 个，两
 - 机器处在"慢"的状态（原生 Render TOP CPU 0.92 ms，快时 0.47 ms），CPU 只适合相互比较；`gbuf0` 等待这次是 3.6–4.8 ms。
 - 体积雾逐节点 GPU（测试场景单独计时）：`fog_scatter` 0.056、`fog_accum` 0.025（0.3.2 新增）、`fog_integrate` 0.012、`fog_apply` 0.026，合计约 0.12 ms。上表 High 档"+ 体积雾"多出的 0.37 ms 大部分是测量波动（Low 档同样的雾只多 0.09 ms）。
 - 0.3.2 起 `uniforms` 每帧计算（之前相机静止时不算）：相机在动的示例场景里本来就每帧算，数字不受影响。
+
+## 0.3.0 / 0.4.0（从 IMPLEMENTATION_2 §10 移来，2026-11-12）
+
+**0.4.0（M4）实测（2026-11-12，示例场景，相机环绕；每种情况先把参数设回出厂默认，机器 CPU 处在慢的状态；`perf_bench.py` 从 0.4.0 起 GPU 也计入 POP）：**
+
+| 情况 | GPU 中位数（去掉 gbuf0 等待） | CPU 中位数 |
+|---|---|---|
+| TD 原生 Render TOP，1080p | 0.66 ms | 0.78 ms |
+| BTDR High，M3 默认（光追关） | 1.98 ms | 2.63 ms |
+| BTDR High，0.4.0 默认（+ 探针 GI + 光追反射） | 2.09 ms | 2.40 ms |
+| BTDR Low，默认 | 0.99 ms | 2.52 ms |
+| BTDR Low，光追关 | 0.90 ms | 1.88 ms |
+| BTDR High，1440p，默认 | 3.75 ms | 2.53 ms |
+| BTDR High，2160p，默认 | 8.85 ms | 2.50 ms |
+
+- 这一轮各情况之间的 CPU 读数噪声约 ±0.3 ms（两次测量的同一设置差这么多），单项看 `cpu_profile.py`：`rt_refl` 约 0.27 ms、`rt_refl_top` 0.04、`rt_acc` 0.05，光追每帧约 +0.35 ms CPU；GPU 约 +0.1 ms（反射 pass 0.03 ms，Fast Build）。探针静态时 0 开销，重算一次约 0.4 ms GPU。
+- 按同时段原生 Render TOP 换算（快的状态约 0.47 ms），BTDR 默认约 1.4 ms CPU，贴着 1.5 ms 预算。Bloom 的 13 个 TOP 约 0.3 ms CPU；0.5.0 起 Low 档少算两级（`BUILD.BLOOMLOW`，4 个 TOP），未单独复测。
+- 0.5.0 没有改动每帧的计算量（`SS.HISTRESET` 只在重置帧生效），性能沿用 0.4.0 的数字；使用手册 §3b 的 CPU 是按快的状态换算后的值。
+
+**0.3.0（M3）实测（2026-11-12，同一新场景，相机环绕、灯光和物体静止，同一时段测；这时机器的 CPU 处在慢的状态）：**
+
+| 情况 | GPU 中位数（去掉 gbuf0 等待） | CPU 中位数 |
+|---|---|---|
+| TD 原生 Render TOP，1080p | 0.73 ms | 0.89 ms |
+| BTDR High，全部关闭 | 0.63 ms | 1.92 ms |
+| BTDR High，0.2.0 的默认（屏幕空间关） | 0.68 ms | 2.04 ms |
+| BTDR High，0.3.0 默认（+ AO、反弹光、SSR） | 1.82 ms | 2.24 ms |
+| BTDR Low，默认 | 0.85 ms | 2.25 ms |
+| BTDR High，默认 + 体积雾 | 1.92 ms | 2.37 ms |
+| BTDR Low，默认 + 体积雾 | 0.91 ms | 2.33 ms |
+| BTDR High，全开（+ 自动曝光、景深、运动模糊） | 2.39 ms | 2.12 ms |
+| BTDR High，1440p，默认 | 3.19 ms | 1.86 ms |
+| BTDR High，2160p，默认 | 7.20 ms | 1.91 ms |
+
+- GPU 分项（High 1080p）：`ssgi` 0.56、`ssr` 0.44、两个累积各约 0.05；Low（半分辨率）`ssgi` 0.08、`ssr` 0.10。体积雾 High 约 0.1。
+- CPU：屏幕空间链多出 7 个 TOP，约 +0.2 ms；体积雾约 +0.13 ms。按同一时段原生 Render TOP 的读数换算（快的状态 0.47 ms），BTDR 默认约 1.2 ms，在 1.5 ms 预算内。
+- 优化余地：High 档的 SSGI 改成半分辨率 + 按深度的上采样（约省 0.4 ms）；SSR 在粗糙度高的像素提前退出已经做了（Max Roughness）。
+

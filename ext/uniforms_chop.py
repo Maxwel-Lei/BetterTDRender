@@ -253,7 +253,9 @@ def onCook(scriptOp):
     a[37] = (gc[0] - gs[0] / 2, gc[1] - gs[1] / 2, gc[2] - gs[2] / 2, 64.0 if high else 32.0)
     a[38] = (gs[0] / (gd[0] - 1), gs[1] / (gd[1] - 1), gs[2] / (gd[2] - 1), 16.0)
     div = 4 if high else 6                                  # must match rt_refl_grid ([BTDR:BUILD.RTREFL])
-    a[39] = (float(max(W // div, 1)), float(max(H // div, 1)), Q['Rtreflintensity'].eval(), 0.0)
+    # w: M6c refraction method (0 screen space, 1 hybrid, 2 ray traced), 0 when ray tracing is off ([BTDR:REFR.RT])
+    rm = {'hybrid': 1.0, 'raytraced': 2.0}.get(str(Q['Refrmethod'].eval()), 0.0) if (rton and 'Refrmethod' in Q) else 0.0
+    a[39] = (float(max(W // div, 1)), float(max(H // div, 1)), Q['Rtreflintensity'].eval(), rm)
     # [BTDR:UNI.RTSTATIC] the probe pass reads its own copy of the slots it needs (sun, shadows on, environment, RT),
     # written only when they change: rt_probes then cooks only on real changes, not every frame
     if gi_on:
@@ -284,6 +286,9 @@ def onCook(scriptOp):
                 e = o.errors() if o is not None else ''
                 if e:
                     bad.append('%s: %s' % (nm, e.splitlines()[0][:160]))
+            o = C.op('rt_refr')                 # M6c: only cooks for Hybrid / Ray Traced; clear its stale errors too
+            if o is not None and 'Refrmethod' in Q and Q['Refrmethod'].eval() != 'screen':
+                o.cook(force=True)
             out = C.op('rtscene/out')
             ntri = out.numPrims() if out is not None else 0
             C.par.Rtproxyinfo = '%d triangles' % ntri

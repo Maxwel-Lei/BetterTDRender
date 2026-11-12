@@ -205,6 +205,7 @@ class BTDRExt:
         alpha map -> refractive). Slot objects outside the Geometry pattern are added to the scene."""
         C = self.ownerComp
         on = bool(C.par.Transparency.eval())
+        blend_on = hasattr(C.par, 'Blendcount')          # M6b is only in builds with M6B = True ([BTDR:BUILD.M6B])
         slot_of = {}
         extra = []
         label = dict(Refr='Refractive', Blend='Blended')
@@ -240,10 +241,13 @@ class BTDRExt:
                     try:
                         if m.par.alphatest.eval():
                             pass                 # alpha test = opaque cut-out ([BTDR:GBUF.ALPHA])
-                        elif m.par.blending.eval() and m.par.alphamap.eval() is not None:
+                        elif blend_on and m.par.blending.eval() and m.par.alphamap.eval() is not None:
                             d.update(kind='blend', cast=False, inrt=False)    # sprite / smoke card ([BTDR:FWD.*])
                         elif m.par.alphafront.eval() < 0.999 or m.par.alphamap.eval() is not None:
                             d.update(kind='refr', cast=False, inrt=False)
+                            if m.par.blending.eval() and m.par.alphamap.eval() is not None:
+                                warn.append('%s looks like a blended (sprite / smoke) material: blended transparency is not '
+                                            'in this build, drawn as refractive.' % g.path)
                     except Exception:
                         pass
             info.append(d)
@@ -324,7 +328,7 @@ class BTDRExt:
         return count
 
     # ------------------------------------------------------------------ ray tracing (M4)
-    def _rt_build(self, geos, warn):
+    def _rt_build(self, geos, warn, info=None):
         # [BTDR:EXT.RTPROXY] the proxy scene for hardware ray tracing, rebuilt with the mirror. Per source Geometry COMP:
         #   SOP: Select -> Convert (to polygons; grids are meshes) -> PolyReduce (Proxy Detail %) -> SOP to POP
         #   POP: Select (no reduction)
@@ -333,13 +337,24 @@ class BTDRExt:
         # Every chain caches: PolyReduce only re-cooks when its source changes, a moved object only re-cooks its
         # Transform POP. The acceleration structure is rebuilt whenever a tracing GLSL POP cooks, so its cost
         # follows the proxy triangle count, not the render meshes.
+        # [BTDR:EXT.RTREFR] M6c: refractive objects go into a second scene rtscene/merge_t -> tri_t -> out_t (= the
+        # opaque proxy + the glass), traced only by the ray-traced refraction pass; the reflection and probe passes keep
+        # tracing rtscene/out, where glass lets light through. ObjId = index in the full object list, so rt_mat has a row
+        # pair for every object (glass: base colour | absorption distance, 0 | IOR, negative = thin walled).
         C = self.ownerComp
         R = C.op('rtscene')
-        keep = ('merge', 'tri', 'out', 'avg_sel', 'avg_res')
+        info = info or [dict(kind='opaque', inrt=True)] * len(geos)
+        rtrefr = str(C.par.Refrmethod.eval()) != 'screen' if hasattr(C.par, 'Refrmethod') else False
+        keep = ('merge', 'tri', 'out', 'merge_t', 'tri_t', 'out_t', 'avg_sel', 'avg_res')
         for c in list(R.children):
             if c.valid and c.name not in keep:
                 c.destroy()
         mg = R.op('merge')
+        mgt = R.op('merge_t')
+        if mgt is not None:
+            for c in list(mgt.inputConnectors):
+                c.disconnect()
+            R.op('out').outputConnectors[0].connect(mgt)
         k = 0
         rows = []
         inst = []
@@ -349,9 +364,12 @@ class BTDRExt:
             t.clear()
             for r in range(4):
                 t.appendRow([M[r, c] for c in range(4)])
-            skip = False
+            kind = info[i]['kind']
+            to_main = kind == 'opaque' or (kind == 'refr' and info[i].get('inrt'))
+            to_glass = kind == 'refr' and not to_main and rtrefr and mgt is not None
+            skip = not (to_main or to_glass)
             try:
-                if src.par.instancing.eval():
+                if not skip and src.par.instancing.eval():
                     inst.append(src.path); skip = True
             except Exception:
                 pass
@@ -363,8 +381,13 @@ class BTDRExt:
                     a = R.create(selectSOP, 's%d' % k); a.par.sops = ch.path
                     cv = R.create(convertSOP, 'cv%d' % k); cv.par.totype = 'poly'
                     a.outputConnectors[0].connect(cv)
-                    pr = R.create(polyreduceSOP, 'pr%d' % k); pr.par.method = 'percentage'
-                    pr.par.percentage.expr = 'parent.BTDR.par.Rtproxydetail'
+                    # [BTDR:EXT.RTMINPOLY] keep Proxy Detail % of the polygons, but never fewer than 800 triangles (or all of them):
+                    # 0.4.0 reduced a 6-face box to one triangle and a sphere to one or two, so low-poly objects were
+                    # missing from the ray-traced scene (found with M6c's traced glass)
+                    pr = R.create(polyreduceSOP, 'pr%d' % k); pr.par.method = 'number'
+                    # (Keep # counts triangles after Pre-Triangulate: a quad is two)
+                    pr.par.numpolys.expr = ("max(int(op('cv%d').numPrims * 2 * parent.BTDR.par.Rtproxydetail / 100), "
+                                            "min(op('cv%d').numPrims * 2, 800))" % (k, k))
                     cv.outputConnectors[0].connect(pr)
                     sp = R.create(soptoPOP, 'sp%d' % k); sp.par.sop = pr
                     for n, o in enumerate((a, cv, pr, sp)): o.nodeX, o.nodeY = -800 + n * 150, y
@@ -377,9 +400,17 @@ class BTDRExt:
                 at.par.attr0name = 'custom'; at.par.attr0customname = 'ObjId'; at.par.attr0type = 'float'
                 at.par.attr0numcomps = '1'; at.par.attr0value0 = i
                 x.outputConnectors[0].connect(at)
-                at.outputConnectors[0].connect(mg)
+                at.outputConnectors[0].connect(mg if to_main else mgt)
                 k += 1
-            rows += self._rt_material(src)
+            rr = self._rt_material(src)
+            if kind == 'refr':
+                sl = info[i].get('slot')
+                P = C.par
+                ior = float(getattr(P, 'Refr%dior' % sl).eval()) if sl is not None else float(P.Defaultior.eval())
+                ab = float(getattr(P, 'Refr%dabsorb' % sl).eval()) if sl is not None else float(P.Absorbdist.eval())
+                thin = bool(getattr(P, 'Refr%dthin' % sl).eval()) if sl is not None else False
+                rr = [(rr[0][0], rr[0][1], rr[0][2], max(ab, 1e-3)), (0.0, 0.0, 0.0, -ior if thin else ior)]
+            rows += rr
         if inst:
             warn.append('Instanced geometry is not in the ray-tracing scene yet: %s' % ', '.join(inst))
         C.store('rt_geos', [g.path for g in geos])
@@ -389,7 +420,7 @@ class BTDRExt:
         for r in rows or [(0, 0, 0, 0), (0, 0, 0, 0)]:
             mt.appendRow(['%.6g' % v for v in r])
         # [BTDR:EXT.RTGRID] probe grid over the bounds of the solid objects (+ margin), from just above the ground
-        fit = self._bounds(geos)
+        fit = self._bounds([g for g, d in zip(geos, info) if d['kind'] == 'opaque' or (d['kind'] == 'refr' and d.get('inrt'))] or geos)
         g = C.op('rt_probe_grid')
         if fit is not None:
             lo, hi = fit
@@ -622,8 +653,9 @@ class BTDRExt:
         n = self._mirror(geos, warn, info)
         ntr = sum(1 for d in info if d['kind'] == 'refr')
         C.par.Transcount = ntr
-        C.par.Blendcount = sum(1 for d in info if d['kind'] == 'blend')
-        nrt = self._rt_build([g for g, d in zip(geos, info) if d['kind'] == 'opaque' or (d['kind'] == 'refr' and d['inrt'])], warn)
+        if hasattr(C.par, 'Blendcount'):
+            C.par.Blendcount = sum(1 for d in info if d['kind'] == 'blend')
+        nrt = self._rt_build(geos, warn, info)
         C.par.Rtavailable = True              # re-tested by `uniforms` ([BTDR:UNI.RTCHECK])
         if C.par.Shadowfit.eval():
             fit = self._fit_shadow(geos)
