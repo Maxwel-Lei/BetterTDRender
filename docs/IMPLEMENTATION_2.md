@@ -111,6 +111,7 @@
 34. **`inputConnectors[i].connections` 拿到的是上游节点的输出口**；对它调 `disconnect()` 会剪掉那个上游输出的**所有**连线。0.5.1 审查时用它断开一个复制节点的输入，结果把 gbuf1 / gbuf2 / taa_hist 到 ssgi、ssr、taa 的连线全剪了（画面变成 TD 着色器出错时的红蓝棋盘格），用 hotswap 恢复。断开某个节点自己的输入用 `node.inputConnectors[i].disconnect()`；做原型放在渲染器外面的独立网络里。
 35. 计时陷阱：对一个输入没变的 TOP `cook(force=True)`，它的 `gpuCookTime` 约 0.02 ms——GPU 上并没有重新执行。比较两个 pass 的 GPU 时间时，两个都要接一个每帧都变的输入（`ab_compare.py` 之外的手工计时都要注意）。帧开始第一个被强制计算的 GPU 节点还会吃掉等待时间，先算一个无关的节点垫底。
 36. 示例网络（`BTDR_Example.tox`）里内嵌了一份 `renderBTDR`：重新构建后要重新生成示例（`make_example.py`），A/B 测试要把两边的渲染器都换掉（`ab_compare.py` 是这样做的）。
+37. **不要把 Python 函数存进 OP 的 storage**（`op.store('x', func)`）：存 .toe / .tox 时 storage 要 pickle，函数存不进去，TD 弹出 "saved with errors: PicklingError: Can't pickle <function …>"。0.5.1 的测试脚本和 `make_example.py` 都踩过（用户存盘时报错）。延时回调要用的函数，用完马上 `unstore`（`EXAMPLE.NOSTORE`），或者把临时数据存在用完就删的测试网络上；测试结束清理 `/project1` 上的临时键。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 

@@ -74,6 +74,9 @@ try:
                  'Parameters of renderBTDR1: see the user guide (BTDR-UserGuide / 使用手册).\n')
     LOG.append('status: ' + R.par.Status.eval())
     def _save():
+        # [BTDR:EXAMPLE.NOSTORE] drop the callback from storage first: a Python function cannot be pickled, so it
+        # would break saving the example .tox and the user's .toe ("PicklingError: Can't pickle <function _save>")
+        E.unstore('save')
         try:
             errs = [(x.path, x.errors()) for x in E.findChildren() if x.errors()]
             LOG.append('errors: %r' % errs[:5])
