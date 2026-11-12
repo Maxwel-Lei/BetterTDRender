@@ -1,5 +1,5 @@
 // [BTDR:FILE.SCENES.SWIRL] swirl.comp — GLSL POP of the particle scene (make_scenes.py, SCENES.PARTICLES).
-// Chladni figures: the particles are sand on an invisible square plate floating in the air. A standing wave of
+// Chladni figures: the particles are sand on an invisible square plate just above the mirror floor. A standing wave of
 // mode (n, m) leaves the sand on its nodal lines, f(x, y) = cos(n pi x) cos(m pi y) +- cos(m pi x) cos(n pi y) = 0.
 // The mode changes every CH_BAR seconds (on the music's bar lines): the sand jumps off the old lines and lands
 // on the new ones. The bass shakes the plate (sand spread around the lines), the grains rattle across the floor while the figure changes.
@@ -9,7 +9,7 @@
 // uForm.x 0..1 gathers the particles into the text drawn in sText (a Text TOP): every particle samples a
 // target point inside the letters and flies there with its own delay. uForm.yzw = text plane width, centre y, z.
 #define CH_SIZE 6.0          // plate edge (scene units)
-#define CH_Y 0.0             // the sand lies on the mirror floor itself (the floor is the plate)
+#define CH_Y 0.15            // the sand hovers just above the mirror floor, so its reflection separates from it
 #define CH_BAR 2.0           // seconds per figure
 #define CH_MOVE 0.9          // seconds the sand takes to settle on the new figure
 float hsh(uint n)
@@ -86,7 +86,7 @@ void main()
         vec2 buzz = vec2(sin(t * 37.0 + a * 61.0), cos(t * 43.0 + b * 57.0)) * 0.0035 * (act + 0.3 * bass);
         q += jit + buzz;
         float bnc = abs(sin(t * 6.2831853 * (9.0 + 8.0 * a) + 6.2831853 * b));
-        float hop = bnc * (0.016 * act * (0.4 + d) + 0.002 * bass) + kick * 0.003 * d;
+        float hop = bnc * (0.06 * act * (0.3 + d) + 0.003 * bass) + kick * 0.004 * d;   // high enough that the mirror image separates
         p = vec3((q.x - 0.5) * CH_SIZE, CH_Y + hop, (q.y - 0.5) * CH_SIZE);
         float lum = 3.6 * (0.6 + 0.8 * d) * (1.0 - smoothstep(0.05, 0.4, miss) * 0.8);
         lum *= 0.8 + 0.5 * bass + 0.6 * sin(3.14159265 * s);
@@ -94,7 +94,7 @@ void main()
     } else {
         // dust drifting around the plate, flashing on the highs
         vec3 dir = normalize(vec3(a - 0.5, (b - 0.5) * 0.6, c - 0.5) + 1e-4);
-        float rr = 4.2 + 3.0 * d + 0.4 * kick;
+        float rr = 8.0 + 5.0 * d + 0.4 * kick;              // kept outside the camera's close orbit
         p = vec3(dir.x * rr, CH_Y + abs(dir.y) * 1.2, dir.z * rr);      // low dust just above the floor
         p += noise3(p * 0.3, t * 0.08) * vec3(0.5, 0.15, 0.5);
         float tw = step(0.9, fract(d * 37.0 + t * (0.3 + a)));

@@ -315,14 +315,17 @@ def part_update(c, i, n):
     # gather into the text 40.0-44.6 s
     f = _ease((tg - 40.0) / 1.3) * (1.0 - _ease((tg - 44.4) / 1.2))
     c.set(S + '/swirl', 'vec2valuex', f)
-    # Chladni part: low over the mirror floor so the ground (and the grains' reflections) carries the shot;
-    # then up to the front for the text
-    a = _lerp(-32.0, -6.0, (tg - PART_T0) / 8.0) if tg < 40.0 else _lerp(-6.0, 0.0, _ease((tg - 40.0) / 1.2)) + max(0.0, tg - 44.6) * 4.0
+    # Chladni part: 32-36 a low close shot along the mirror floor (the hopping sand and its reflection),
+    # 36-40 a crane up that reveals the whole figure; then to the front for the text
+    k = _ease((tg - 35.6) / 4.0)
+    a0 = _lerp(-24.0, -10.0, _ease((tg - PART_T0) / 4.0))
+    a = _lerp(a0, -4.0, k) if tg < 40.0 else _lerp(-4.0, 0.0, _ease((tg - 40.0) / 1.2)) + max(0.0, tg - 44.6) * 4.0
     u = _ease((tg - 40.0) / 1.2) * (1.0 - _ease((tg - 44.6) / 1.4))
-    r = _lerp(_lerp(13.0, 11.5, _ease((tg - PART_T0) / 8.0)), 10.5, u)
-    y = _lerp(_lerp(2.6, 2.0, _ease((tg - PART_T0) / 8.0)), 1.9, u)
+    r = _lerp(_lerp(_lerp(6.2, 5.6, _ease((tg - PART_T0) / 4.0)), 9.5, k), 10.5, u)
+    y = _lerp(_lerp(0.55, 3.4, k), 1.9, u)
     pos = (r * math.sin(math.radians(a)), y, r * math.cos(math.radians(a)))
-    c.look(S + '/cam1', pos, (0.0, _lerp(-0.2, 1.7, u), _lerp(-1.2, 0.0, u)))
+    tgt = (0.0, _lerp(_lerp(0.1, 0.05, k), 1.7, u), _lerp(_lerp(-0.6, -0.3, k), 0.0, u))
+    c.look(S + '/cam1', pos, tgt)
 
 
 MDBG = ['basecolor', 'normal', 'roughness']
