@@ -288,7 +288,7 @@ def mono_update(c, i, n):
     c.set(_P('monolith') + '/renderBTDR1', 'Focusdistance', z - 14.0)
 
 
-PART_T0 = 27.0       # global video time (s) of the first recorded particle frame
+PART_T0 = 32.0       # global video time (s) of the first recorded particle frame (v3 timeline)
 FEAT = []
 
 
@@ -312,19 +312,16 @@ def part_update(c, i, n):
     for j, v in enumerate((b, m, h, k)):
         c.set(S + '/feat_baked', 'value%d' % j, v)
     c.set(S + '/clock', 'value0', tg)
-    # gather into the text 43.0-47.6 s (shot 9)
-    f = _ease((tg - 43.0) / 1.3) * (1.0 - _ease((tg - 46.6) / 1.2))
+    # gather into the text 40.0-44.6 s
+    f = _ease((tg - 40.0) / 1.3) * (1.0 - _ease((tg - 44.4) / 1.2))
     c.set(S + '/swirl', 'vec2valuex', f)
-    if tg < 43.0:
-        a = _lerp(-40.0, -8.0, (tg - PART_T0) / 16.0)
-        u = 0.0
-    else:
-        a = _lerp(-8.0, 0.0, _ease((tg - 43.0) / 1.2)) + max(0.0, tg - 47.0) * 5.0
-        u = _ease((tg - 43.0) / 1.2) * (1.0 - _ease((tg - 46.8) / 1.6))
-    r = _lerp(12.5, 10.5, u)
-    y = _lerp(4.4, 1.9, u)
+    # Chladni part: a high slow orbit so the figures read; then down to the front for the text
+    a = _lerp(-35.0, -5.0, (tg - PART_T0) / 8.0) if tg < 40.0 else _lerp(-5.0, 0.0, _ease((tg - 40.0) / 1.2)) + max(0.0, tg - 44.6) * 5.0
+    u = _ease((tg - 40.0) / 1.2) * (1.0 - _ease((tg - 44.6) / 1.4))
+    r = _lerp(10.0, 10.5, u)
+    y = _lerp(6.0, 1.9, u)
     pos = (r * math.sin(math.radians(a)), y, r * math.cos(math.radians(a)))
-    c.look(S + '/cam1', pos, (0.0, _lerp(1.2, 1.7, u), 0.0))
+    c.look(S + '/cam1', pos, (0.0, _lerp(0.6, 1.7, u), 0.0))
 
 
 MDBG = ['basecolor', 'normal', 'roughness']
@@ -343,6 +340,44 @@ def mat_update(c, i, n):
     c.set(S + '/renderBTDR1', 'Debugview', MDBG[k // 30] if k >= 0 else 'final')
 
 
+# ---------------------------------------------------------------- parameter page (v3): what TD's Render TOP lacks
+PSWEEP = 120                       # frames per clip (2 s); the value moves over frames 20..100
+
+
+def _pv(i):
+    return _ease((i - 20) / 80.0)
+
+
+def pfog_update(c, i, n):
+    S = _P('monolith')
+    c.look(S + '/cam1', (-3.5, 1.2, 38.0), (-3.5, 8.0, -62.0))
+    c.set(S + '/renderBTDR1', 'Focusdistance', 24.0)
+    c.set(S + '/renderBTDR1', 'Fogdensity', round(_lerp(0.0, 0.01, _pv(i)), 5))
+
+
+def pgi_update(c, i, n):
+    S = _P('blinds')
+    c.look(S + '/cam1', (2.85, 1.72, 2.58), (-0.6, 0.95, -1.6))
+    c.set(S + '/renderBTDR1', 'Rtgiintensity', round(_lerp(0.0, 1.5, _pv(i)), 4))
+
+
+def prefr_update(c, i, n):
+    S = _P('materials')
+    c.look(S + '/cam1', (3.1, 1.55, 2.7), (3.1, 1.15, 0.0))
+    c.set(S + '/renderBTDR1', 'Debugview', 'final')
+    c.set(S + '/renderBTDR1', 'Transparency', i >= 60)
+
+
+def pdof_update(c, i, n):
+    S = _P('materials')
+    pos, tgt = (-4.6, 1.45, 2.2), (-2.2, 1.2, 0.0)
+    c.look(S + '/cam1', pos, tgt)
+    c.set(S + '/renderBTDR1', 'Debugview', 'final')
+    c.set(S + '/renderBTDR1', 'Dof', True)
+    c.set(S + '/renderBTDR1', 'Focusdistance', round(math.dist(pos, (-2.5, 1.25, 0.0)), 3))
+    c.set(S + '/renderBTDR1', 'Fstop', round(math.exp(_lerp(math.log(16.0), math.log(1.4), _pv(i))), 3))
+
+
 SHOTS = {
     'blinds': dict(src={'native': _P('blinds') + '/native_out', 'btdr': _P('blinds') + '/renderBTDR1/out1'}, n=720,
                    setup=blinds_setup, update=blinds_update),
@@ -350,8 +385,12 @@ SHOTS = {
     'neon_off': dict(src={'btdr': _P('neon') + '/renderBTDR1/out1'}, n=360, setup=neon_setup(False), update=neon_update),
     'neon_on': dict(src={'btdr': _P('neon') + '/renderBTDR1/out1'}, n=360, setup=neon_setup(True), update=neon_update),
     'monolith': dict(src={'btdr': _P('monolith') + '/renderBTDR1/out1'}, n=420, setup=mono_setup, update=mono_update),
-    'particles': dict(src={'btdr': _P('particles') + '/renderBTDR1/out1'}, n=1380, setup=part_setup, update=part_update),
+    'particles': dict(src={'btdr': _P('particles') + '/renderBTDR1/out1'}, n=840, setup=part_setup, update=part_update),
     'materials': dict(src={'btdr': _P('materials') + '/renderBTDR1/out1'}, n=420, setup=mat_setup, update=mat_update),
+    'p_fog': dict(src={'btdr': _P('monolith') + '/renderBTDR1/out1'}, n=PSWEEP, setup=mono_setup, update=pfog_update),
+    'p_gi': dict(src={'btdr': _P('blinds') + '/renderBTDR1/out1'}, n=PSWEEP, setup=blinds_setup, update=pgi_update),
+    'p_refr': dict(src={'btdr': _P('materials') + '/renderBTDR1/out1'}, n=PSWEEP, setup=mat_setup, update=prefr_update),
+    'p_dof': dict(src={'btdr': _P('materials') + '/renderBTDR1/out1'}, n=PSWEEP, setup=mat_setup, update=pdof_update),
 }
 
 
