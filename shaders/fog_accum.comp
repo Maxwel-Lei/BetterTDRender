@@ -9,7 +9,8 @@
 // shafts drown in it). Accumulating in the volume itself (as UE5's volumetric fog does) averages the jittered
 // samples before integration.
 layout (local_size_x = 8, local_size_y = 8) in;
-#define FOG_CUR_WEIGHT 0.1      // weight of this frame: about 10 frames of history (UE5 uses 0.1 as well)
+// [BTDR:FOG.QUALITY] weight of this frame = Fog Current Frame Weight (uAcc.w, default 0.1: about 10 frames of
+// history, like UE5). Lower = smoother but light shafts lag behind moving lights / objects (0.7.2)
 float sliceDepth(float s) { return uFog2.x * pow(uFog2.y / uFog2.x, s); }
 float sliceOf(float z)    { return log(max(z, 1e-4) / uFog2.x) / log(uFog2.y / uFog2.x); }
 void main()
@@ -34,7 +35,7 @@ void main()
     vec3 h = 0.5 / vec3(sz);                    // stay between texel centres: the 3D input repeats at its edges
     bool valid = z > uFog2.x && all(greaterThanEqual(puvw, h)) && all(lessThanEqual(puvw, 1.0 - h));
     // [BTDR:FOG.ACCUM] exponential average; full current frame on a history reset or outside last frame's volume
-    float w = (valid && uFrame.z < 0.5) ? FOG_CUR_WEIGHT : 1.0;
+    float w = (valid && uFrame.z < 0.5) ? clamp(uAcc.w, 0.01, 1.0) : 1.0;
     vec4 hist = valid ? texture(sTD3DInputs[1], puvw) : cur;
     vec4 o = mix(hist, cur, w);
     if (any(isnan(o)) || any(isinf(o))) o = cur;  // never let a bad value live on in the history

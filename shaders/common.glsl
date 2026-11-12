@@ -27,12 +27,12 @@ uniform vec4 uB[40];
 #define uAE        uB[22]   // x auto exposure on, y min EV, z max EV, w key (target mid grey)
 #define uAE2       uB[23]   // x speed up, y speed down, z delta seconds, w reset
 #define uDOF       uB[24]   // x focal length mm, y f-stop, z focus distance, w max blur radius px
-#define uDOF2      uB[25]   // x sensor width mm, y on, z radius step (quality)
+#define uDOF2      uB[25]   // x sensor width mm, y on, z radius step (quality), w fog shadow blur (texels)
 #define uMB        uB[26]   // x shutter (fraction of a frame), y max blur px, z samples, w on
 #define uSS        uB[27]   // x screen-space AO strength, y SSGI strength, z SSR strength (0 = off)
-#define uGI        uB[28]   // x AO / GI radius (scene units), y steps, z directions
+#define uGI        uB[28]   // x AO / GI radius (scene units), y steps, z directions, w fog jitter (0-1)
 #define uSSR       uB[29]   // x max distance, y steps, z max roughness, w thickness
-#define uAcc       uB[30]   // x current-frame weight, y clamp sigma, z reset
+#define uAcc       uB[30]   // x current-frame weight, y clamp sigma, z reset, w fog current-frame weight
 #define uFog       uB[31]   // x density, y height falloff, z base height, w anisotropy g
 #define uFog2      uB[32]   // x near, y far (fog distance), z ambient intensity, w noise amount
 #define uFog3      uB[33]   // rgb albedo (fog colour), w on

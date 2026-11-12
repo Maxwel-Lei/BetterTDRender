@@ -10,7 +10,7 @@ void main()
     float z = dot(g.xyz, g.xyz) > 1e-8 ? dot(g.xyz, uCamFwd.xyz) : uFog2.y;
     float s = clamp(log(max(z, uFog2.x) / uFog2.x) / log(uFog2.y / uFog2.x), 0.0, 1.0);
     float N = float(uTD3DInfos[0].depth.y);
-    s += (hash12(gl_FragCoord.xy + uFrame.x * 7.3) - 0.5) / N;                       // hide slice steps
+    s += (hash12(gl_FragCoord.xy + uFrame.x * 7.3) - 0.5) / N * uGI.w;               // hide slice steps (Fog Jitter)
     // [BTDR:FOG.EDGE] stay between the first and last slice centres: the 3D input repeats in depth, so a lookup
     // at s = 1 blends the last slice (full fog) with the first (no fog) — a hard band where pixels reach the
     // fog's Max Distance

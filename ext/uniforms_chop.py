@@ -221,16 +221,16 @@ def onCook(scriptOp):
     if flen <= 0.0 and cam is not None:                       # from the camera's horizontal view angle
         flen = Q['Sensorwidth'].eval() / (2.0 * max(_tan_half_fov(cam, aspect), 1e-4))
     a[24] = (max(flen, 1.0), Q['Fstop'].eval(), Q['Focusdistance'].eval(), Q['Dofmaxblur'].eval())
-    a[25] = (Q['Sensorwidth'].eval(), 1.0 if Q['Dof'].eval() else 0.0, 1.25 if high else 2.0, 0.0)
+    a[25] = (Q['Sensorwidth'].eval(), 1.0 if Q['Dof'].eval() else 0.0, 1.25 if high else 2.0, Q['Fogshadowblur'].eval())
     a[26] = (Q['Shutter'].eval(), Q['Mbmaxblur'].eval(), 12.0 if high else 6.0, 1.0 if Q['Motionblur'].eval() else 0.0)
     # [BTDR:UNI.SS] M3 screen-space AO / GI / reflections (0 strength = off; the passes are bypassed by Switch TOPs)
     a[27] = (Q['Aointensity'].eval() if Q['Ambientocclusion'].eval() else 0.0,
              Q['Ssgiintensity'].eval() if Q['Ssgi'].eval() else 0.0,
              Q['Ssrintensity'].eval() if Q['Ssr'].eval() else 0.0, 0.0)
-    a[28] = (Q['Giradius'].eval(), 8.0 if high else 6.0, 2.0 if high else 1.0, 0.0)
+    a[28] = (Q['Giradius'].eval(), 8.0 if high else 6.0, 2.0 if high else 1.0, Q['Fogjitter'].eval())
     a[29] = (Q['Ssrmaxdistance'].eval(), 32.0 if high else 20.0, Q['Ssrmaxroughness'].eval(), Q['Ssrthickness'].eval())
     fz = a[9][2] if cam is not None else 1.0
-    a[30] = (0.1, 1.0, fz, 0.0)
+    a[30] = (0.1, 1.0, fz, Q['Fogcurweight'].eval())
     # [BTDR:UNI.FOG] volumetric fog
     a[31] = (Q['Fogdensity'].eval(), Q['Fogheightfalloff'].eval(), Q['Fogbaseheight'].eval(), Q['Foganisotropy'].eval())
     a[32] = (0.1, max(Q['Fogdistance'].eval(), 0.2), Q['Fogambient'].eval(), Q['Fognoise'].eval())

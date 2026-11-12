@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.7.1'
+VERSION = '0.7.2'
 BLOG = []
 
 def _read(rel):
@@ -240,6 +240,15 @@ def build_btdr(dest, name='renderBTDR'):
         p = setup(pg.appendFloat(nm, label=lab)[0], d, lo, hi, nm not in ('Fogbaseheight',)); p.enableExpr = 'me.par.Fog'
     for p, v in zip(pg.appendRGB('Fogcolor', label='Fog Color (Albedo)'), (1.0, 1.0, 1.0)):
         setup(p, v); p.enableExpr = 'me.par.Fog'
+    # [BTDR:BUILD.FOGQUALITY] (0.7.2) noise / stability controls: grid resolution, temporal weight, jitter, shadow blur
+    p = pg.appendMenu('Fogres', label='Fog Resolution')[0]
+    p.menuNames = ['auto', 'low', 'medium', 'high', 'ultra']
+    p.menuLabels = ['Auto (from Quality)', 'Low 128x72x48', 'Medium 160x90x64', 'High 240x135x96', 'Ultra 320x180x128']
+    p.default = 'auto'; p.val = 'auto'; p.enableExpr = 'me.par.Fog'
+    for nm, lab, d, lo, hi in (('Fogcurweight', 'Fog Current Frame Weight', 0.1, 0.02, 1),
+                               ('Fogjitter', 'Fog Jitter', 1.0, 0, 1),
+                               ('Fogshadowblur', 'Fog Shadow Blur', 1.0, 0, 4)):
+        p = setup(pg.appendFloat(nm, label=lab)[0], d, lo, hi, True); p.enableExpr = 'me.par.Fog'
 
     # [BTDR:BUILD.TRANSPARS] M6a transparency: Refractive slots (drag Geometry COMPs in), global defaults
     pg = C.appendCustomPage('Transparency')
@@ -663,9 +672,14 @@ def build_btdr(dest, name='renderBTDR'):
 
     # [BTDR:BUILD.FOG] volumetric fog: froxel scattering (3D) -> front-to-back integration (3D) -> apply per pixel,
     # before TAA (it resolves the slice dither). Bypassed by a Switch TOP when off.
-    FX = "160 if parent.BTDR.par.Quality != 'low' else 128"
-    FY = "90 if parent.BTDR.par.Quality != 'low' else 72"
-    FZ = "64 if parent.BTDR.par.Quality != 'low' else 48"
+    # [BTDR:BUILD.FOGRES] grid size: Fog Resolution, or from Quality when Auto
+    def _fr(i, auto_hi, auto_lo):
+        return ("{'low': %d, 'medium': %d, 'high': %d, 'ultra': %d}.get(parent.BTDR.par.Fogres.eval(), "
+                "%d if parent.BTDR.par.Quality != 'low' else %d)" % (
+                    (128, 72, 48)[i], (160, 90, 64)[i], (240, 135, 96)[i], (320, 180, 128)[i], auto_hi, auto_lo))
+    FX = _fr(0, 160, 128)
+    FY = _fr(1, 90, 72)
+    FZ = _fr(2, 64, 48)
     # Both volume passes are compute shaders: one dispatch instead of one draw per slice (a 3D pixel-shader GLSL
     # TOP costs about 1 ms CPU for 64 slices), and the integration walks each column once.
     def vol(nm, comp, inputs, x, y, per_slice):
