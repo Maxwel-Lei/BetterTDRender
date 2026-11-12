@@ -118,7 +118,7 @@ void main()
         giScale *= 0.5;                                 // the probes already carry the large-scale bounce
     }
     vec3 bounce = diffuseColor * gi.rgb * w * giScale;
-    vec3 diff = ambD * aoD + bounce;
+    vec3 diff = (ambD + diffuseColor * uAmb.rgb * w) * aoD + bounce;   // [BTDR:COMP.AMBIENT] Ambient Light COMPs
     // [BTDR:COMP.RTSPEC] M4: traced reflections scale the environment specular by traced / environment
     vec4 rt = texHold(IN_RT, uv);
     float rtw = clamp(rt.a * uRT.y * uRT4.z, 0.0, 1.0);

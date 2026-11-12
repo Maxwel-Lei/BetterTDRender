@@ -48,8 +48,14 @@ try:
             # [BTDR:TEST.COLDSTART] the example dropped into a network nobody views: its first picture, cooked once after
             # 60 idle frames, must match a warmed-up picture (0.4.0: uninitialised Feedback TOPs showed as coloured sparkles)
             X = N.loadTox(BT + '/release/BTDR_Example.tox'); X.name = 'example'
-            for c in X.findChildren(type=executeDAT):
+            for c in X.findChildren(type=executeDAT, maxDepth=1):      # the example's own keep_cooking, not the renderer's DATs
                 c.par.active = False
+            # 0.7.4: the cover would hide the first picture, and its warm-up pulls the renderer; this test is about
+            # the raw first picture of a renderer nobody pulled
+            for r in X.findChildren(name='renderBTDR*', maxDepth=1):
+                r.par.Cover = False
+                r.op('cover_warm').par.active = False
+                r.ext.BTDRExt.warmed = True
             # the example camera swings with absTime: freeze it, or the cold / warm pictures differ by camera motion
             # (0.5.1: the measured difference wandered between 0.01 and 0.07 for that reason alone)
             for cam in X.findChildren(type=cameraCOMP):

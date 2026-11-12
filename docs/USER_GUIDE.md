@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.7.4。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.7.5。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -45,7 +45,9 @@
 - 还没找到相机时，封面下方写着 “Waiting for a camera”，节点每半秒检查一次，Camera 参数指向的相机一出现就自动开始。
 - 找到相机后显示约 1 秒的加载动画（Logo 上有一道扫光），这段时间渲染在后台准备（编译着色器、填满时间累积），然后自动切换成渲染画面。
 - 之后改参数、刷新场景都不会再出现封面；下次打开工程会再显示一次。第 2、3 个输出（HDR、深度）不受影响。
-- 每次启动 TouchDesigner 后第一次加载 BTDR 时会弹出作者和联系方式的窗口（同一次运行里只弹一次）；之后可以在 **Info 页**点 **About / Contact...** 再打开。
+- 时间轴暂停时拖入不显示加载动画，直接出渲染画面（0.7.5）。
+- 不想要封面（比如输出直接接到演出窗口）：关掉 **Info 页 → Cover While Loading**。
+- 第一次把 BTDR 拖进一个工程时会弹出作者和联系方式的窗口，只弹一次：弹过之后 Info 页的 **Show At Startup (once)** 自动关掉，保存过的工程再打开不会再弹（0.7.5）；同一次 TD 运行里最多弹一次。之后可以在 **Info 页**点 **About / Contact...** 再打开。
 
 接下来通常会调的几项：
 - 想要天空和真实的环境反射：**Environment 页**换成 HDRI（§3 Environment 页）。
@@ -66,13 +68,15 @@ BTDR.tox 是自包含的，不引用任何外部文件，拖进任何工程都�
 - 改灯光的颜色和 Dimmer
 - 改实例化（Instancing）参数
 
-新增、删除、改名相机 / Geometry COMP / 灯光也不用刷新：节点每半秒检查一次，有变化自动刷新（0.7.4）。
+下面这些也不用刷新，节点每半秒检查一次，有变化自动刷新（0.7.4 / 0.7.5）：
 
-下面这些改动之后要点一次 **Render 页 → Refresh Scene**：
-
+- 新增、删除、改名相机 / Geometry COMP / 灯光（包括 Ambient Light、Environment Light）
+- 开关 Geometry COMP 的 Render 标志
 - 给几何体换了另一个材质节点
 - 在 Geometry COMP 里换了 Render 标志所在的 SOP / POP
-- 改了节点的名字或路径
+
+只有这一种改动之后要点一次 **Render 页 → Refresh Scene**：
+
 - 改了材质的颜色或贴图，并且想让光追（Ray Tracing 页）里的反射和反弹光也跟上（光追代理的颜色在 Refresh 时取一次平均值）
 
 改 Camera、Geometry、Lights 这三个参数本身会自动刷新。
@@ -133,7 +137,7 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 | HDRI Map | 一个等距柱状投影（equirectangular，2:1）的全景 TOP，建议 32 位浮点的 HDR 图。图里很亮的太阳只会产生高光和环境光，不会投射阴影；阴影只来自 Lights 里的那盏灯 |
 | Intensity | 环境光强度 |
 | Rotate | 绕竖直轴旋转环境（度） |
-| Background | Color：纯色背景。Environment：直接显示环境 |
+| Background | Color：纯色背景。Environment：直接显示环境。Transparent (alpha)：背景透明（0.7.5），第 1 个输出带透明通道（预乘，和原生 Render TOP 一样），可以直接用 Over / Composite TOP 叠到别的画面上 |
 | Background Color / Blur / Intensity | 背景颜色、环境背景的模糊程度、背景亮度 |
 | Distance Fade Start / End | 离相机这段距离内，物体逐渐淡入背景；用来隐藏无限地面的边缘。End ≤ Start 时关闭 |
 
@@ -302,8 +306,8 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 |---|---|
 | Exposure (EV) | 曝光补偿，每 +1 亮一倍。开了自动曝光时在自动结果之上再补偿 |
 | Tone Mapping | ACES 或 None |
-| Vignette | 暗角强度 |
-| Grain | 胶片颗粒强度 |
+| Vignette | 暗角强度，默认 0（0.7.5 前默认 0.3） |
+| Grain | 胶片颗粒强度，默认 0（0.7.5 前默认 0.01） |
 
 ## 3b. 性能
 
@@ -346,7 +350,7 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 |---|---|
 | PBR MAT | Base Color、Metallic、Roughness、Ambient Occlusion、Emit 的数值和贴图；Normal Map 和 Bump Scale；各贴图的 Channel Source |
 | Phong MAT | 只取 Diffuse 颜色和 Color Map，粗糙度固定 0.5 |
-| Constant MAT | 只取颜色和 Color Map，粗糙度固定 0.5 |
+| Constant MAT | 和 TD 里一样不受光（0.7.5）：只显示颜色和 Color Map，没有明暗、阴影和反射。注意颜色仍然经过 Grade 页的色调映射，要完全原色把 Tone Mapping 设成 None |
 | 没有材质 | 默认灰色，粗糙度 0.5 |
 | 其他（自定义 GLSL MAT 等） | 默认灰色，节点上有警告 |
 
@@ -364,10 +368,10 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 
 ## 6. 当前限制
 
-- 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。
+- 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
 - 只支持透视相机。
 - 不读取：贴图的平铺 / 偏移 / 采样方式、第二套 UV、高度图和视差、Specular Level、Rim。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影）。
-- 不支持：骨骼变形、Material SOP 逐面材质、Geometry COMP 嵌套（子级里的 Geometry COMP）。
+- 不支持：骨骼变形、Material SOP 逐面材质。Geometry COMP 嵌套（子级里的 Geometry COMP）0.7.5 起支持；Geometry COMP 的 Render 标志关掉就不画（和原生一样）。线条（Line SOP 等）能画，但不参与光追。
 - 内部位置存成相对相机的 16 位浮点：离相机越远精度越低（5 m 处约 4 mm，50 m 处约 3 cm），几十米外的物体阴影可能出现瑕疵。阴影只覆盖 Shadow Range 以内。
 - 反射、AO、反弹光是屏幕空间算法，限制见 Indirect 页一节；光追部分的限制见 Ray Tracing 页一节。
 - 运动模糊和反射、反弹光的时间混合只考虑相机运动；物体自己运动时可能有轻微拖影。

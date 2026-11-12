@@ -28,5 +28,17 @@ void main()
     col *= mix(1.0, smoothstep(0.95, 0.25, length(q * vec2(1.0, 0.8))), uGrade.y);
     col = pow(col, vec3(1.0 / 2.2));
     col += (hash12(gl_FragCoord.xy + fract(uFrame.x * 0.618034) * 97.0) - 0.5) * uGrade.z;
-    fragColor = TDOutputSwizzle(vec4(col, 1.0));
+    // [BTDR:GRADE.ALPHA] Background = Transparent (uEnv.z < 0): alpha = geometry coverage, from the temporally stable
+    // depth in the HDR alpha. An anti-aliased edge holds a mix of object depth and far plane; the nearest depth in
+    // the 3x3 neighbourhood stands in for the object's.
+    float alpha = 1.0;
+    if (uEnv.z < -0.5) {
+        vec2 px = 1.0 / vec2(textureSize(sTD2DInputs[0], 0));
+        float dn = hdr.a;
+        for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++)
+            dn = min(dn, texture(sTD2DInputs[0], vUV.st + vec2(i, j) * px).a);
+        alpha = dn < uClip.y * 0.999 ? clamp((uClip.y - hdr.a) / max(uClip.y - dn, 1e-4), 0.0, 1.0) : 0.0;
+        col *= alpha;                                   // premultiplied, like the native Render TOP
+    }
+    fragColor = TDOutputSwizzle(vec4(col, alpha));
 }

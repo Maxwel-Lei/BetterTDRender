@@ -109,7 +109,7 @@
 | 法线贴图 | G-Buffer 法线与解析球面法线的平均夹角：有贴图 > 3°，无贴图 < 1.5° |
 | 自发光贴图、Channel Source、Phong / Constant / 无材质 / 自定义材质 | 对应球区域内 G-Buffer 的平均值 |
 | 三种视角设置方式、改分辨率 | 用深度输出 + 相机基向量重建世界坐标，与 G-Buffer 位置（加回相机位置）的最大误差 < 0.01（16 位 G-Buffer 下实测约 0.006） |
-| uniform 数组 | `uniforms` 是 4 通道 × 40 采样 |
+| uniform 数组 | `uniforms` 是 4 通道 × 44 采样（0.7.5 前 40） |
 | 材质不读每帧数据、各向异性、抖动相机 | 镜像材质没有指向 CHOP 的数组，采样器为 4×，`gbuffer` 的相机是 `cam_jit` |
 | 法线贴图约定 | 切到 DirectX 后，法线贴图球的 G-Buffer 法线平均变化 > 1° |
 | Quality Low、非平行光、没有灯 | 阴影图尺寸、警告文字、直接光不为 0 |
@@ -166,6 +166,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 回归测试 | `tests/m1_tests.py` | 约 20 秒，39 项；测试网络自动删除 |
 | 透明测试 | `tests/m6_tests.py`（测试场景单独搭：`tests/m6_scene.py`，`M6_SHOT = 'tag'` 存 `out/m6_<tag>.jpg`） | §11b-3 |
 | 混合透明测试 | `tests/m6b_tests.py`（场景：`tests/m6b_scene.py`，`M6_SHOT` 存 `out/m6b_<tag>.jpg`） | §11b-4 |
+| 原生用法测试 | `tests/m7_tests.py` | 13 项：空网络封面 / 等待相机、Info 页、场景自动识别、Render 标志、嵌套、线条不破坏光追、Constant MAT 纯色、透明背景对比原生、换材质 / Ambient Light 自动跟上、删相机无报错、Environment Light、封面开关、暂停时拖入；约 6 秒 |
 | 演示场景 | `examples/demo_scene.py` | `/project1/btdr_demo`：测试模型 AntiqueCamera + FlightHelmet（`测试模型/`，CC0）、HDRI（Rotate −96.2 对齐 light1）、原生 Render TOP 对照 `native_render`；贴图在 `/project1/tex_lib`。素材说明见 `DEMO_ASSETS.md` |
 | 发布用示例 | `examples/make_example.py` | `/project1/btdr_example`，存 `examples/` 和 `release/` 的 `BTDR_Example.tox`（`EXAMPLE.*`） |
 | 验收 | `tests/m5_acceptance.py` | §11b-2 |
@@ -184,13 +185,14 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - M3 遗留：High 档 SSGI 半分辨率 + 深度感知上采样；雾里的局部光源；屏幕空间光束（太阳在画面里时的径向光芒，便宜的补充）。
 - M2 遗留：物体运动矢量（物体自身运动的运动模糊、TAA 更少拖影）、景深的散景形状（目前是圆盘）、镜头切换的自动检测（现在只在换相机节点时重置历史）。
 - M6 遗留：M6a 剩余项见 §9e 末尾；M6b 混合透明默认不构建（§9f 写了要改进的地方）；M6c：命中点用贴图颜色、色散、光追玻璃投彩色阴影（焦散）。
-- 之后：多盏灯、点光 / 聚光、贴图平铺 / 偏移、嵌套几何体、场景变化自动检测。
+- 之后：多盏灯、点光 / 聚光、贴图平铺 / 偏移、场景比例参数（AO 半径、雾、景深按“1 单位 = 1 米”设计）、正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
 
 ## 13. 变更记录
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-13 | 0.7.5 | “和原生 Render TOP 一样用”（和原生并排对比后列出的问题，新测试 `tests/m7_tests.py` 13 项）：① 时间轴暂停时拖入不再卡在加载封面：`execute` 里同步 Refresh（延时调用只做后备），暂停时跳过预热直接出画面（`EXT.PAUSED`；用户机器上暂停时帧完全不推进，`run(delayFrames)` 永远不触发）；`scene_watch` 改用 `absTime.frame`。② 删掉相机不再留下红色错误：`cam_jit` 的表达式在相机不存在时退回默认值（`EXT.CAMGONE`）。③ 跟随 Geometry COMP 的 Render 标志、画嵌套的 Geometry COMP（`EXT.GEOS`）。④ Background 新增 Transparent：`grade` 用 HDR alpha 里的稳定深度和 3×3 邻域最近深度算覆盖率，预乘输出（`GRADE.ALPHA`，`uEnv.z = -1`）；和原生的 alpha 平均值差 0.0004。⑤ Constant MAT 不受光（`EXT.UNLIT` / `GBUF.UNLIT`：颜色走自发光，base 0 + metallic 1 + roughness 1 + AO 0 让所有光照项为 0，不占 G-Buffer 通道）；Tone Mapping = None 时红色实测 (1, 0, 0)。⑥ Vignette、Grain 默认 0。⑦ 弹窗每个工程只弹一次（`EXT.INFOONCE`，Info 页 Show At Startup 弹过后自动关）；Info 页 Cover While Loading 可关封面。⑧ `scene_watch` 的签名加上 Render 标志、材质路径、带 Render 标志的 SOP / POP：换材质节点、换 SOP 自动刷新（`EXT.WATCH`）。⑨ Ambient Light COMP：颜色 × Dimmer 加到漫反射环境项（`EXT.AMBIENT` / `UNI.AMBIENT` / `COMP.AMBIENT`）；uniform 数组 40 → 44 槽（`uAmb` = 40，41–43 空闲）。⑩ 开放曲线不进光追代理（`EXT.RTLINES`：一条 Line SOP 曾让整个场景的 `rt_refl` / `rt_probes` 报错）|
 | 2026-11-13 | 0.7.4 | 封面和加载画面（`BUILD.COVER` / `EXT.COVER`，`shaders/cover.frag`）：第 1 个输出在找到相机、渲染预热 60 帧之前显示 TD学长 的 Logo（有向距离场绘制，tox 里没有图片文件；加载时扫光、等待相机时三个小条慢闪），`out_src` 只拉取选中的一支，渲染画面出来后封面不计算；加载期间 `cover_warm` 每帧拉取 `view` 让着色器编译、时间累积填满。没有相机时每 30 帧查一次 Camera 参数（`CoverPoll`），相机出现就自动刷新。只在启动 / 新建后出现一次（`warmed` 不存盘）。About 页改为 Info 页：版本、作者、微信、闲鱼、两个邮箱、许可、源码和 About / Contact... 按钮；每次 TD 运行第一次加载时弹出作者和联系方式（`EXT.INFO`，`op.TDResources.PopDialog`，同一次运行只弹一次）。`TEST.M4` 的探针数检查改成按 `EXT.RTGRIDDIMS` 的规则（0.7.3 起不再是 16×8×16）。修复（用户在新工程里发现）：先拖入 BTDR、后建几何体时场景一直是空的，空的光追场景让 `rt_refl` / `rt_probes` 编译失败、`rtscene/merge` 没有输入，节点上一串红色错误。现在 `scene_watch` 每 30 帧比较一次 Camera / Geometry / Lights 解析出的路径，有变化就自动 Refresh（`EXT.WATCH`，取代只等相机的轮询）；光追代理为空时 Ray Tracing Available 为关，光追节点不被拉取（`EXT.RTEMPTY`）。环境：Source 新增 Auto 并设为默认（`BUILD.ENVAUTO` / `EXT.ENVLIGHT` / `UNI.ENVAUTO`），和原生 Render TOP 一样读 Lights 匹配到的 Environment Light COMP（贴图、Dimmer、Rotate Y）；以前用户放了 Environment Light COMP，金属球却只反射内置摄影棚。和原生对比：太阳、云的方位一致；原生不算遮挡，球下半部分映出被地面挡住的海面，BTDR 映出地面 |
 | 2026-11-13 | 0.7.3 | 许可从 MIT 改为 PolyForm Noncommercial 1.0.0（禁止商用；再分发必须保留 `LICENSE` 首行的 `Required Notice:` 出处声明）。README、THIRD_PARTY_NOTICES、使用手册 §9、介绍视频片尾同步 |
 | 2026-11-13 | 0.7.3 | 粒子示例（`examples/swirl.comp`）：沙子悬在镜面上方 15 cm（`CH_Y 0.15`），换图形时弹跳、横向抖动（`act = sin(π·s)`），落定后只随低音轻颤；扩散收窄（0.004+0.008·bass）。镜面倒影用平面镜像（`SCENES.MIRROR`）：同一组实例 sy = −1 + 暗一档的材质，渲染器的 Geometry 不含地面——屏幕空间反射分辨不出几毫米的沙粒，只能得到竖向拉丝（实例化几何体也还不进光追，§12）。介绍视频 v4：剪辑点全部落在 120 bpm 的小节线上，音乐（`tools/video` 外的 music3）按实测的画面事件写 |

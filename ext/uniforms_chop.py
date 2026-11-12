@@ -1,10 +1,10 @@
 # [BTDR:FILE.UNIFORMS] Script CHOP callbacks for `uniforms`.
-# [BTDR:UNI.BLOCK] Fills the shared uniform array uB[40] once per frame: 4 channels (xyzw) x 40 samples.
+# [BTDR:UNI.BLOCK] Fills the shared uniform array uB[44] once per frame: 4 channels (xyzw) x 44 samples (40 until 0.7.4).
 # Slot layout must match shaders/common.glsl.
 import math
 import numpy as np
 
-NSLOT = 40
+NSLOT = 44
 _STATE = {}      # per-CHOP runtime state (previous camera, frame counter); not saved with the file
 
 def _halton(i, b):
@@ -213,8 +213,19 @@ def onCook(scriptOp):
             ei *= el.par.dimmer.eval()
             er += el.par.envlightmaprotatey.eval()
     a[15] = (ei, math.radians(er),
-             1.0 if Q['Background'].eval() == 'env' else 0.0, Q['Bgblur'].eval())
+             {'env': 1.0, 'transparent': -1.0}.get(Q['Background'].eval(), 0.0), Q['Bgblur'].eval())
     a[16] = (Q['Bgcolorr'].eval(), Q['Bgcolorg'].eval(), Q['Bgcolorb'].eval(), Q['Bgintensity'].eval())
+    if Q['Background'].eval() == 'transparent':
+        a[16] = (0.0, 0.0, 0.0, 0.0)                     # [BTDR:GRADE.ALPHA] black behind the alpha
+    # [BTDR:UNI.AMBIENT] Ambient Light COMPs (native PBR: ambient colour x dimmer added to the diffuse term)
+    ar = ag = ab = 0.0
+    for pth in C.fetch('ambient_paths', []):
+        al = op(pth)
+        if al is not None:
+            q = _pars(al)
+            d = q['dimmer'].eval()
+            ar += q['cr'].eval() * d; ag += q['cg'].eval() * d; ab += q['cb'].eval() * d
+    a[40] = (ar, ag, ab, 0.0)
     a[17] = (2.0 ** Q['Exposure'].eval(), Q['Vignette'].eval(), Q['Grain'].eval(),
              1.0 if Q['Tonemap'].eval() == 'aces' else 0.0)
     a[18] = (float(Q['Debugview'].menuIndex), 1.0 if Q['Srgbcolors'].eval() else 0.0, Q['Fadestart'].eval(), Q['Fadeend'].eval())

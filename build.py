@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.7.4'
+VERSION = '0.7.5'
 BLOG = []
 
 def _read(rel):
@@ -168,7 +168,8 @@ def build_btdr(dest, name='renderBTDR'):
     p = pg.appendTOP('Envmap', label='HDRI Map')[0]; p.enableExpr = "me.par.Envsource == 'hdri'"
     setup(pg.appendFloat('Envintensity', label='Intensity')[0], 1.0, 0, 4, True)
     setup(pg.appendFloat('Envrotate', label='Rotate')[0], 0.0, -180, 180)
-    menu(pg.appendMenu('Background', label='Background')[0], ['color', 'env'], ['Color', 'Environment'], 'color')
+    menu(pg.appendMenu('Background', label='Background')[0], ['color', 'env', 'transparent'],
+         ['Color', 'Environment', 'Transparent (alpha)'], 'color')
     for p, v in zip(pg.appendRGB('Bgcolor', label='Background Color'), (0.16, 0.16, 0.17)):
         setup(p, v); p.enableExpr = "me.par.Background == 'color'"
     p = setup(pg.appendFloat('Bgblur', label='Background Blur')[0], 0.3, 0, 1, True, True); p.enableExpr = "me.par.Background == 'env'"
@@ -304,13 +305,15 @@ def build_btdr(dest, name='renderBTDR'):
     pg = C.appendCustomPage('Grade')
     setup(pg.appendFloat('Exposure', label='Exposure (EV)')[0], 0.0, -5, 5)
     menu(pg.appendMenu('Tonemap', label='Tone Mapping')[0], ['aces', 'none'], ['ACES', 'None'], 'aces')
-    setup(pg.appendFloat('Vignette', label='Vignette')[0], 0.3, 0, 1, True, True)
-    setup(pg.appendFloat('Grain', label='Grain')[0], 0.01, 0, 0.1, True)
+    setup(pg.appendFloat('Vignette', label='Vignette')[0], 0.0, 0, 1, True, True)     # 0.7.5: off by default, like the native look
+    setup(pg.appendFloat('Grain', label='Grain')[0], 0.0, 0, 0.1, True)
 
     # [BTDR:BUILD.INFO] author, contact, licence (0.7.4: replaces the About page; the dialog is [BTDR:EXT.INFO])
     pg = C.appendCustomPage('Info')
     p = setup(pg.appendStr('Version', label='Version')[0], VERSION); p.readOnly = True
     pg.appendPulse('Showinfo', label='About / Contact...')
+    setup(pg.appendToggle('Startupinfo', label='Show At Startup (once)')[0], True)       # [BTDR:EXT.INFOONCE]
+    setup(pg.appendToggle('Cover', label='Cover While Loading')[0], True)                # [BTDR:BUILD.COVER]
     for nm, lab, v in (('Author', 'Author', 'TD学长 (Xikai Lei)'), ('Wechat', 'WeChat 微信', 'TD_Xuezhang'),
                        ('Xianyu', 'Xianyu 闲鱼', '搜索 “TD学长”'), ('Email1', 'Email', 'max_lei_in_london@163.com'),
                        ('Email2', 'Email 2', 'ginicholaslbert@gmail.com'),
@@ -832,14 +835,14 @@ def build_btdr(dest, name='renderBTDR'):
         prev = ov
     osrc = place(C.create(switchTOP, 'out_src'), 700, 550)
     view.outputConnectors[0].connect(osrc); prev.outputConnectors[0].connect(osrc)
-    osrc.par.index.expr = "int(op('cover_state')['show'])"
+    osrc.par.index.expr = "int(op('cover_state')['show']) if parent.BTDR.par.Cover else 0"
     warm = place(C.create(executeDAT, 'cover_warm'), X0 - 250, -100)
     warm.text = ('# [BTDR:EXT.COVER] behind the loading screen: pull the render so it warms up\n'
                  'def onFrameStart(frame):\n    op(\'view\').cook(force=True)\n    return\n')
     warm.par.framestart = True; warm.par.active = False
     sw = place(C.create(executeDAT, 'scene_watch'), X0 - 250, -200)
     sw.text = ('# [BTDR:EXT.WATCH] pick up cameras / geometry / lights added or removed in the network\n'
-               'def onFrameStart(frame):\n    if int(frame) % 30 == 0:\n        parent().WatchScene()\n    return\n')
+               'def onFrameStart(frame):\n    if absTime.frame % 30 == 0:      # not the timeline frame: that stands still when paused\n        parent().WatchScene()\n    return\n')
     sw.par.framestart = True; sw.par.active = True
 
     # [BTDR:BUILD.OUT] outputs: 1 final image (sRGB; the cover until the render is up), 2 HDR linear, 3 depth

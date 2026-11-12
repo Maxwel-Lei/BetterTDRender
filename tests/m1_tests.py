@@ -129,13 +129,14 @@ try:
             b3 = g0[region(3, wp)][:, :3].mean(0); r3 = g1[region(3, wp)][:, 3].mean()
             check('Phong MAT fallback', b3[0] > 0.9 and b3[1] < 0.02 and abs(r3 - 0.5) < 0.02, 'base %s rough %.2f' % (np.round(b3, 3).tolist(), r3))
             b4 = g0[region(4, wp)][:, :3].mean(0)
-            check('Constant MAT fallback', b4[2] > 0.9 and b4[0] < 0.02, 'base %s' % np.round(b4, 3).tolist())
+            e4 = g3[region(4, wp)][:, :3].mean(0)       # [BTDR:GBUF.UNLIT] 0.7.5: unlit, the colour is in the emission buffer
+            check('Constant MAT unlit', e4[2] > 0.9 and e4[0] < 0.02 and b4.max() < 0.02, 'emission %s base %s' % (np.round(e4, 3).tolist(), np.round(b4, 3).tolist()))
             b5 = g0[region(5, wp)][:, :3].mean(0)
             check('no material -> default grey', abs(b5[0] - 0.5 ** 2.2) < 0.01, 'base %s' % np.round(b5, 3).tolist())
             w = ' | '.join(st.get('warnings', []))
-            check('warnings for phong / constant / custom', all(k in w for k in ('Phong', 'Constant', 'not supported')), w[:300])
+            check('warnings for phong / constant / custom', all(k in w for k in ('Phong', 'not supported')), w[:300])
             u = R.op('uniforms')
-            check('uniform block 4 x 40', u.numChans == 4 and u.numSamples == 40, '%d chans %d samples' % (u.numChans, u.numSamples))
+            check('uniform block 4 x 44', u.numChans == 4 and u.numSamples == 44, '%d chans %d samples' % (u.numChans, u.numSamples))
             mats = R.findChildren(type=glslMAT, path='*/scene/*')
             check('materials: no per-frame uniform, 4x anisotropic; G-Buffer through cam_jit',
                   mats and all(all(getattr(m.par, 'array%dchop' % i).eval() is None for i in range(m.seq.array.numBlocks)) and m.par.sampler0anisotropy.eval() == '4x' for m in mats)
@@ -255,7 +256,7 @@ try:
             a1 = arr(R.op('out1'))[::4, ::4, :3]; a2 = arr(R2.op('out1'))[::4, ::4, :3]
             check('two instances side by side', s1_.get('mirrored') == 8 and s2_.get('mirrored') == 4 and s2_.get('camera', '').endswith('cam2')
                   and not errs and not bad and np.abs(a1 - a2).mean() > 0.01,
-                  'mirrored %r / %r, image diff %.3f' % (s1_.get('mirrored'), s2_.get('mirrored'), np.abs(a1 - a2).mean()))
+                  'mirrored %r / %r, image diff %.3f, status %r, errors %r %r' % (s1_.get('mirrored'), s2_.get('mirrored'), np.abs(a1 - a2).mean(), R2.par.Status.eval(), errs[:2], bad[:1]))
             R2.op('out1').save(BT + '/out/test_second_instance.jpg')
             R2.destroy()
             R.par.Antialias = 'none'

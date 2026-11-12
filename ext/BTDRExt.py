@@ -68,6 +68,11 @@ class BTDRExt:
         C = self.ownerComp
         if cam is None:
             self._cover(1, 1)               # `scene_watch` refreshes as soon as the camera appears ([BTDR:EXT.WATCH])
+        elif not self.warmed and not C.time.play:
+            # [BTDR:EXT.PAUSED] timeline paused: frames may not advance at all (then no delayed call ever fires and
+            # the loading screen would stay up, found in 0.7.4), so show the render straight away
+            self.warmed = True
+            self._cover(0, 0)
         elif not self.warmed:
             self._cover(1, 0)
             run("args[0].CoverDone() if (args[0].valid and hasattr(args[0], 'CoverDone')) else None",
@@ -85,14 +90,19 @@ class BTDRExt:
         # [BTDR:EXT.WATCH] what Camera / Geometry / Lights resolve to right now
         C = self.ownerComp
         cam = C.par.Camera.eval()
+        def one(g):
+            m = g.par.material.eval()
+            return (g.path, m.path if m is not None else '',
+                    tuple(c.name for c in g.children if c.family in ('SOP', 'POP') and c.render))
         return (cam.path if (cam is not None and cam.OPType == 'cameraCOMP') else '',
-                tuple(g.path for g in self._find(C.par.Geometry.eval(), ('geometryCOMP',))),
-                tuple(l.path for l in self._find(C.par.Lights.eval(), ('lightCOMP',))),
+                tuple(one(g) for g in self._geos()),
+                tuple(l.path for l in self._find(C.par.Lights.eval(), ('lightCOMP', 'ambientlightCOMP'))),
                 tuple((e.path, bool(e.par.envlightmap.eval())) for e in self._find(C.par.Lights.eval(), ('environmentlightCOMP',))))
 
     def WatchScene(self):
         # [BTDR:EXT.WATCH] called by `scene_watch` every COVER_POLL_FRAMES frames: a camera, Geometry COMP or light
-        # added, deleted or renamed in the network refreshes the scene by itself (before 0.7.4 that needed Refresh
+        # added, deleted or renamed, a Render flag toggled, another material assigned or another SOP / POP given the
+        # Render flag (0.7.5) refreshes the scene by itself (before 0.7.4 that needed Refresh
         # Scene: a renderer dropped in before the geometry existed stayed empty, and the empty ray-tracing scene
         # showed compile errors). Costs a few ops() lookups twice a second.
         if self._scene_sig() != getattr(self, 'sig', None):
@@ -103,6 +113,14 @@ class BTDRExt:
         # or every time from the Info page's button
         import sys
         if once:
+            # [BTDR:EXT.INFOONCE] 0.7.5: the Info page's Show At Startup switches itself off after the first time, so
+            # a saved project does not open the dialog again; and never more than once per TouchDesigner session
+            C = self.ownerComp
+            p = getattr(C.par, 'Startupinfo', None)
+            if p is not None and not p.eval():
+                return
+            if p is not None:
+                p.val = False
             if getattr(sys, '_btdr_info_shown', False):
                 return
             sys._btdr_info_shown = True
@@ -130,6 +148,22 @@ class BTDRExt:
                 if o.OPType in optypes and o not in found and o is not self.ownerComp:
                     found.append(o)
         return found
+
+    def _geos(self):
+        # [BTDR:EXT.GEOS] the Geometry COMPs to draw, like the native Render TOP: everything Geometry matches whose
+        # Render flag is on (0.7.5: only the Render parameter was followed), plus the Geometry COMPs nested inside
+        # them (0.7.5: children were not drawn); a nested COMP is drawn only if every COMP above it has its flag on.
+        out = []
+        def add(g):
+            if not g.render or g in out:
+                return
+            out.append(g)
+            for c in g.children:
+                if c.OPType == 'geometryCOMP':
+                    add(c)
+        for g in self._find(self.ownerComp.par.Geometry.eval(), ('geometryCOMP',)):
+            add(g)
+        return out
 
     def _vecs(self, o, items):
         o.seq.vec.numBlocks = len(items)
@@ -188,7 +222,7 @@ class BTDRExt:
         elif t == 'constantMAT':
             base = tuple('%s.par.color%s' % (S, c) for c in 'rgb') + (1,)
             maps['sBaseColor'] = tex('colormap')
-            warn.append('%s is a Constant MAT: only its colour is used (roughness 0.5).' % src.path)
+            trans2 = trans2[:3] + (1,)          # [BTDR:EXT.UNLIT] unlit like in TD: colour only, no lighting or reflections
         elif src is not None:
             warn.append('%s (%s) is not supported: rendered with the default grey material. Use a PBR MAT.' % (src.path, src.OPType))
         self._vecs(m, [('uBase', base), ('uPBR', pbr), ('uEmit', emit), ('uChan', chan), ('uTrans', trans), ('uTrans2', trans2)])
@@ -385,7 +419,7 @@ class BTDRExt:
                 s.render = True
                 s.display = True
                 n += 1
-            if n == 0:
+            if n == 0 and not any(c.OPType == 'geometryCOMP' for c in src.children):     # a pure parent is fine
                 warn.append('%s has no SOP or POP with its Render flag on.' % src.path)
             g.par.parentxformsrc = 'specify'
             g.par.parentobject = src.path
@@ -460,6 +494,13 @@ class BTDRExt:
             for ch in ([] if skip else src.children):
                 if not getattr(ch, 'render', False) or ch.family not in ('SOP', 'POP'):
                     continue
+                # [BTDR:EXT.RTLINES] open curves (Line SOP ...) cannot go into the acceleration structure: it accepts
+                # triangles only and one line made rt_refl / rt_probes fail for the whole scene (0.7.4)
+                try:
+                    if ch.family == 'SOP' and ch.numPrims > 0 and not getattr(ch.prims[0], 'closed', True):
+                        continue
+                except Exception:
+                    pass
                 y = -k * 120 - 400
                 if ch.family == 'SOP':
                     a = R.create(selectSOP, 's%d' % k); a.par.sops = ch.path
@@ -622,7 +663,9 @@ class BTDRExt:
             if par is None:
                 continue
             if cam is not None:
-                par.expr = "op('%s').par.%s" % (cam.path, p)
+                # [BTDR:EXT.CAMGONE] survives the camera being deleted: until `scene_watch` notices (up to half a
+                # second) the expression falls back to the default instead of raising (0.7.4 left red errors)
+                par.expr = "op('%s').par.%s.eval() if op('%s') else %r" % (cam.path, p, cam.path, par.default)
             else:
                 par.expr = ''
                 par.val = par.default
@@ -724,10 +767,12 @@ class BTDRExt:
             cam = None
         elif cam.par.projection.eval() != 'perspective':
             warn.append('%s: only perspective cameras are supported.' % cam.path)
-        geos = self._find(C.par.Geometry.eval(), ('geometryCOMP',))
+        geos = self._geos()
         if not geos:
-            warn.append('Geometry: nothing matches "%s".' % C.par.Geometry.eval())
+            warn.append('Geometry: nothing matches "%s" (or every match has its Render flag off).' % C.par.Geometry.eval())
         lights = self._find(C.par.Lights.eval(), ('lightCOMP',))
+        # [BTDR:EXT.AMBIENT] Ambient Light COMPs matched by Lights add their colour x dimmer to the diffuse ambient
+        C.store('ambient_paths', [a.path for a in self._find(C.par.Lights.eval(), ('ambientlightCOMP',))])
         distant = [l for l in lights if l.par.lighttype.eval() == 'distant']
         light = (distant or lights or [None])[0]
         if light is None:

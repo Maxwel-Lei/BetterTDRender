@@ -82,6 +82,7 @@ try:
             LOG.append('errors: %r' % errs[:5])
             E.op('OUT').save(BT + '/out/example.jpg')
             E.op('keep_cooking').par.active = False                    # in the saved file only the viewer pulls the image
+            E.op('renderBTDR1').par.Startupinfo = True                 # the dialog switched it off while building ([BTDR:EXT.INFOONCE])
             E.save(BT + '/examples/BTDR_Example.tox')
             E.save(BT + '/release/BTDR_Example.tox')
             open(BT + '/out/example_log.txt', 'w', encoding='utf-8').write(('STATUS DONE' if not errs else 'STATUS ERR') + '\n' + '\n'.join(LOG))

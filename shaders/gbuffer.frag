@@ -18,7 +18,7 @@ uniform vec4 uPBR;     // x metallic, y roughness, z AO strength, w normal map s
 uniform vec4 uEmit;    // rgb emissive colour, w 1 = an emissive map is assigned
 uniform vec4 uChan;    // xyz channel source of the metallic, roughness, AO maps (PBR MAT menu index), w 1 = colours are sRGB
 uniform vec4 uTrans;   // [BTDR:GBUF.TRANS] x opacity, y IOR, z absorption distance, w thin walled
-uniform vec4 uTrans2;  // x 1 = alpha map, y alpha-test threshold (< 0 = off), z roughness override (< 0 = material)
+uniform vec4 uTrans2;  // x 1 = alpha map, y alpha-test threshold (< 0 = off), z roughness override (< 0 = material), w 1 = unlit
 
 in Vertex {
     vec3 worldPos;
@@ -91,6 +91,9 @@ void main()
     // [BTDR:GBUF.INSTCOLOR] the instance colour tints base colour and emission (particles, per-instance glow)
     base *= max(iVert.color.rgb, 0.0);
     emit *= max(iVert.color.rgb, 0.0);
+    // [BTDR:GBUF.UNLIT] Constant MAT: the colour goes out as emission. Base 0 + metallic 1 gives no diffuse and F0 = 0,
+    // roughness 1 and AO 0 switch off reflections and ambient: no lighting term is left, without a flag channel.
+    if (uTrans2.w > 0.5) { emit = base; base = vec3(0.0); metal = 1.0; rough = 1.0; ao = 0.0; }
     oAlbedo = vec4(base, clamp(metal, 0.0, 1.0));
     oNormal = vec4(n, clamp(rough, 0.04, 1.0));
     oPosition = vec4(iVert.worldPos - iVert.camPos, ao);

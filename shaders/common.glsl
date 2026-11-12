@@ -1,7 +1,7 @@
 // [BTDR:FILE.COMMON] common.glsl — prepended to every BTDR shader by build.py
 // [BTDR:UNI.BLOCK] one shared uniform array, filled once per frame by the Script CHOP `uniforms`
 // (ext/uniforms_chop.py). Slot layout must match that file.
-uniform vec4 uB[40];
+uniform vec4 uB[44];
 #define uCamPos    uB[0]    // xyz camera position
 #define uCamRight  uB[1]    // xyz camera right
 #define uCamUp     uB[2]    // xyz camera up
@@ -17,7 +17,7 @@ uniform vec4 uB[40];
 #define uSunPos    uB[12]   // xyz shadow camera position, w shadows on
 #define uSunRight  uB[13]   // xyz shadow camera right, w ortho width
 #define uSunUp     uB[14]   // xyz shadow camera up, w shadow far
-#define uEnv       uB[15]   // x intensity, y rotation (radians), z background mode (0 colour, 1 environment), w background blur
+#define uEnv       uB[15]   // x intensity, y rotation (radians), z background mode (0 colour, 1 environment, -1 transparent), w background blur
 #define uBgColor   uB[16]   // rgb background colour (linear), w background intensity
 #define uGrade     uB[17]   // x exposure multiplier, y vignette, z grain, w tonemap (0 none, 1 ACES)
 #define uView      uB[18]   // x debug view, y sRGB colour inputs, z distance fade start, w distance fade end
@@ -42,6 +42,7 @@ uniform vec4 uB[40];
 #define uRT2       uB[37]   // xyz probe grid minimum, w rays per probe
 #define uRT3       uB[38]   // xyz probe spacing, w radiance clamp
 #define uRT4       uB[39]   // x / y traced-reflection grid width / height, z reflection intensity
+#define uAmb       uB[40]   // 0.7.5: rgb Ambient Light COMPs (colour x dimmer, summed); slots 41-43 are free
 const float PI = 3.14159265359;
 
 float hash12(vec2 p)
