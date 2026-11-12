@@ -472,8 +472,21 @@ class BTDRExt:
         C.store('rt_check', 0)              # [BTDR:UNI.RTCHECK] re-check ray-tracing support after a rebuild
         C.store('status', {'camera': cam.path if cam is not None else None, 'geometry': [g.path for g in geos],
                            'light': light.path if light is not None else None, 'mirrored': n, 'warnings': warn})
-        C.par.Status = ('OK: %d geometry' % n) if not warn else ('%d warning%s: %s' % (len(warn), '' if len(warn) == 1 else 's', warn[0]))
-        C.op('status').text = '\n'.join(warn) if warn else 'OK'
+        # [BTDR:EXT.TIPS] hints that are not problems (no warning marker): things in the user's scene that cost time
+        # for nothing. A Light COMP with a native shadow re-renders its own shadow map every frame (IMPLEMENTATION_2
+        # §11 #18: ~0.4 ms CPU, ~1.4 ms GPU in the demo scene) although BTDR draws its own shadows.
+        tips, short = [], ''
+        try:
+            if light is not None and light.par.shadowtype.eval() != 'off':
+                tips.append('%s draws a native shadow map every frame that BTDR does not use: set its Shadow Type to '
+                            'Off to save ~1 ms (BTDR shadows are not affected)' % light.name)
+                short = ' - tip: set %s Shadow Type to Off (saves ~1 ms)' % light.name
+        except Exception:
+            pass
+        st = C.fetch('status'); st['tips'] = tips; C.store('status', st)
+        C.par.Status = (('OK: %d geometry' % n) + short) if not warn else \
+                       ('%d warning%s: %s' % (len(warn), '' if len(warn) == 1 else 's', warn[0]))
+        C.op('status').text = '\n'.join(warn + ['tip: ' + t for t in tips]) if (warn or tips) else 'OK'
         return warn
 
     def ApplyQuality(self):

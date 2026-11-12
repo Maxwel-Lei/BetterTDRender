@@ -9,3 +9,4 @@ __pycache__/
 # TouchDesigner backups
 Backup/
 *.toe.*
+release/BTDR_ref.tox

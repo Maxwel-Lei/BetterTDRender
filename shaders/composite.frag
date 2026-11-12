@@ -1,15 +1,42 @@
-// [BTDR:FILE.COMP] composite.frag — combines the split lighting buffers with the screen-space passes.
-// 2D inputs: 0 direct (+ emissive, background), 1 env diffuse (x albedo x material AO), 2 env specular,
-//            3 env BRDF | weight, 4 SSGI | AO (accumulated), 5 SSR | confidence (accumulated), 6 base | metal,
-//            7 normal | roughness, 8 camera-relative position, 9 height-field map (hf_src: depth below topcam),
-//            10 traced reflection ratio | valid (rt_src, reduced resolution, accumulated)
-// 3D inputs: 0..3 probe grid SH-L1 (probe_src0..3: mean | valid, first moments r / g / b) (M4)
+// [BTDR:FILE.COMP] composite.frag — the deferred lighting ([BTDR:COMP.INLINE]: lighting_core, computed here) combined
+// with the screen-space passes, the probe grid and the traced reflections.
+// 2D inputs: 0 base | metal, 1 normal | roughness, 2 camera-relative position | AO, 3 shadow map (shadow_src),
+//            4 emissive, 5 sharp environment, 6 SSGI | AO (accumulated), 7 SSR | confidence (accumulated),
+//            8 height-field map (hf_src: depth below topcam), 9 traced reflection ratio | valid (rt_src, reduced
+//            resolution, accumulated)
+// 3D inputs: 0 pre-filtered environment atlas, 1..4 probe grid SH-L1 (probe_src0..3: mean | valid, first moments
+//            r / g / b) (M4)
+// Input extend mode is Repeat (the environment wraps around); inputs that can be smaller than the output (SSGI, SSR,
+// traced reflections, height field) clamp their coordinates to the edge texel centres (texHold), = Hold before 0.5.1.
 // uSS: x AO strength, y GI strength, z SSR strength (0 = off); uHF / uHF2: height-field AO ([BTDR:UNI.HFAO])
+// [BTDR:COMP.INLINE] 0.5.0 and earlier rendered the four lighting terms into four rgba16float buffers (lighting +
+// 3 Render Select TOPs) and read them back here: ~130 MB of traffic per 1080p frame and four TOP cooks. The terms
+// are now computed in registers; lighting.frag (same code) only cooks for the Debug View.
+#define LC_BASE sTD2DInputs[0]
+#define LC_NRM sTD2DInputs[1]
+#define LC_POS sTD2DInputs[2]
+#define LC_SHADOW sTD2DInputs[3]
+#define LC_EMIT sTD2DInputs[4]
+#define ENV_SHARP sTD2DInputs[5]
+#define ENV_ATLAS sTD3DInputs[0]
+#define IN_GI sTD2DInputs[6]
+#define IN_SSR sTD2DInputs[7]
+#define IN_HF sTD2DInputs[8]
+#define IN_RT sTD2DInputs[9]
+//#include env_lookup
+//#include lighting_core
+// Hold (clamp-to-edge) sampling for inputs that may be smaller than the output (SSGI / SSR at half resolution on
+// Low, traced reflections at 1/4 or 1/6): with Repeat they would blend in the opposite screen edge
+vec4 texHold(sampler2D t, vec2 uv)
+{
+    vec2 r = vec2(textureSize(t, 0));
+    return texture(t, clamp(uv, 0.5 / r, 1.0 - 0.5 / r));
+}
 out vec4 fragColor;
-#define PROBE_SH0 sTD3DInputs[0]
-#define PROBE_SH1 sTD3DInputs[1]
-#define PROBE_SH2 sTD3DInputs[2]
-#define PROBE_SH3 sTD3DInputs[3]
+#define PROBE_SH0 sTD3DInputs[1]
+#define PROBE_SH1 sTD3DInputs[2]
+#define PROBE_SH2 sTD3DInputs[3]
+#define PROBE_SH3 sTD3DInputs[4]
 //#include probe_lookup
 
 // [BTDR:COMP.HFAO] height-field AO (contact AO on the ground): sky visibility from the top-down depth map. For a few directions around the
@@ -22,7 +49,8 @@ float hfHeight(vec2 xz)
     // topcam looks down -Y: screen right = +X, screen up = -Z
     vec2 uv = vec2(xz.x - uHF.x, uHF.y - xz.y) / uHF.z + 0.5;
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return -1e9;
-    float d = textureLod(sTD2DInputs[9], uv, 0.0).r;
+    vec2 hr = vec2(textureSize(IN_HF, 0));
+    float d = textureLod(IN_HF, clamp(uv, 0.5 / hr, 1.0 - 0.5 / hr), 0.0).r;   // = Hold extend
     return d > 1e-4 ? uHF.w - d : -1e9;
 }
 float heightFieldAO(vec3 p, vec3 N)
@@ -56,21 +84,21 @@ float heightFieldAO(vec3 p, vec3 N)
 void main()
 {
     vec2 uv = vUV.st;
-    vec4 d = texture(sTD2DInputs[0], uv);
-    vec3 ambD = texture(sTD2DInputs[1], uv).rgb;
-    vec3 ambS = texture(sTD2DInputs[2], uv).rgb;
-    vec4 brdf = texture(sTD2DInputs[3], uv);
-    vec4 gi = texture(sTD2DInputs[4], uv);
-    vec4 ssr = texture(sTD2DInputs[5], uv);
-    vec4 g0 = texture(sTD2DInputs[6], uv);
+    vec4 d, ambD4, ambS4, brdf;
+    lightingTerms(uv, d, ambD4, ambS4, brdf);
+    vec3 ambD = ambD4.rgb;
+    vec3 ambS = ambS4.rgb;
+    vec4 gi = texHold(IN_GI, uv);
+    vec4 ssr = texHold(IN_SSR, uv);
+    vec4 g0 = texture(LC_BASE, uv);
     float w = brdf.a;                                   // 0 on the background
     vec3 diffuseColor = g0.rgb * (1.0 - g0.a);
     // [BTDR:COMP.AO] screen-space AO only darkens the ambient (environment) terms, never the sun
     float ao = mix(1.0, gi.a, uSS.x * step(1e-4, w));
     float hf = 1.0;
     if (uHF2.x > 0.5 && w > 1e-4) {
-        vec3 N = normalize(texture(sTD2DInputs[7], uv).xyz);
-        vec3 rp = texture(sTD2DInputs[8], uv).xyz;
+        vec3 N = normalize(texture(LC_NRM, uv).xyz);
+        vec3 rp = texture(LC_POS, uv).xyz;
         vec3 p = rp + uCamPos.xyz;
         // [BTDR:COMP.HFRECEIVER] receivers only (0.3.4): upward-facing surfaces that are not the top surface of a
         // caster at their own position — the ground under and around objects, the inside of a car under its roof.
@@ -84,15 +112,15 @@ void main()
     float giScale = uSS.y;
     // [BTDR:COMP.PROBES] M4: the probe grid (traced, knows about occlusion off screen) replaces the environment diffuse
     if (uRT.x > 0.5 && w > 1e-4) {
-        vec3 N = normalize(texture(sTD2DInputs[7], uv).xyz);
-        vec4 g2 = texture(sTD2DInputs[8], uv);
+        vec3 N = normalize(texture(LC_NRM, uv).xyz);
+        vec4 g2 = texture(LC_POS, uv);
         ambD = diffuseColor * probeIrradiance(g2.xyz + uCamPos.xyz, N) * g2.a * uRT.w;
         giScale *= 0.5;                                 // the probes already carry the large-scale bounce
     }
     vec3 bounce = diffuseColor * gi.rgb * w * giScale;
     vec3 diff = ambD * aoD + bounce;
     // [BTDR:COMP.RTSPEC] M4: traced reflections scale the environment specular by traced / environment
-    vec4 rt = texture(sTD2DInputs[10], uv);
+    vec4 rt = texHold(IN_RT, uv);
     float rtw = clamp(rt.a * uRT.y * uRT4.z, 0.0, 1.0);
     vec3 envS = mix(ambS, ambS * rt.rgb, rtw);
     // [BTDR:COMP.SPEC] SSR replaces the environment reflection where it found a hit

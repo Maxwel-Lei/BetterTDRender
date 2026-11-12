@@ -22,12 +22,23 @@ def _cb():
     if ST['f'] >= WARM + NF: _finish()
 
 def _finish():
-    L = ['STATUS DONE', 'CPU total median %.3f ms over %d frames' % (statistics.median(ST['tot']), len(ST['tot'])), '', 'CPU per op (median ms, frames cooked):']
-    rows = sorted(((statistics.median(v), k, len(v)) for k, v in ST['cpu'].items()), reverse=True)
-    for m, k, n in rows[:30]: L.append('  %7.3f  %-40s %d' % (m, k, n))
-    L += ['', 'GPU per TOP (median ms):']
-    rows = sorted(((statistics.median(v), k) for k, v in ST['gpu'].items()), reverse=True)
-    for m, k in rows[:20]: L.append('  %7.3f  %s' % (m, k))
+    # [BTDR:PROF.STEADY] only operators that cooked in (almost) every measured frame: one-off cooks after a Refresh
+    # (shader compiles, PolyReduce) would otherwise top the list
+    steady = {k for k, v in ST['cpu'].items() if len(v) >= 0.9 * NF}
+    cpu = sorted(((statistics.median(v), k) for k, v in ST['cpu'].items() if k in steady), reverse=True)
+    gpu = sorted(((statistics.median(v), k) for k, v in ST['gpu'].items() if k in steady), reverse=True)
+    rare = sorted(((max(v), k, len(v)) for k, v in ST['cpu'].items() if k not in steady), reverse=True)
+    L = ['STATUS DONE', 'target %s' % R.path,
+         'CPU total median %.3f ms over %d frames (all cooks)' % (statistics.median(ST['tot']), len(ST['tot'])),
+         'steady ops: %d, CPU sum of medians %.3f ms, GPU sum of medians %.3f ms (without gbuf0 %.3f)' % (
+             len(steady), sum(m for m, _ in cpu), sum(m for m, _ in gpu), sum(m for m, k in gpu if k != 'gbuf0')),
+         '', 'steady ops: CPU median ms | GPU median ms | name']
+    gd = {k: m for m, k in gpu}
+    for m, k in cpu:
+        L.append('  %7.3f  %7.3f  %s' % (m, gd.get(k, 0.0), k))
+    L += ['', 'occasional cooks (max CPU ms, times):']
+    for m, k, n in rare[:25]:
+        L.append('  %7.3f  %-40s %d' % (m, k, n))
     open(PF + '/btdr/out/cpu_profile.txt', 'w', encoding='utf-8').write('\n'.join(L))
     op('/').time.play = ST['was_playing']
     if op('/project1').op('prof_exec'): op('/project1/prof_exec').destroy()

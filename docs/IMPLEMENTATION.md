@@ -29,7 +29,7 @@ btdr/
   tests/m5_acceptance.py  验收：按使用手册 §2.2 从空网络搭场景 + 示例冷启动检查，结果写 out/m5_acceptance.txt
   tools/make_release.py   打发布包 release/BTDR_<版本>.zip（§11c）
   tools/perf_bench.py     性能测量（逐渲染器），结果写 out/perf_bench.txt
-  tools/cpu_profile.py    单个 renderBTDR 的逐节点 CPU / GPU 耗时，结果写 out/cpu_profile.txt
+  tools/cpu_profile.py    单个 renderBTDR 的逐节点 CPU / GPU 耗时（只列每帧都计算的节点，PROF.STEADY），结果写 out/cpu_profile.txt
   tools/shots.py          示例场景固定机位截图（前后对比用），写 out/shot_<标签>_<机位>.jpg
   tools/hotswap.py        重建 tox 并替换示例场景里的 renderBTDR1，保留全部参数和连线（HOTSWAP_TARGETS 可指定其他实例）
   tools/variants.py       同一机位下切换几组参数各截一张图（VARIANTS / VAR_CAM / VAR_ORBIT），写 out/var_<标签>.jpg，结束后恢复参数和相机。
@@ -37,6 +37,7 @@ btdr/
   tools/gltf2obj.py       glTF / GLB → 每个材质一个 OBJ（世界坐标，合并所有实例）+ 拆开的 PBR 贴图（ORM 拆成 ao / roughness / metallic）
   tools/model_preview.py  把 测试模型/<名字> 载入 /project1/btdr_models/<名字>（PBR MAT、HDRI、地面、renderBTDR），存 out/preview_<名字>.jpg
   tools/normal_convention_test.py  判断法线贴图是 OpenGL 还是 DirectX 约定（会加载原始高模，只能在空工程里跑）
+  tools/ab_compare.py     两个构建在同一场景上逐像素比较（示例网络载入两份，A 用当前构建，B 用 release/BTDR_ref.tox），写 out/ab_compare.txt；同一个构建自比差为 0
   tools/apply_stage.py    按清单（stage/manifest_*.txt：目标、暂存名、md5）校验后把暂存文件复制到位（§0 的暂存规则）
   m4/rt_spike.py          M4 技术验证：从一组 Geometry COMP 实时建光追场景、测加速结构重建开销
   release/                产物：BTDR.tox、BTDR_Example.tox、BTDR_<版本>.zip
@@ -61,18 +62,18 @@ scene/  g0..gN (镜像 Geometry COMP)   m0..mK (G-Buffer GLSL MAT)
 env_studio ─┐
 env_user  ──┴▶ env_src (Switch) ─▶ env_atlas (3D, 预滤波)
 
-gbuf0..3 + shadow_src + env_src + env_atlas ─▶ lighting (4 个输出) ─▶ lit1..3
+gbuf0..3 + shadow_src + env_src + env_atlas ─▶ lighting (4 个输出) ─▶ lit1..3   （0.5.1 起只有 debug 读，见 COMP.INLINE）
 gbuf1 + gbuf2 + taa_hist ─▶ ssgi ─▶ ssgi_acc ◀─ ssgi_hist (Feedback) ─┐ ssgi_src (Switch: 常量 / ssgi_acc)
 gbuf1 + gbuf2 + taa_hist ─▶ ssr  ─▶ ssr_acc  ◀─ ssr_hist  (Feedback) ─┘ ssr_src  (Switch: 常量 / ssr_acc)
-lighting + lit1..3 + ssgi_src + ssr_src + gbuf0 ─▶ composite
+gbuf0..3 + shadow_src + env_src + ssgi_src + ssr_src + hf_src + rt_src + env_atlas + probe_src0..3 ─▶ composite（光照项在这里现算）
 shadow_src + env_src + env_atlas ─▶ fog_scatter (3D 计算) ─▶ fog_accum (3D 计算) ◀─ fog_hist (Feedback, Target TOP = fog_accum)
 fog_accum ─▶ fog_integrate (3D 计算)
 composite + gbuf2 + fog_integrate ─▶ fog_apply;  fog_src (Switch: composite / fog_apply)
 fog_src ─▶ taa ◀─ taa_hist (Feedback, Target TOP = taa, 输入接 gbuf0 只用来定尺寸)
 taa ─▶ post_dof (Switch: taa / dof) ─▶ post_mb (Switch: 上一级 / mblur) ═▶ out2 (HDR，alpha = 视深)
 post_mb ─▶ bloom_pre (½) ─▶ bloom_d1 (¼) ─▶ … ─▶ bloom_d6 (1/128) ─▶ bloom_u5 ─▶ … ─▶ bloom_u0 (½)；bloom_src (Switch: bloom_off / bloom_u0)
-post_mb ─▶ ae_lum (256×144) ─▶ ae_avg (Analyze, 平均) ─▶ ae_exposure (1×1) ◀─ ae_hist (Feedback)
-[post_mb, bloom_src, ae_exposure] ─▶ grade ─┐
+post_mb ─▶ ae_lum (256×144) ─▶ ae_avg (Analyze, 平均) ─▶ ae_exposure (1×1) ◀─ ae_hist (Feedback)；ae_src (Switch: ae_off / ae_exposure)
+[post_mb, bloom_src, ae_src] ─▶ grade ─┐
 gbuf* + lit* + ssgi_src + ssr_src ─▶ debug ──────────┴▶ view (Switch) ─▶ out1
 gbuf1 + gbuf2 ─▶ depth ─▶ out3
 
@@ -82,7 +83,7 @@ rt_scene (Select POP = rtscene/out) ═▶ 加速结构（GLSL POP 的 Collision
 rt_probe_grid ─▶ rt_probes (GLSL POP, uB 来自 rt_static) ─▶ probe_sh0..3 (POP to TOP, 3D) ─▶ probe_src0..3 (Switch: rt_probe_off / probe_sh)
 rt_refl_grid ─▶ rt_refl (GLSL POP, 每帧) ─▶ rt_refl_top ─▶ rt_acc ◀─ rt_hist (Feedback) ─▶ rt_src (Switch: rt_off / rt_acc)
 rt_mat / rt_static (Table DAT) ─▶ rt_mat_chop / rt_static_chop (DAT to CHOP)
-composite、debug 多接 rt_src（2D 第 10 个）和 probe_src0..3（3D 0–3）
+composite 接 rt_src（2D 第 9 个）和 probe_src0..3（3D 1–4）；debug 接 rt_src（2D 第 10 个）和 probe_src0..3（3D 0–3）
 ```
 
 坐标与约定（和旧管线一致）：
@@ -104,7 +105,7 @@ composite、debug 多接 rt_src（2D 第 10 个）和 probe_src0..3（3D 0–3�
 | `BUILD.GBUF` | G-Buffer Render TOP：几何体模式 `scene/g*`，4 个颜色缓冲，不开 MSAA |
 | `BUILD.SHADOW` | 阴影：正交相机 `suncam` + 覆盖材质 |
 | `BUILD.ENV` | 环境：摄影棚 / 用户 HDRI → 清晰全景 + 预滤波 3D 图集 |
-| `BUILD.LIGHT` | 光照 GLSL，4 个输出缓冲 |
+| `BUILD.LIGHT` | 光照 GLSL，4 个输出缓冲。0.5.1 起只给 Debug View 用 |
 | `BUILD.GRADE` | 调色、Debug View 切换 |
 | `BUILD.OUT` | 三个输出口 |
 | `BUILD.TAAPARS` / `BUILD.POSTPARS` | Render 页的抗锯齿参数、Post 页（Bloom、自动曝光、景深、运动模糊） |
@@ -112,6 +113,8 @@ composite、debug 多接 rt_src（2D 第 10 个）和 probe_src0..3（3D 0–3�
 | `BUILD.TAA` | `taa` + 历史帧 `taa_hist`（Feedback TOP：输入只用来定分辨率，Target TOP = `taa`；把 `taa` 接进它的输入会形成依赖环） |
 | `BUILD.POST` | 景深、运动模糊（各用一个 Switch TOP 旁路，关闭时不计算）、Bloom（`BUILD.BLOOM`：6 级 mip 链，强度为 0 时旁路）、自动曝光 |
 | `BUILD.AE` | 自动曝光的 1×1 状态（`ae_exposure` + Feedback `ae_hist`） |
+| `BUILD.AEOFF` | 0.5.1：自动曝光关闭时 `grade` / `bloom_pre` 经 Switch `ae_src` 读 1×1 常量 `ae_off`（log2 0、倍数 1），测光链不再被拉取（约省 0.1 ms CPU；以前着色器忽略这个输入，但 TD 照样每帧计算整条链） |
+| `BUILD.COMPINLINE` | 0.5.1：`composite` 直接接 G-Buffer、阴影、环境，自己算光照项（`COMP.INLINE`）；输入延伸方式 Repeat（环境要绕回） |
 | `BUILD.SSPARS` / `BUILD.FOGPARS` | Indirect 页、Fog 页 |
 | `BUILD.SS` | 屏幕空间链 `ss_chain()`：噪声 pass → 时间累积（自己的 Feedback 历史）→ Switch（关闭时接中性常量，链上节点不计算）。High 全分辨率、Low 半分辨率 |
 | `BUILD.FOG` | 体积雾：三个 3D 计算着色器（`fog_scatter` 和 `fog_accum` 每个格子一个线程，`fog_integrate` 每列一个线程）+ `fog_apply`，Switch 旁路 |
@@ -167,6 +170,9 @@ composite、debug 多接 rt_src（2D 第 10 个）和 probe_src0..3（3D 0–3�
 - `UNI.SUN`：主光强度 = Dimmer × π × Intensity Multiplier（原生 PBR MAT 里 Dimmer 1 相当于辐照度 π，这样换成 BTDR 后亮度一致）。
   阴影相机的基向量从内部的 `suncam` 读回来。
 - `UNI.PARAMS`：把参数页的值写进槽位。脚本里读了参数，所以改参数会触发重算。
+- `UNI.PARCACHE`（0.5.1）：每帧约 120 次读参数。`C.par.Bloom` 这种按属性名查找在 TD 里约 0.65 µs，`eval()` 本身约 0.12 µs；所以按 OP 的 `id` 缓存 Par 对象（`_pars(o)`，组件重建 / 重新载入后 id 变，自动重建缓存），每帧只 `eval()`。表达式、导出照常生效。
+- `UNI.RTSTATICKEY`（0.5.1）：`rt_static` 的变化判断直接比较 7 个槽位的元组（同样的输入算出的浮点数逐位相同）；0.4.0 每帧把 160 个数 `round` 一遍（约 0.07 ms）。
+- 0.5.1 实测（示例场景 demo，5080 Laptop）：`uniforms` 0.54 → 0.45 ms。剩下的大头是读灯光和阴影相机的变换：灯开着原生阴影时，这一步会把灯自己的计算（约 0.4 ms）算进来（`EXT.TIPS`）。
 - 这个 CHOP 靠参数 `Frame`（表达式 `absTime.frame`，`BUILD.UNICOOK`）每帧计算一次；0.3.1 以前只在回调里读 `absTime.frame`，相机静止时不计算（§11 第 23 条）。回调本身约 0.1 ms（`UNI.CAMBASIS`：纯 Python 读 `Matrix.vals`，不用 numpy）；profile 里记到它头上的时间还包括它读别的节点时触发的计算：`suncam`，以及开着原生阴影的 Light COMP（§11 第 18 条，示例场景里约 0.4 ms）。
 
 ## 5. 扩展类 `BTDRExt.py`
@@ -185,6 +191,7 @@ composite、debug 多接 rt_src（2D 第 10 个）和 probe_src0..3（3D 0–3�
 | `EXT.JITCAM` | `_setup_jitcam(cam)`：`cam_jit` 的父物体设成用户相机（自身变换为 0），投影类型、视角、近远裁剪等镜头参数用表达式跟随；`gbuffer` 的相机设成 `cam_jit` |
 | `EXT.SHADOWWATCH` / `EXT.CASTERS` | 阴影缓存要监视的对象；投射阴影的物体列表（见下） |
 | `EXT.RTPROXY` / `EXT.RTMAT` / `EXT.RTGRID` | M4：光追代理链、每物体材质表、探针网格范围（§9d） |
+| `EXT.TIPS` | 0.5.1：不算问题、但白白耗时的场景设置，写进 Status（不加警告标记）和 `status` DAT（`tip:` 开头），`status` 存储里是 `tips`。目前一条：主光开着原生阴影（Shadow Type ≠ Off） |
 
 ### 场景镜像（`EXT.MIRROR`）
 
@@ -261,19 +268,22 @@ Cache TOP 不激活（Active 关）时不拉取输入，`shadow` 就不再重画
   `envIrradiance(法线)` 取第 5 层。这份代码通过 `//#include env_lookup` 引入，**全套只有这一份**（旧管线有 4 份拷贝）。
 - 光照节点的输入延伸方式设成 Repeat，全景图左右接缝才连续。
 
-## 8. 光照（`lighting.frag`）
+## 8. 光照（`lighting_core.glsl`，`lighting.frag` 和 `composite.frag` 共用）
+
+- `FILE.LIGHTCORE`：`lightingTerms(uv, …)` 算出四项（`LIGHT.SPLIT`）。采样器用宏指定（`LC_BASE / LC_NRM / LC_POS / LC_EMIT / LC_SHADOW`，环境用 `ENV_SHARP / ENV_ATLAS`），两个宿主的输入编号不同。阴影纹素大小取自 `textureSize(LC_SHADOW)`（以前是 `uTD2DInfos[3]`，绑死了输入编号）。
 
 - BRDF 和旧管线相同：GGX + Smith 联合可见性近似 + Schlick 菲涅尔。
 - `LIGHT.SHADOW`：阴影图存线性距离。12 点遮挡体搜索 → 半影估计 → 24 点 PCF（Vogel 圆盘）。
   和旧管线的区别：所有半径用**世界单位**（搜索半径 0.024 × Softness，光源角直径系数 0.0376），所以结果不随阴影图分辨率和范围变化；偏移量加了 1.5 个阴影纹素。
 - `LIGHT.IBL`：环境漫反射 + 环境镜面（UE 的 EnvBRDFApprox），镜面遮蔽和地平线衰减同旧管线。
-- `LIGHT.SPLIT`：4 个输出——直接光 + 自发光（+ 背景）、环境漫反射、环境镜面、环境 BRDF | 权重。M3 / M4 在 `composite` 里替换环境项。
+- `LIGHT.SPLIT`：4 项——直接光 + 自发光（+ 背景）、环境漫反射、环境镜面、环境 BRDF | 权重。M3 / M4 在 `composite` 里替换环境项。0.5.1 起这四项在 `composite` 里现算（寄存器里，不再写成四张 16 位缓冲再读回来）；`lighting.frag` 把同一份代码写成四个缓冲，只在 Debug View 的直接光 / 环境漫反射 / 环境镜面 / 反弹光 / 反射几项时计算。
 - `LIGHT.BACKGROUND`：纯色或环境（按 Background Blur 取模糊层）。直接光缓冲的 alpha：1 = 物体，0 = 背景。
 - `LIGHT.FADE`：按到相机的距离淡入背景（旧管线是按到世界原点的水平距离，写死 4–9）。
 
 ## 9. 合成、调色、调试
 
 - `composite.frag`：直接光 + 环境漫反射 × AO + 反弹光 + 环境镜面 / SSR（M3，见 §9c）。旧管线里探针和光追反射的合成在 M4 移植到这里。
+- `COMP.INLINE`（0.5.1）：光照项在这里调用 `lightingTerms` 现算。0.5.0 及以前 `lighting` 先写四张 rgba16float 缓冲（1080p 每帧约 130 MB 读写）、再经 3 个 Render Select 给 `composite` 读：少了 4 个 TOP 的计算和这部分带宽。图像差别只来自少了一次 16 位量化（A/B：最终画面平均 |差| 0.0004，差异集中在物体轮廓的单像素上，TAA 邻域裁剪放大了量化差，肉眼看不出）。输入延伸方式改成 Repeat（环境全景要左右绕回），可能比输出小的输入（Low 档半分辨率的 SSGI / SSR、光追反射、高度场）用 `texHold()` 把坐标夹到边缘纹素中心，等于原来的 Hold。
 - `GRADE.BLOOM`：Bloom 在 HDR 里、曝光之前加（和 UE 一样）：`bloom_src × 强度`（mip 链已经合成好，见 §9b）。
 - `COMP.PROBES` / `COMP.RTSPEC`（M4）：探针替换环境漫反射；光追反射比值乘环境镜面，见 §9d。
 - `GRADE.EXPOSURE`：手动曝光（EV）× 自动曝光倍数（输入 2 `ae_exposure` 的 g；关闭时为 1）。

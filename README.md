@@ -7,7 +7,7 @@ volumetric fog, and hardware ray tracing (probe GI + traced reflections, a simpl
 
 ![example](docs/images/example.jpg)
 
-**Private repository.** Tag `v0.1.0` = first snapshot (internal build version 0.5.0, milestone M5).
+**Private repository.** Branch `release/v0.1.0` = first snapshot (internal build 0.5.0, milestone M5). `main` = build 0.5.1 (performance review: same picture, ~9% less CPU; see docs/IMPLEMENTATION_2.md §10).
 
 ## Quick start
 
@@ -36,7 +36,7 @@ shaders/        GLSL (common.glsl is prepended; *.comp are compute shaders)
 ext/            Python extension, uniforms Script CHOP callbacks
 tests/          m1_tests.py (39 regression checks), m5_acceptance.py (7 acceptance checks)
 examples/       demo_scene.py (dev scene), make_example.py (BTDR_Example.tox), hdri/ (CC0)
-tools/          perf_bench, cpu_profile, hotswap, make_release, ...
+tools/          perf_bench, cpu_profile, ab_compare (picture A/B of two builds), hotswap, make_release, ...
 release/        BTDR.tox, BTDR_Example.tox
 ```
 

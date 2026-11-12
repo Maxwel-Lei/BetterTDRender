@@ -1,4 +1,4 @@
-BetterTDRender (BTDR) 0.5.0
+BetterTDRender (BTDR) 0.5.1
 ===========================
 
 A TouchDesigner render node with UE5-style rendering: PBR, soft shadows, HDRI lighting,

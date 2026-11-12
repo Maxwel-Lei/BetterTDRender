@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.5.0。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.5.1。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -240,8 +240,8 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 
 | | GPU | CPU |
 |---|---|---|
-| **BTDR High，默认设置** | **约 2.1 ms** | 约 1.4 ms |
-| BTDR Low，默认设置 | 约 1.0 ms | 约 1.4 ms |
+| **BTDR High，默认设置** | **约 2.1 ms** | 约 1.3 ms |
+| BTDR Low，默认设置 | 约 1.0 ms | 约 1.3 ms |
 | BTDR High，1440p / 4K | 约 3.8 / 8.9 ms | 同上 |
 | 同一场景用 TD 原生 Render TOP（没有任何后期和间接光） | 约 0.7 ms | 约 0.5 ms |
 
@@ -256,7 +256,7 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 省性能的办法，按效果从大到小：
 - **Quality = Low**：GPU 约减半。
 - 4K 输出：屏幕空间效果按像素算，用 Low，或关掉 Indirect 页的 Bounce Light。
-- 场景里的 Light COMP 如果开着原生阴影（Shadow Type 不是 Off），TD 每帧会给它画一张 BTDR 用不到的阴影图（测试场景里约 1.4 ms GPU）。只用 BTDR 出图时把灯的 Shadow Type 设成 Off，BTDR 自己的阴影不受影响。
+- 场景里的 Light COMP 如果开着原生阴影（Shadow Type 不是 Off），TD 每帧会给它画一张 BTDR 用不到的阴影图（测试场景里约 0.4 ms CPU、1.4 ms GPU）。只用 BTDR 出图时把灯的 Shadow Type 设成 Off，BTDR 自己的阴影不受影响。这种情况 Status 会给出提示。
 - CPU 紧张时关掉 Ray Tracing 页的 Ray-Traced Reflections（约省 0.35 ms CPU），只留 Probe GI：场景和灯不动时探针不重算，几乎没有开销。
 - 灯光或物体一直在动时阴影图每帧重画（GPU 多约 0.1–0.2 ms、CPU 多约 0.3 ms），可以把 Light 页的 Update Every N Frames While Moving 设成 2–4。
 - 没人查看或使用输出时节点不计算，不占性能。
@@ -283,7 +283,7 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 
 ### 警告在哪里看
 
-- Render 页的 **Status** 显示警告条数和第一条。
+- Render 页的 **Status** 显示警告条数和第一条。没有问题、但有省性能的建议时，会在 `OK: N geometry` 后面接一条 `tip`（例如主光开着原生阴影，见 §3b），不算警告，节点上也不会出现黄色三角。
 - 完整列表在节点内部的 `status` DAT 里（进入 `renderBTDR`，或用 `op('renderBTDR1/status').text`）。
 - 有警告时节点上会出现黄色三角标记。
 

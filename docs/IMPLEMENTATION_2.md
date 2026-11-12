@@ -11,6 +11,27 @@
 
 0.1.x–0.2.0 的历次实测和当时的分析（G-Buffer 改 16 位、阴影缓存、M2 镜头效果等）移到了 `PERF_HISTORY.md`。
 
+**0.5.1 全局性能审查（2026-11-12，demo 场景：雾和运动模糊开，`cpu_profile.py` 只统计每帧都计算的节点）：**
+
+| | 0.5.0 | 0.5.1 |
+|---|---|---|
+| CPU（每帧计算的节点合计） | 2.13 ms | 1.94 ms |
+| GPU（去掉 gbuf0 等待） | 2.19 ms | 2.16 ms |
+| 每帧计算的节点数 | 58 | 50 |
+
+- 改动（都不改变画面，`tools/ab_compare.py` 验证：最终画面平均 |差| 0.0004，只在轮廓的单像素上）：`uniforms` 缓存 Par 对象、`rt_static` 键不再逐值取整（0.54 → 0.45 ms）；自动曝光关时测光链不计算（−0.1 ms）；光照合进 composite（−4 个 TOP；5080 上 GPU 只省 0.03 ms，带宽小的卡省得多，按 4060 Laptop 的带宽估约 0.2–0.4 ms，未实测）。
+- CPU 的结构：Python（`uniforms`）0.45 ms、G-Buffer Render TOP 0.31 ms（随几何体数增长）、光追反射 GLSL POP 0.14 ms，其余是约 45 个 TOP 每个 0.02–0.07 ms 的固定开销——**TOP 的个数**才是剩下的主要 CPU 成本（Bloom 13 个约 0.3 ms）。
+- GPU 的结构：`ssgi` 0.54、`ssr` 0.53（两项占一半），`composite` 0.32，`gbuffer` 0.2，`taa` 0.11。
+
+**审查中测过、没有采用的方案：**
+
+| 方案 | 结果 | 结论 |
+|---|---|---|
+| SSGI / SSR 改读单通道深度（由深度 + 相机射线重建位置，代替 8 字节的 rgba16float 位置） | 重建误差和 16 位位置本身同量级（相对误差中位数 7e-5，要用 G-Buffer 当帧的抖动）；R32F 深度：`ssgi` 0.535 → 0.536 ms，R16F：0.53 → 0.47 ms，但要多一个深度 pass（GPU 0.014、CPU 约 0.02 ms）和抖动对齐的风险 | 不采用：这两个 pass 不是带宽瓶颈，是 ALU / 延迟瓶颈 |
+| Bloom 降采样改用硬件 mipmap、升采样合成一个 pass（13 个 TOP → 2–3 个） | 未实现：盒式 mipmap 会让小亮点闪烁（13 点滤波 + Karis 正是为此），合成升采样不是逐位等价 | 不满足"不影响画面"；可以作为以后 Low 档的选项 |
+| ssgi_acc / ssr_acc 合成一个双输出 pass | 估计 CPU −0.03 ms | 收益太小，暂不做 |
+| 静态画面冻结（相机、场景、参数都不变时停在收敛后的画面） | 未实现 | TD 的作品大多一直在动；颗粒、雾的噪声动画会停，属于行为变化 |
+
 **0.4.0（M4）实测（2026-11-12，示例场景，相机环绕；每种情况先把参数设回出厂默认，机器 CPU 处在慢的状态；`perf_bench.py` 从 0.4.0 起 GPU 也计入 POP）：**
 
 | 情况 | GPU 中位数（去掉 gbuf0 等待） | CPU 中位数 |
@@ -87,6 +108,9 @@
 31. 新建 GLSL POP 时编译错误可能残留到它下次计算：只在变化时计算的节点（探针）上读 `errors()` 前要先 `cook(force=True)`（`UNI.RTCHECK`）。
 32. **Feedback TOP 在第一次被目标覆盖之前的内容是未初始化的显存**（不是黑色）。渲染器拖进一个没人看的网络、过一阵才第一次被拉取时，历史重置帧的 SSR / SSGI 从 `taa_hist` 读到的是垃圾（彩色亮点），经过反射链自己维持下去，示例网络第一次打开时满屏彩色噪点（0.4.0）。一直被拉取的渲染器看不出来：那块显存碰巧是上一次的有效画面。修复 `SS.HISTRESET`；测试 `TEST.COLDSTART`。Feedback 的其他读者（TAA、累积、自动曝光）本来就在重置帧不读历史。
 33. Sphere SOP 的 Primitive Type = Polygon 用 **Frequency**（默认 2，80 个面），Rows / Cols 只对 Mesh 等类型有效。
+34. **`inputConnectors[i].connections` 拿到的是上游节点的输出口**；对它调 `disconnect()` 会剪掉那个上游输出的**所有**连线。0.5.1 审查时用它断开一个复制节点的输入，结果把 gbuf1 / gbuf2 / taa_hist 到 ssgi、ssr、taa 的连线全剪了（画面变成 TD 着色器出错时的红蓝棋盘格），用 hotswap 恢复。断开某个节点自己的输入用 `node.inputConnectors[i].disconnect()`；做原型放在渲染器外面的独立网络里。
+35. 计时陷阱：对一个输入没变的 TOP `cook(force=True)`，它的 `gpuCookTime` 约 0.02 ms——GPU 上并没有重新执行。比较两个 pass 的 GPU 时间时，两个都要接一个每帧都变的输入（`ab_compare.py` 之外的手工计时都要注意）。帧开始第一个被强制计算的 GPU 节点还会吃掉等待时间，先算一个无关的节点垫底。
+36. 示例网络（`BTDR_Example.tox`）里内嵌了一份 `renderBTDR`：重新构建后要重新生成示例（`make_example.py`），A/B 测试要把两边的渲染器都换掉（`ab_compare.py` 是这样做的）。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -148,6 +172,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 演示场景 | `examples/demo_scene.py` | `/project1/btdr_demo`：测试模型 AntiqueCamera + FlightHelmet（`测试模型/`，CC0）、HDRI（Rotate −96.2 对齐 light1）、原生 Render TOP 对照 `native_render`；贴图在 `/project1/tex_lib`。素材说明见 `DEMO_ASSETS.md` |
 | 发布用示例 | `examples/make_example.py` | `/project1/btdr_example`，存 `examples/` 和 `release/` 的 `BTDR_Example.tox`（`EXAMPLE.*`） |
 | 验收 | `tests/m5_acceptance.py` | §11b-2 |
+| 画面 A/B | `tools/ab_compare.py`（先把旧构建复制成 `release/BTDR_ref.tox`） | `out/ab_compare.txt`、`out/ab_A.jpg` / `ab_B.jpg`；性能类改动要求最终画面看不出差别 |
 | 打包 | `tools/make_release.py` | `release/BTDR_<版本>.zip`：BTDR.tox、BTDR_Example.tox、USER_GUIDE.md、README.txt（源文件 `docs/RELEASE_README.txt`）、`hdri/`；`out/release_log.txt` 列出每个文件的 md5 |
 
 发布顺序：构建 → 回归测试 → 示例 → 验收 → 打包。
@@ -167,6 +192,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-12 | 0.5.1 | 全局性能审查（GitHub 私有仓库 `Maxwel-Lei/BetterTDRender` 的 v0.1.0 = 0.5.0）：`uniforms` 缓存 Par 对象（`UNI.PARCACHE`）、`rt_static` 键直接比较元组（`UNI.RTSTATICKEY`）；自动曝光关闭时测光链不计算（`BUILD.AEOFF`）；光照项在 composite 里现算（`COMP.INLINE`，新文件 `lighting_core.glsl`，`lighting` 只给 Debug View）；主光开着原生阴影时 Status 给出提示（`EXT.TIPS`）。demo 场景 CPU 2.13 → 1.94 ms，每帧计算的节点 58 → 50，画面不变（新工具 `tools/ab_compare.py`）。`cpu_profile.py` 只统计每帧都计算的节点。回归测试 39 项、验收 7 项全过。审查中测过但未采用的方案见 §10 |
 | 2026-11-12 | 0.5.0 | M5 发布：示例网络 `BTDR_Example.tox`（`examples/make_example.py`）、验收测试 `tests/m5_acceptance.py`（7 项全过，含 `TEST.COLDSTART`）、发布包 `release/BTDR_0.5.0.zip`（`tools/make_release.py`）。使用手册改成纯用户手册：五分钟上手、性能建议、素材建议；开发内容（演示场景、回归测试、构建）移到 §11c。修复：渲染器第一次被拉取时 SSR / SSGI 读到未初始化的 Feedback 历史，画面满是彩色亮点（`SS.HISTRESET`，§11 第 32 条）。Quality = Low 时 Bloom 少算两级（`BUILD.BLOOMLOW`）。旧管线 `ue5r/` 归档到工程目录 `archive/`，工程里的 `/project1/ue5r` 删除。回归测试 39 项全过 |
 | 2026-11-12 | 0.4.0 | M4 硬件光追（简化版 Lumen）：节点内部实时生成光追代理（PolyReduce，默认保留 15%，跟随物体移动，`EXT.RTPROXY`）、探针 GI（只在场景 / 灯光变化时重算，`UNI.RTSTATIC`）、光追反射（1/4 分辨率比值法，Fast Build 加速结构 0.03 ms，`BUILD.RTAS`）、Ray Tracing 页、2 个 Debug View、不支持时自动关闭（`UNI.RTCHECK`）；uniform 槽位 36–39 用满。CarConcept 车底地面不再反射天空。回归测试 39 项全过（新增 `TEST.M4` 3 项）。1080p High 默认 GPU 约 +0.1 ms、CPU 约 +0.35 ms。新增 `tools/apply_stage.py`、`m4/rt_spike.py`；`perf_bench.py` 每种情况先回到出厂默认并计入 POP 的 GPU |
 | 2026-11-12 | 0.3.5 | Bloom 改成 6 级 mip 链（`BLOOM.CHAIN`），新增 Bloom Radius；修复小亮点光晕竖长、两侧硬边（旧的 ⅛ 级没有水平模糊）。Bloom Intensity 为 0 时整条链不计算。SSR 改为在细化后的交点上做厚度测试（`SSR.REFINE`），反射边缘不再按步长出现阶梯 / 条纹。回归测试 36 项全过（新增 `TEST.BLOOM`）。实测（示例场景当前参数，雾和运动模糊开）：`ssr` GPU 0.44 → 0.52 ms（细化次数增加），Bloom 链 12 个小 TOP 的 GPU 可忽略、CPU 在测量噪声内；1080p High 默认 GPU（去掉 gbuf0 等待）2.39 ms，在 5 ms 预算内。实现参考拆成两份（§0 维护规则） |

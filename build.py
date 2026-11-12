@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.5.0 (M5)'
+VERSION = '0.5.1'
 BLOG = []
 
 def _read(rel):
@@ -491,7 +491,11 @@ def build_btdr(dest, name='renderBTDR'):
     rts = place(C.create(switchTOP, 'rt_src'), RX + 1000, RY - 900)
     roff.outputConnectors[0].connect(rts); rta.outputConnectors[0].connect(rts)
     rts.par.index.expr = '1 if (parent.BTDR.par.Raytracing and parent.BTDR.par.Rtavailable and parent.BTDR.par.Rtreflections) else 0'
-    comp = glsl('composite', D['composite.frag'], litb + [ssg, ssr, rs[0], rs[1], rs[2], hfs, rts] + psrc, RW, RH, ['rgba16float'], 200, 400)
+    # [BTDR:BUILD.COMPINLINE] composite computes the lighting terms itself ([BTDR:COMP.INLINE]); `lighting` and lit1..3
+    # are only pulled by the Debug View. 2D inputs in order, then 3D (environment atlas, probes).
+    comp = glsl('composite', D['composite.frag'], rs[:3] + [shs, rs[3], esw, ssg, ssr, hfs, rts, eat] + psrc,
+                RW, RH, ['rgba16float'], 200, 400)
+    _menu(comp.par.inputextenduv, ['repeat'])
 
     # [BTDR:BUILD.FOG] volumetric fog: froxel scattering (3D) -> front-to-back integration (3D) -> apply per pixel,
     # before TAA (it resolves the slice dither). Bypassed by a Switch TOP when off.
@@ -578,9 +582,18 @@ def build_btdr(dest, name='renderBTDR'):
     ana.outputConnectors[0].connect(aeh)
     expo = glsl('ae_exposure', D['exposure.frag'], [ana, aeh], 1, 1, ['rgba32float'], 1500, 1100)
     aeh.par.top = expo
-    expo.outputConnectors[0].connect(bpre)
+    # [BTDR:BUILD.AEOFF] with Auto Exposure off grade / bloom_pre read a 1x1 constant (log2 0, multiplier 1) through
+    # a Switch, so the metering chain (ae_lum, ae_avg, ae_exposure) is not pulled: ~0.1 ms CPU. Before 0.5.1 the
+    # shaders ignored the input when off, but TD still cooked the chain every frame.
+    aoff = place(C.create(constantTOP, 'ae_off'), 1500, 1000)
+    aoff.par.colorr = 0; aoff.par.colorg = 1; aoff.par.colorb = 0; aoff.par.alpha = 1
+    res(aoff, 1, 1, ['rgba32float'])
+    asrc = place(C.create(switchTOP, 'ae_src'), 1700, 1100)
+    aoff.outputConnectors[0].connect(asrc); expo.outputConnectors[0].connect(asrc)
+    asrc.par.index.expr = '1 if parent.BTDR.par.Autoexposure else 0'
+    asrc.outputConnectors[0].connect(bpre)
     # [BTDR:BUILD.GRADE]
-    grd = glsl('grade', D['grade.frag'], [smb, bsrc, expo], RW, RH, ['rgba8fixed'], 400, 400)
+    grd = glsl('grade', D['grade.frag'], [smb, bsrc, asrc], RW, RH, ['rgba8fixed'], 400, 400)
     dbg = glsl('debug', D['debug.frag'], rs[:3] + [rs[3], litb[0], litb[1], litb[2], ssg, ssr, litb[3], rts] + psrc, RW, RH, ['rgba8fixed'], 400, 250)
     view = place(C.create(switchTOP, 'view'), 600, 400)
     grd.outputConnectors[0].connect(view); dbg.outputConnectors[0].connect(view)

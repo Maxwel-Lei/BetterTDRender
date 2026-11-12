@@ -1,139 +1,22 @@
-// [BTDR:FILE.LIGHT] lighting.frag — deferred lighting: GGX / Smith / Schlick (UE-style),
-// one directional light with contact-hardening soft shadows, image based lighting from the environment atlas.
+// [BTDR:FILE.LIGHT] lighting.frag — the split lighting terms as four buffers ([BTDR:LIGHT.SPLIT]). Since 0.5.1 only the
+// Debug View reads them (Direct Light, Environment Diffuse / Specular, Bounce Light, Reflections); the final image
+// computes the same terms inline in composite.frag ([BTDR:COMP.INLINE]), so this pass does not cook normally.
 // 2D inputs: 0 base|metal, 1 normal|rough, 2 camera-relative pos|ao, 3 shadow depth, 4 emissive, 5 sharp environment
 // 3D inputs: 0 pre-filtered environment atlas
+#define LC_BASE sTD2DInputs[0]
+#define LC_NRM sTD2DInputs[1]
+#define LC_POS sTD2DInputs[2]
+#define LC_SHADOW sTD2DInputs[3]
+#define LC_EMIT sTD2DInputs[4]
 #define ENV_SHARP sTD2DInputs[5]
 #define ENV_ATLAS sTD3DInputs[0]
 //#include env_lookup
-
-// [BTDR:LIGHT.SPLIT] split outputs so later passes (screen-space, ray traced) can replace the environment terms
-layout(location = 0) out vec4 oDirect;   // direct light + emissive (+ background)
-layout(location = 1) out vec4 oAmbDiff;  // environment diffuse
-layout(location = 2) out vec4 oAmbSpec;  // environment specular
-layout(location = 3) out vec4 oBRDF;     // rgb: env BRDF * spec occlusion, a: surface weight
-
-vec3 envBRDFApprox(vec3 F0, float rough, float NoV)
-{
-    const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
-    const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
-    vec4 r = rough * c0 + c1;
-    float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
-    vec2 AB = vec2(-1.04, 1.04) * a004 + r.zw;
-    return F0 * AB.x + AB.y;
-}
-float D_GGX(float a2, float NoH)
-{
-    float d = (NoH * a2 - NoH) * NoH + 1.0;
-    return a2 / (PI * d * d);
-}
-float V_SmithJointApprox(float a, float NoV, float NoL)
-{
-    float v = NoL * (NoV * (1.0 - a) + a);
-    float l = NoV * (NoL * (1.0 - a) + a);
-    return 0.5 / max(v + l, 1e-5);
-}
-vec3 F_Schlick(vec3 F0, float VoH)
-{
-    float fc = pow(1.0 - VoH, 5.0);
-    return clamp(50.0 * F0.g, 0.0, 1.0) * fc + (1.0 - fc) * F0;
-}
-
-// [BTDR:LIGHT.SHADOW] shadow map stores linear distance from the shadow camera plane.
-// Blocker search -> penumbra estimate -> PCF on a rotated Vogel disc. All radii are in world units,
-// so the result does not depend on shadow map resolution or range.
-float sunShadow(vec3 wp, vec3 n, float NoL)
-{
-    if (uSunPos.w < 0.5) return 1.0;
-    vec3 p = wp + n * 0.012;
-    vec3 rel = p - uSunPos.xyz;
-    vec2 suv = vec2(dot(rel, uSunRight.xyz), dot(rel, uSunUp.xyz)) / uSunRight.w + 0.5;
-    float depth = dot(uSunPos.xyz - p, uSunDir.xyz);
-    if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) return 1.0;
-    float texel = 1.0 / uTD2DInfos[3].res.z;
-    float wtex = uSunRight.w * texel;                       // world size of one shadow texel
-    float bias = 0.004 + 0.02 * (1.0 - NoL) + wtex * 1.5;
-    float soft = max(uSunColor.w, 0.0);
-    float ang = fract(hash12(gl_FragCoord.xy) + uFrame.x * 0.618034) * 6.2831853;
-    float search = max(0.024 * soft, wtex * 2.0) / uSunRight.w;
-    float blockers = 0.0, bsum = 0.0;
-    for (int i = 0; i < 12; i++) {
-        float r = sqrt((float(i) + 0.5) / 12.0);
-        float th = float(i) * 2.39996323 + ang;
-        float d = texture(sTD2DInputs[3], suv + vec2(cos(th), sin(th)) * r * search).r;
-        if (d > 0.001 && d < depth - bias) { bsum += d; blockers += 1.0; }
-    }
-    if (blockers < 0.5) return 1.0;
-    float pen = clamp((depth - bsum / blockers) * 0.0376 * soft, wtex * 1.2, max(0.0273 * soft, wtex * 1.2)) / uSunRight.w;
-    float lit = 0.0;
-    for (int i = 0; i < 24; i++) {
-        float r = sqrt((float(i) + 0.5) / 24.0);
-        float th = float(i) * 2.39996323 + ang;
-        float d = texture(sTD2DInputs[3], suv + vec2(cos(th), sin(th)) * r * pen).r;
-        lit += (d > 0.001 && d < depth - bias) ? 0.0 : 1.0;
-    }
-    return lit / 24.0;
-}
-
+//#include lighting_core
+layout(location = 0) out vec4 oDirect;
+layout(location = 1) out vec4 oAmbDiff;
+layout(location = 2) out vec4 oAmbSpec;
+layout(location = 3) out vec4 oBRDF;
 void main()
 {
-    vec4 g0 = texture(sTD2DInputs[0], vUV.st);
-    vec4 g1 = texture(sTD2DInputs[1], vUV.st);
-    vec4 g2 = texture(sTD2DInputs[2], vUV.st);
-
-    // [BTDR:LIGHT.BACKGROUND]
-    vec2 ndc = vUV.st * 2.0 - 1.0;
-    vec3 rd = normalize(uCamFwd.xyz + ndc.x * uCamFwd.w * uCamRight.xyz + ndc.y * uCamFwd.w / uClip.z * uCamUp.xyz);
-    vec3 bg = uView.y > 0.5 ? pow(max(uBgColor.rgb, 0.0), vec3(2.2)) : uBgColor.rgb;
-    if (uEnv.z > 0.5) bg = envRadiance(rd, uEnv.w);
-    bg *= uBgColor.w;
-    if (dot(g1.xyz, g1.xyz) < 0.25) {
-        oDirect = vec4(bg, 0.0);
-        oAmbDiff = vec4(0.0); oAmbSpec = vec4(0.0); oBRDF = vec4(0.0);
-        return;
-    }
-
-    vec3 base = g0.rgb;
-    float metal = g0.a;
-    vec3 N = normalize(g1.xyz);
-    float rough = g1.a;
-    vec3 wp = g2.xyz + uCamPos.xyz;                  // G-Buffer stores camera-relative position
-    float ao = g2.a;
-    vec3 emit = texture(sTD2DInputs[4], vUV.st).rgb;
-
-    vec3 V = normalize(-g2.xyz);
-    vec3 L = normalize(uSunDir.xyz);
-    vec3 H = normalize(V + L);
-    float NoV = clamp(abs(dot(N, V)) + 1e-4, 0.0, 1.0);
-    float NoL = clamp(dot(N, L), 0.0, 1.0);
-    float NoH = clamp(dot(N, H), 0.0, 1.0);
-    float VoH = clamp(dot(V, H), 0.0, 1.0);
-
-    vec3 diffuseColor = base * (1.0 - metal);
-    vec3 F0 = mix(vec3(0.04), base, metal);
-    float a = rough * rough;
-    float a2 = a * a;
-
-    vec3 direct = vec3(0.0);
-    if (NoL > 0.0 && uSunDir.w > 0.0) {
-        float sh = sunShadow(wp, N, NoL);
-        vec3 spec = D_GGX(a2, NoH) * V_SmithJointApprox(a, NoV, NoL) * F_Schlick(F0, VoH);
-        direct = (diffuseColor / PI + spec) * uSunColor.rgb * uSunDir.w * NoL * sh;
-    }
-
-    // [BTDR:LIGHT.IBL]
-    vec3 R = reflect(-V, N);
-    R = normalize(mix(R, N, a * a));                  // rough reflections bend toward the normal
-    vec3 irradiance = envIrradiance(N);
-    vec3 prefiltered = envRadiance(R, rough);
-    float specOcc = clamp(pow(NoV + ao, exp2(-16.0 * rough - 1.0)) - 1.0 + ao, 0.0, 1.0);
-    float horizon = clamp(1.0 + dot(R, N), 0.0, 1.0);
-    vec3 brdf = envBRDFApprox(F0, rough, NoV) * specOcc * horizon * horizon;
-
-    // [BTDR:LIGHT.FADE] optional distance fade into the background (seamless floors)
-    float fade = uView.w > uView.z ? smoothstep(uView.z, uView.w, length(g2.xyz)) : 0.0;
-    float w = 1.0 - fade;
-    oDirect = vec4((direct + emit) * w + bg * fade, 1.0);
-    oAmbDiff = vec4(diffuseColor * irradiance * ao * w, 1.0);
-    oAmbSpec = vec4(prefiltered * brdf * w, 1.0);
-    oBRDF = vec4(brdf, w);
+    lightingTerms(vUV.st, oDirect, oAmbDiff, oAmbSpec, oBRDF);
 }

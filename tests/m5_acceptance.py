@@ -50,6 +50,12 @@ try:
             X = N.loadTox(BT + '/release/BTDR_Example.tox'); X.name = 'example'
             for c in X.findChildren(type=executeDAT):
                 c.par.active = False
+            # the example camera swings with absTime: freeze it, or the cold / warm pictures differ by camera motion
+            # (0.5.1: the measured difference wandered between 0.01 and 0.07 for that reason alone)
+            for cam in X.findChildren(type=cameraCOMP):
+                for p in cam.pars('t[xyz]', 'r[xyz]'):
+                    if p.mode != ParMode.CONSTANT:
+                        v = p.eval(); p.mode = ParMode.CONSTANT; p.val = v
             N.store('X', X.path)
             run("args[0]()", _cold, delayFrames=60)
             return
