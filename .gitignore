@@ -1,0 +1,11 @@
+# build outputs, logs and screenshots
+out/
+# device staging copies
+stage/
+# release archives go to GitHub Releases, not git
+release/*.zip
+__pycache__/
+*.pyc
+# TouchDesigner backups
+Backup/
+*.toe.*

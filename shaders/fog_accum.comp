@@ -1,0 +1,42 @@
+// [BTDR:FILE.FOG.ACCUM] fog_accum.comp — volumetric fog pass 1b: temporal reprojection of the froxel volume.
+// Compute shader, one thread per froxel ([BTDR:BUILD.FOG]).
+// inputs: 3D 0 this frame's scattering volume (fog_scatter, one jittered sample per froxel),
+//         3D 1 last frame's result (Feedback TOP fog_hist, target = this pass)
+// output: same layout as fog_scatter (rgb scattering x light, a extinction), accumulated over frames
+//
+// Why here and not in TAA: a froxel covers about 12 x 12 pixels, so its per-frame noise is constant inside TAA's
+// 3 x 3 neighbourhood; TAA's variance clip then rejects the history and the noise never averages out (light
+// shafts drown in it). Accumulating in the volume itself (as UE5's volumetric fog does) averages the jittered
+// samples before integration.
+layout (local_size_x = 8, local_size_y = 8) in;
+#define FOG_CUR_WEIGHT 0.1      // weight of this frame: about 10 frames of history (UE5 uses 0.1 as well)
+float sliceDepth(float s) { return uFog2.x * pow(uFog2.y / uFog2.x, s); }
+float sliceOf(float z)    { return log(max(z, 1e-4) / uFog2.x) / log(uFog2.y / uFog2.x); }
+void main()
+{
+    loadUB();
+    ivec3 gid = ivec3(gl_GlobalInvocationID);
+    ivec3 sz = textureSize(sTD3DInputs[0], 0);
+    if (any(greaterThanEqual(gid, sz))) return;
+    vec4 cur = texelFetch(sTD3DInputs[0], gid, 0);
+    // world position of the froxel centre (same mapping as fog_scatter.comp)
+    vec3 uvw = (vec3(gid) + 0.5) / vec3(sz);
+    vec2 ndc = uvw.xy * 2.0 - 1.0;
+    vec3 ray = uCamFwd.xyz + ndc.x * uCamFwd.w * uCamRight.xyz + ndc.y * uCamFwd.w / uClip.z * uCamUp.xyz;
+    vec3 p = uCamPos.xyz + ray * sliceDepth(uvw.z);
+    // [BTDR:FOG.REPROJECT] where that point was in last frame's volume
+    vec3 rel = p - uPrevPos.xyz;
+    float z = dot(rel, uPrevFwd.xyz);
+    vec3 puvw = vec3(dot(rel, uPrevRight.xyz) / (z * uPrevFwd.w),
+                     dot(rel, uPrevUp.xyz) / (z * uPrevFwd.w / uClip.z), 0.0);
+    puvw.xy = puvw.xy * 0.5 + 0.5;
+    puvw.z = sliceOf(z);
+    vec3 h = 0.5 / vec3(sz);                    // stay between texel centres: the 3D input repeats at its edges
+    bool valid = z > uFog2.x && all(greaterThanEqual(puvw, h)) && all(lessThanEqual(puvw, 1.0 - h));
+    // [BTDR:FOG.ACCUM] exponential average; full current frame on a history reset or outside last frame's volume
+    float w = (valid && uFrame.z < 0.5) ? FOG_CUR_WEIGHT : 1.0;
+    vec4 hist = valid ? texture(sTD3DInputs[1], puvw) : cur;
+    vec4 o = mix(hist, cur, w);
+    if (any(isnan(o)) || any(isinf(o))) o = cur;  // never let a bad value live on in the history
+    TDImageStoreOutput(0, uvec3(gid), o);
+}

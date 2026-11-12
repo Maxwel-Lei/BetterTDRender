@@ -1,0 +1,41 @@
+// [BTDR:FILE.RT.PROBES] rt_probes.comp — GLSL POP, one thread per probe of `rt_probe_grid` (M4)
+// Reads its uniforms from `rt_static` (a copy of the slots it needs, written only when they change), so it
+// cooks only when the scene, the light, the environment or the RT settings change: a static scene costs nothing per frame.
+// out: SH0 = mean radiance | validity, SH1..3 = first-order moment of r, g, b (x3)
+#define ENV_SHARP sEnv
+#define ENV_ATLAS sEnvAtlas
+//#include env_lookup
+#define RT_AMBIENT(p, n) (envIrradiance(n) * 0.5)
+//#include rt_common
+void main()
+{
+    const uint id = TDIndex();
+    if (id >= TDNumElements()) return;
+    vec3 P0 = TDIn_P(0, id);
+    int N = int(uRT2.w + 0.5);
+    vec3 c0 = vec3(0.0), mr = vec3(0.0), mg = vec3(0.0), mb = vec3(0.0);
+    float back = 0.0;
+    float rot = fract(float(id) * 0.61803398875);
+    for (int i = 0; i < 128; i++) {
+        if (i >= N) break;
+        // spherical Fibonacci directions, rotated per probe
+        float z = 1.0 - (2.0 * float(i) + 1.0) / float(N);
+        float r = sqrt(max(1.0 - z * z, 0.0));
+        float phi = 2.0 * PI * (float(i) * 0.61803398875 + rot);
+        vec3 d = vec3(r * cos(phi), z, r * sin(phi));
+        Hit h = traceScene(P0, d, 0.002, 100.0);
+        vec3 L;
+        if (!h.hit) L = envRadiance(d, 0.5);
+        else if (h.backface) { L = vec3(0.0); back += 1.0; }
+        else L = shadeHit(P0, d, h);
+        L = min(L, vec3(uRT3.w));
+        c0 += L; mr += L.r * d; mg += L.g * d; mb += L.b * d;
+    }
+    float inv = 1.0 / float(max(N, 1));
+    // [BTDR:RT.PROBEVALID] a probe that sees mostly back faces is inside an object: invalid
+    float valid = back * inv > 0.2 ? 0.0 : 1.0;
+    SH0[id] = vec4(c0 * inv, valid);
+    SH1[id] = vec4(mr * inv * 3.0, 0.0);
+    SH2[id] = vec4(mg * inv * 3.0, 0.0);
+    SH3[id] = vec4(mb * inv * 3.0, 0.0);
+}

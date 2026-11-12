@@ -1,0 +1,19 @@
+T2 scriptCHOP chans=4 samples=6 names=['chan1', 'chan2', 'chan3', 'chan4'] err=''
+T1 material assignment attempts: {'comp_path': 'set ok -> type:baseCOMP path:/project1/btdr_m0/material_comp', 'inner_mat': 'set ok -> type:glslMAT path:/project1/btdr_m0/material_comp/glsl', 'out_mat': 'set ok -> type:outMAT path:/project1/btdr_m0/material_comp/out1'}
+T1 comp outputConnectors=1 types=['/project1/btdr_m0/material_comp/out1']
+T4 append methods: ['appendCHOP', 'appendCOMP', 'appendDAT', 'appendFile', 'appendFileSave', 'appendFloat', 'appendFolder', 'appendHeader', 'appendInt', 'appendMAT', 'appendMenu', 'appendMomentary', 'appendOBJ', 'appendOP', 'appendObject', 'appendPOP', 'appendPanelCOMP', 'appendPar', 'appendParGroup', 'appendPulse', 'appendPython', 'appendRGB', 'appendRGBA', 'appendSOP', 'appendSequence', 'appendStr', 'appendStrMenu', 'appendTOP', 'appendTOPMulti', 'appendToggle', 'appendUV', 'appendUVW', 'appendWH', 'appendXY', 'appendXYZ', 'appendXYZW']
+T4 custom pars: {'Camera': ['Camera'], 'Geometry': ['Geometry'], 'Lights': ['Lights'], 'Resolution': ['Resolution1', 'Resolution2'], 'Quality': ['Quality'], 'Fogactive': ['Fogactive'], 'Fogdensity': ['Fogdensity'], 'Buildproxy': ['Buildproxy'], 'Tint': ['Tintr', 'Tintg', 'Tintb']}
+T4 comp connectors in=1 out=2
+CHECK t2_top centre=[0.25, 0.5, 0.75, 1.0] err='' warn=''
+CHECK t1_render centre=[0.29899999499320984, 0.29899999499320984, 0.29899999499320984, 1.0] err='' warn=''
+CHECK t2_pop_top centre=[0.25, 0.5, 0.75, 1.0] err='' warn=''
+CHECK material_comp/glsl err='' warn=''
+CHECK t2_pop err='' warn=''
+CHECK geo err='' warn=''
+T3 heavy gpu ms while selected = 0.658
+T3 heavy cooks during 60 frames while NOT selected = 0 (0 means free)
+T4 after pulse: builds=1 last_change=('Fogdensity', 0.5) ext attr=1
+T4 saved tox: F:/Projects/Touchdesigner Projects/ue5/btdr/m0/renderBTDR_proto.tox size=1038
+T4 reloaded: custom pages=['Render'] Quality='low' menu=['high', 'low', 'custom'] Fogdensity=0.5 enable=False
+T4 reloaded copy after pulse: builds=1 (extension + parexec survive save/load)
+DONE

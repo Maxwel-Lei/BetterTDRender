@@ -1,0 +1,66 @@
+// [BTDR:FILE.RT.REFL] rt_refl.comp — GLSL POP, one thread per pixel of the reduced-resolution grid `rt_refl_grid` (M4)
+// One GGX-sampled reflection ray per pixel against the proxy scene. Output = RATIO traced / unoccluded environment
+// ([BTDR:RT.RATIO]): a miss is exactly 1 (no noise), a hit is what the ray saw relative to the environment. The
+// composite multiplies its full-resolution environment specular by the (accumulated) ratio, so this pass can run at
+// 1/4 resolution without blurring the specular detail. SSR is layered on top where it has on-screen data.
+#define ENV_SHARP sEnv
+#define ENV_ATLAS sEnvAtlas
+#define PROBE_SH0 sProbe0
+#define PROBE_SH1 sProbe1
+#define PROBE_SH2 sProbe2
+#define PROBE_SH3 sProbe3
+//#include env_lookup
+//#include probe_lookup
+// hit points are lit by the probe grid when probe GI is on (it knows about occlusion: the underside of a car is
+// dark), otherwise by half the unoccluded environment
+#define RT_AMBIENT(p, n) (uRT.x > 0.5 ? probeIrradiance(p, n) : envIrradiance(n) * 0.5)
+//#include rt_common
+uint hashu(uint n) { n = (n << 13U) ^ n; return n * (n * n * 15731U + 789221U) + 1376312589U; }
+float hash1(uint n) { return float(hashu(n) & 0x7fffffffU) / float(0x7fffffff); }
+vec3 importanceGGX(vec2 xi, vec3 N, float a)
+{
+    float phi = 2.0 * PI * xi.x;
+    float cosT = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+    float sinT = sqrt(1.0 - cosT * cosT);
+    vec3 h = vec3(cos(phi) * sinT, sin(phi) * sinT, cosT);
+    vec3 up = abs(N.z) < 0.999 ? vec3(0, 0, 1) : vec3(1, 0, 0);
+    vec3 tx = normalize(cross(up, N));
+    vec3 ty = cross(N, tx);
+    return normalize(tx * h.x + ty * h.y + N * h.z);
+}
+void main()
+{
+    const uint id = TDIndex();
+    if (id >= TDNumElements()) return;
+    uint W = uint(uRT4.x + 0.5), H = uint(uRT4.y + 0.5);
+    vec2 uv = (vec2(float(id % W), float(id / W)) + 0.5) / vec2(float(W), float(H));
+    vec4 n0 = textureLod(sNrm, uv, 0.0);
+    vec4 p0 = textureLod(sPos, uv, 0.0);
+    float rough = n0.a;
+    if (dot(n0.xyz, n0.xyz) < 0.25 || rough > uRT.z) { Refl[id] = vec4(1.0, 1.0, 1.0, 0.0); return; }
+    vec3 rp = p0.xyz;                                   // camera-relative ([BTDR:GBUF.RELPOS])
+    float dist = length(rp);
+    vec3 P = rp + uCamPos.xyz;
+    vec3 N = normalize(n0.xyz);
+    vec3 V = rp / max(dist, 1e-6);
+    uint seed = hashu(id * 747796405U + uint(uFrame.x) * 2891336453U);
+    vec2 xi = vec2(hash1(seed), hash1(seed ^ 0x9e3779b9U) * 0.85);
+    float a = max(rough * rough, 0.002);
+    vec3 R = reflect(V, importanceGGX(xi, N, a));
+    if (dot(R, N) <= 0.0) R = reflect(V, N);
+    // [BTDR:RT.OFFSET] the proxy is a decimated copy of the surface: start a little off it (16-bit positions too)
+    vec3 O = P + N * (0.01 + 0.003 * dist);
+    Hit h = traceScene(O, R, 0.02 + 0.006 * dist, 100.0);
+    vec3 Rm = normalize(mix(reflect(V, N), N, a * a));
+    vec3 Lenv = envRadiance(Rm, rough);
+    vec3 ratio = vec3(1.0);
+    float valid = 1.0;
+    if (h.hit) {
+        // [BTDR:RT.BACKFACE] a back face right at the start: the ray began inside the (decimated) proxy, leave it to
+        // the environment. Further away it is a real surface with the other winding (single-sided or inconsistently
+        // wound meshes, e.g. under a car): shade it two-sided.
+        if (h.backface && h.t < 0.05 + 0.01 * dist) valid = 0.0;
+        else ratio = clamp(shadeHit(O, R, h) / max(Lenv, vec3(1e-3)), 0.0, 4.0);   // 4: no fireflies
+    }
+    Refl[id] = vec4(ratio, valid);
+}

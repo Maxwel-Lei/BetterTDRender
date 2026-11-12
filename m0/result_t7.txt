@@ -1,0 +1,7 @@
+mirror children=['sel_box'] {'parent': "specify ok menu=['heirarchy', 'specify', 'worldorigin']"}
+coverage source=1990 px mirror=1990 px mismatch=0 px
+mirror colour centre=[0.800000011920929, 0.30000001192092896, 0.10000000149011612] (expect PBR base colour [0.8, 0.3, 0.1])
+after editing the PBR MAT: [0.800000011920929, 0.8999999761581421, 0.10000000149011612] (should follow)
+after rotating the source: mismatch=0 px of 1633
+pbr map pars=['basecolormap', 'specularlevelmap', 'metallicmap', 'roughnessmap', 'ambientocclusionmap', 'normalmap', 'heightmap', 'emitmap', 'alphamap', 'rimlight0map', 'darknessemitmap']
+errs=[]

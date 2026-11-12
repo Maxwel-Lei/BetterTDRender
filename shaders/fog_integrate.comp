@@ -1,0 +1,29 @@
+// [BTDR:FILE.FOG.INTEGRATE] fog_integrate.comp — volumetric fog pass 2 (ported from ue5r): front-to-back
+// integration along each froxel column. Compute shader, one thread per column walking all slices in order (the
+// pixel-shader version re-summed every column once per slice: N^2 / 2 fetches and N draw calls).
+// input: 3D 0 scattering volume. output (3D): rgb in-scattered light from the camera up to the middle of the
+// slice, a transmittance
+layout (local_size_x = 8, local_size_y = 8) in;
+float sliceDepth(float s) { return uFog2.x * pow(uFog2.y / uFog2.x, s); }
+void main()
+{
+    loadUB();
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    ivec3 sz = textureSize(sTD3DInputs[0], 0);
+    if (any(greaterThanEqual(xy, sz.xy))) return;
+    vec3 scat = vec3(0.0);
+    float T = 1.0, prev = 0.0;                          // the fog starts at the camera
+    // [BTDR:FOG.INTEGRATE] energy-conserving step (Hillaire 2015): S x (1 - exp(-sigma ds)) / sigma
+    for (int i = 0; i < sz.z; i++) {
+        float d1 = sliceDepth(float(i + 1) / float(sz.z));
+        float ds = d1 - prev;
+        prev = d1;
+        vec4 v = texelFetch(sTD3DInputs[0], ivec3(xy, i), 0);
+        float st = max(v.a, 1e-6);
+        float th = exp(-st * ds * 0.5);                 // value stored for the middle of the slice
+        TDImageStoreOutput(0, uvec3(xy, i), vec4(scat + T * (v.rgb - v.rgb * th) / st, T * th));
+        float tr = th * th;
+        scat += T * (v.rgb - v.rgb * tr) / st;
+        T *= tr;
+    }
+}

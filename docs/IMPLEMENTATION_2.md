@@ -1,0 +1,187 @@
+# BetterTDRender（BTDR）实现参考 · 第 2 份
+
+第 1 份 `IMPLEMENTATION.md`（§0–§9d，含维护规则）。本份：性能、已知的坑、测试、开发者流程、尚未实现、变更记录。
+
+## 10. 性能（5080 Laptop，1080p，示例场景，Quality = High）
+
+预算：High 档 GPU ≤ 5 ms、CPU ≤ 1.5 ms；Low 档 GPU ≤ 3 ms。每个里程碑的实测值记在文末变更记录里。
+
+测量工具：`tools/perf_bench.py`。一次只拉取一个渲染器的输出，每帧把它内部本帧计算过的节点的 `gpuCookTime` / `cookTime` 加起来，
+预热 40 帧后取 180 帧的中位数。结果写 `out/perf_bench.txt`。场景：示例场景，60 万三角形、4K 贴图。
+
+0.1.x–0.2.0 的历次实测和当时的分析（G-Buffer 改 16 位、阴影缓存、M2 镜头效果等）移到了 `PERF_HISTORY.md`。
+
+**0.4.0（M4）实测（2026-11-12，示例场景，相机环绕；每种情况先把参数设回出厂默认，机器 CPU 处在慢的状态；`perf_bench.py` 从 0.4.0 起 GPU 也计入 POP）：**
+
+| 情况 | GPU 中位数（去掉 gbuf0 等待） | CPU 中位数 |
+|---|---|---|
+| TD 原生 Render TOP，1080p | 0.66 ms | 0.78 ms |
+| BTDR High，M3 默认（光追关） | 1.98 ms | 2.63 ms |
+| BTDR High，0.4.0 默认（+ 探针 GI + 光追反射） | 2.09 ms | 2.40 ms |
+| BTDR Low，默认 | 0.99 ms | 2.52 ms |
+| BTDR Low，光追关 | 0.90 ms | 1.88 ms |
+| BTDR High，1440p，默认 | 3.75 ms | 2.53 ms |
+| BTDR High，2160p，默认 | 8.85 ms | 2.50 ms |
+
+- 这一轮各情况之间的 CPU 读数噪声约 ±0.3 ms（两次测量的同一设置差这么多），单项看 `cpu_profile.py`：`rt_refl` 约 0.27 ms、`rt_refl_top` 0.04、`rt_acc` 0.05，光追每帧约 +0.35 ms CPU；GPU 约 +0.1 ms（反射 pass 0.03 ms，Fast Build）。探针静态时 0 开销，重算一次约 0.4 ms GPU。
+- 按同时段原生 Render TOP 换算（快的状态约 0.47 ms），BTDR 默认约 1.4 ms CPU，贴着 1.5 ms 预算。Bloom 的 13 个 TOP 约 0.3 ms CPU；0.5.0 起 Low 档少算两级（`BUILD.BLOOMLOW`，4 个 TOP），未单独复测。
+- 0.5.0 没有改动每帧的计算量（`SS.HISTRESET` 只在重置帧生效），性能沿用 0.4.0 的数字；使用手册 §3b 的 CPU 是按快的状态换算后的值。
+
+**0.3.0（M3）实测（2026-11-12，同一新场景，相机环绕、灯光和物体静止，同一时段测；这时机器的 CPU 处在慢的状态）：**
+
+| 情况 | GPU 中位数（去掉 gbuf0 等待） | CPU 中位数 |
+|---|---|---|
+| TD 原生 Render TOP，1080p | 0.73 ms | 0.89 ms |
+| BTDR High，全部关闭 | 0.63 ms | 1.92 ms |
+| BTDR High，0.2.0 的默认（屏幕空间关） | 0.68 ms | 2.04 ms |
+| BTDR High，0.3.0 默认（+ AO、反弹光、SSR） | 1.82 ms | 2.24 ms |
+| BTDR Low，默认 | 0.85 ms | 2.25 ms |
+| BTDR High，默认 + 体积雾 | 1.92 ms | 2.37 ms |
+| BTDR Low，默认 + 体积雾 | 0.91 ms | 2.33 ms |
+| BTDR High，全开（+ 自动曝光、景深、运动模糊） | 2.39 ms | 2.12 ms |
+| BTDR High，1440p，默认 | 3.19 ms | 1.86 ms |
+| BTDR High，2160p，默认 | 7.20 ms | 1.91 ms |
+
+- GPU 分项（High 1080p）：`ssgi` 0.56、`ssr` 0.44、两个累积各约 0.05；Low（半分辨率）`ssgi` 0.08、`ssr` 0.10。体积雾 High 约 0.1。
+- CPU：屏幕空间链多出 7 个 TOP，约 +0.2 ms；体积雾约 +0.13 ms。按同一时段原生 Render TOP 的读数换算（快的状态 0.47 ms），BTDR 默认约 1.2 ms，在 1.5 ms 预算内。
+- 优化余地：High 档的 SSGI 改成半分辨率 + 按深度的上采样（约省 0.4 ms）；SSR 在粗糙度高的像素提前退出已经做了（Max Roughness）。
+
+剩下的方向：
+- 1080p 到 2160p 像素是 4 倍，GPU 是 4 倍（M3 的屏幕空间 pass 和像素数成正比）。
+- 其他显卡的估算按 3DMark Time Spy 显卡分换算，只能当量级参考，见使用手册的性能一节。
+
+## 11. 已知的坑
+
+1. POP 几何体必须用 `TDPos()` 这组函数取属性（§6）。
+2. 菜单参数在表达式里 `int(par)` 得到的是菜单序号，不是菜单项的名字；要用 `int(par.eval())`（阴影分辨率踩过，结果是 2×2 的阴影图）。
+3. 同一帧里改参数再 `cook(force=True)`，下游拿到的还是旧值；验证脚本要用 `run(..., delayFrames=N)` 隔几帧再读。
+4. 脚本新建 GLSL TOP / MAT 会带停靠的模板 DAT；销毁宿主时它们一起消失，遍历 `children` 销毁时要先判断 `valid`。
+5. OP 类型的参数用表达式绑定时，源为空会得到 `None` 并报"Invalid path"警告；表达式要写成 `….eval() or ''`。
+6. 自定义的 OBJ 类型参数，相对路径是相对于**组件的父网络**解析的（`cam1` 指同级的 cam1），正好和原生 Render TOP 一致。
+7. MCP 的 `execute_code` 返回值会被截断；长结果写到 `btdr/out/*.txt` 再取回。
+8. Render TOP 被拉取时每帧都会重画，和场景是否变化无关（用 `totalCooks` 实测）。别指望靠"输入没变"省掉 G-Buffer 或阴影图；要省就在后面接一个不激活的 Cache TOP，让它不再被拉取（阴影图缓存就是这么做的，§5）。
+9. 给 Render TOP 的 Vectors 页设 uniform 可以传进材质，但材质节点会一直报"Uniform is not assigned"警告，并冒泡到组件上；0.1.2 因此让抖动从 GLSL MAT 的数组 uniform 读 `jitter` CHOP；0.2.0 起抖动改放在 `cam_jit` 的投影里，材质完全不碰抖动（`EXT.JITCAM`）。
+10. `addWarning` 只能在节点计算过程中调用；在扩展方法里（参数回调、`run` 延时调用）直接调会抛 `Cannot set warning outside of cook`。0.1.0 因此在有警告时 `Refresh()` 中途异常、状态没存上，由回归测试发现，0.1.1 修复。
+11. `scriptOp.copyNumpyArray()` 要求数组是 C 连续的（转置后的数组要包一层 `np.ascontiguousarray`）。
+    不满足时会抛异常，但 Script CHOP 上**不显示任何错误**，只是没有通道，所有着色器读到全 0。0.1.2 开发中踩过，回归测试加了"uniform block"一项（现在是 4 × 40）。
+12. 示例场景的 `cam1` 可能被设了环绕路径（Xform 页 Path SOP = `circle1`，Position 用 `absTime` 驱动）：直接改 `tx/ty/tz` 没用。
+    `tools/shots.py` 截图时会临时去掉路径，结束后恢复。
+13. 一帧里各节点的计算顺序：一个 TOP 先计算输入，再计算参数引用的 CHOP（`lighting` 的输入早于 `uniforms`，见 §5 阴影图缓存）。依赖这个顺序的地方都写了注释。
+14. 负载重的时候（Refresh、着色器编译）一次计算可能跳过十几个时间线帧，`run(..., delayFrames=N)` 到点时实际可能只算了一两帧。测试里依赖"变化已稳定"的检查要轮询状态，不能只靠延时（Quality Low 一项踩过）。
+15. 旧管线文档 §12 的坑（Feedback TOP 依赖环、TOP 按需计算、GLSL POP 重建加速结构等）在移植 M3–M4 时同样适用。
+16. 在帧开始的 `run()` 回调里读一个"每帧计算"的 CHOP 或 TOP，会让它在这一帧多计算一次（时间线已经前进了，正常的计算还没开始）。依赖"上一帧"状态的节点要防这种重复计算（`UNI.RECOOK`）。调试时要读这类节点的值，最好直接在 MCP 的 `execute_code` 里读，或者在回调里只读不触发计算的东西。
+17. TD 的 GPU 计时（`gpuCookTime`）会把等 GPU 队列的时间算到第一个等结果的节点头上：示例场景里 `gbuf0`（G-Buffer 后第一个 Render Select）在不同时段从 0.03 ms 到 7 ms 不等，画面和设置都没变。`tools/perf_bench.py` 单独列出"去掉 gbuf0 等待"的数字（`BENCH.SYNC`）。
+18. 带原生阴影（Shadow Type ≠ Off）的 Light COMP 在示例场景里每帧都会重新计算并画自己的阴影图（约 0.25 ms CPU、1.4 ms GPU），即使 BTDR 不在计算。BTDR 读灯的变换时会把这次计算算进 `uniforms` 的耗时。只用 BTDR 时可以把灯的 Shadow Type 设成 Off；BTDR 的阴影是自己画的，不受影响。
+19. **3D 输出的 GLSL TOP（像素着色器模式）里，uniform 数组只有第一个切片是对的**：后面的切片读到的是错位的数据（实测 TD 2025.33230：`uB[32].y` 在第 0 片是 40，第 1、2 片是 0，之后是别的槽位的值）。症状是雾全是 NaN、画面全黑。纹理缓冲（Array Type = Texture Buffer）所有切片都对；计算着色器也照样用纹理缓冲（`BUILD.TBUF`）。
+20. 3D 纹理作为输入时深度方向是重复寻址的，查 s = 1 会混进第一片（`FOG.EDGE`）。
+21. GLSL TOP 的计算着色器：模式 Compute，代码放 Compute Shader DAT，`TDImageStoreOutput(0, uvec3(...), color)` 写输出；关掉 Auto Dispatch Size 自己算分组数。计算着色器里没有导数，采样纹理要用 `textureLod`。
+22. 屏幕空间 pass 读"上一帧"（`taa_hist`）时，任何写进 TAA 输入的东西都会反馈回来：调试画面、NaN。所以调试画面放在 `debug` pass，TAA 和累积 pass 都有 NaN 保护。
+23. **Script CHOP 在 Python 回调里读 `absTime` 不会让它每帧计算**，只有参数表达式引用 `absTime` 才会。0.3.1 及以前 `uniforms` 只靠回调里的 `absTime.frame`：示例场景的相机一直在动，`uniforms` 跟着相机重算，看不出问题；相机静止时它只算一次——帧号停在 0、历史重置标志一直是 1、TAA 抖动停在第一个样本，TAA / AO / 反弹光 / 反射 / 雾的时间累积全部失效（画面发噪），阴影图的变化检测也停了（改 SOP 后阴影不更新）。0.3.2 加了 `BUILD.UNICOOK`，测试 `TEST.STILLCAM` 防回归。
+24. 测试网络里的 BTDR 没人看就不计算（TOP 按需计算），这时截图只算了一两帧，历史还没累积。手动测试时要让输出一直被拉取（`/project1/fog_test/keep_cooking` 的做法：帧开始回调里 `out1.cook()`）。
+25. 设备提交（`device_commit_files`）同一暂存路径连续提交时，偶尔要隔一会儿才生效，或者不生效；改完马上 `exec` 的脚本可能还是旧版本。提交后在 TD 里读文件确认（或按 §0 用新的暂存文件名；`tools/apply_stage.py` 按清单校验 md5）。
+26. **GLSL POP 会自己声明 Arrays 页的数组**：着色器里再写 `uniform samplerBuffer rtMat;` 会报重复定义。（`common.glsl` 的 `uniform vec4 uB[40];` 却不冲突，GLSL TOP 也不冲突。）
+27. 加速结构只接受三角形：四边形会让 GLSL POP 报"POP for acceleration structure must have triangles only"。Triangulate POP 是给线条用的，三角化四边形要用 Convert POP 的 Quads to Triangles。
+28. GLSL POP 每次计算都重建加速结构；Build Flag = Fast Trace 比 Fast Build 慢一个数量级以上（3.2 万面 0.65 ms 对 0.03 ms）。每帧算的 pass 用 Fast Build（`BUILD.RTAS`）。
+29. Transform POP 的 Xform Matrix/CHOP/DAT 不接受 COMP（警告 "must be: DAT CHOP"，并且不变换）；用 4×4 Table DAT，行主序。
+30. Grid SOP 默认输出 mesh 图元，SOP to POP 后是 0 个图元；先 Convert SOP 转多边形。
+31. 新建 GLSL POP 时编译错误可能残留到它下次计算：只在变化时计算的节点（探针）上读 `errors()` 前要先 `cook(force=True)`（`UNI.RTCHECK`）。
+32. **Feedback TOP 在第一次被目标覆盖之前的内容是未初始化的显存**（不是黑色）。渲染器拖进一个没人看的网络、过一阵才第一次被拉取时，历史重置帧的 SSR / SSGI 从 `taa_hist` 读到的是垃圾（彩色亮点），经过反射链自己维持下去，示例网络第一次打开时满屏彩色噪点（0.4.0）。一直被拉取的渲染器看不出来：那块显存碰巧是上一次的有效画面。修复 `SS.HISTRESET`；测试 `TEST.COLDSTART`。Feedback 的其他读者（TAA、累积、自动曝光）本来就在重置帧不读历史。
+33. Sphere SOP 的 Primitive Type = Polygon 用 **Frequency**（默认 2，80 个面），Rows / Cols 只对 Mesh 等类型有效。
+
+## 11b. 测试（`tests/m1_tests.py`）
+
+建 7 个球（每个一种材质情况）+ 地面，按帧延时依次检查，全部用数值判定（读 G-Buffer / 输出的像素）：
+
+| 检查 | 判定方法 |
+|---|---|
+| 加载后自动 Refresh、无报错、着色器全部编译通过 | `status`、`errors()`、Info DAT |
+| 法线贴图 | G-Buffer 法线与解析球面法线的平均夹角：有贴图 > 3°，无贴图 < 1.5° |
+| 自发光贴图、Channel Source、Phong / Constant / 无材质 / 自定义材质 | 对应球区域内 G-Buffer 的平均值 |
+| 三种视角设置方式、改分辨率 | 用深度输出 + 相机基向量重建世界坐标，与 G-Buffer 位置（加回相机位置）的最大误差 < 0.01（16 位 G-Buffer 下实测约 0.006） |
+| uniform 数组 | `uniforms` 是 4 通道 × 40 采样 |
+| 材质不读每帧数据、各向异性、抖动相机 | 镜像材质没有指向 CHOP 的数组，采样器为 4×，`gbuffer` 的相机是 `cam_jit` |
+| 法线贴图约定 | 切到 DirectX 后，法线贴图球的 G-Buffer 法线平均变化 > 1° |
+| Quality Low、非平行光、没有灯 | 阴影图尺寸、警告文字、直接光不为 0 |
+| HDRI 环境 | 合成的 HDR 全景（天空渐变 + 亮度 60 的太阳）；画面有变化、图集无 NaN |
+| 两个实例并存、保存再加载 | 各自的镜像数量、镜像指向新位置、画面与保存前一致 |
+| 阴影图缓存 | 静态 10 帧内 `shadow` 最多重画 1 次且缓存未激活；转动灯光后 `shadow` 重画、直接光有变化 |
+| `TEST.M2` TAA | 关：`cam_jit` 的 Window X / Y 等于用户相机、抖动槽为 0；开：抖动在 ±0.5 像素内（x 按宽度、y 按高度换算像素；0.3.2 前 y 也按宽度算，抖动停住时看不出来）、TAA 开关槽为 1、画面有限值且只有少量（边缘）像素和不开 TAA 不同 |
+| `TEST.M2` 镜头效果 | Bloom、自动曝光、景深、运动模糊全开：无报错、曝光倍数有限且在 Min / Max EV 范围内、两个 Switch 都切到效果分支、景深输出和输入有差别；全关后 Switch 回到旁路 |
+| `TEST.M3` 屏幕空间 | 测试场景（7 个球 + 无材质地面）：AO 有限值、最暗 < 0.8（球和地面接触处）、平均 > 0.5；SSR 置信度最大 > 0.05；两个 Switch 都在效果分支 |
+| `TEST.STILLCAM` | 测试相机不动：开雾后 25 帧内 `uniforms` 的帧号至少前进 10、重置标志为 0、`fog_accum` 存在 |
+| `TEST.BLOOM` | 6 级都在、¼ 和 1/128 尺寸对、`bloom_src` 在效果分支、结果有限且非负 |
+| `TEST.M4` 光追 | 代理 > 100 个三角形、两个 GLSL POP 无错、探针 16×8×16 且有效比例 30%–100%、反射有命中、合成无 NaN、`uRT` 两个开关为 1、Switch 在光追分支；两个调试画面有内容；关闭后 Switch 回到常量 |
+| `TEST.RTSTATIC` | 静态测试场景 18 帧内 `rt_probes` 最多计算 1 次 |
+| `TEST.HFAO` | 打开后 `hf_src` 切到缓存、顶视图里球占 0.1%–50% 的像素（地面不在图里）、合成结果无 NaN；关闭后 `hf_src` 回到常量 |
+| `TEST.M3` 体积雾 | 打开后 Switch 切换、雾结果无 NaN、最远切片透射率在 (0, 1) 之间、画面有变化 |
+| `TEST.M3` 调试画面、关闭 | AO 和反射的 Debug View 有内容、无 NaN；全部关闭后三个 Switch 回到旁路 |
+
+几何相关的检查（视角、分辨率、法线等）在 TAA 关闭下做，因为它们拿不含抖动的相机重建位置；TAA 单独在 `TEST.M2` 里测。
+
+TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用的是合成图。
+
+真实 HDRI 的手动测试、示例场景的贴图和测试模型的说明（`DEMO.*` 锚点）在 `DEMO_ASSETS.md`。
+
+## 11b-2. 验收测试（`tests/m5_acceptance.py`）
+
+模拟用户：在空的 Base COMP 里只用原生节点照使用手册 §2.2 搭场景，拖入 `release/BTDR.tox`，不填任何参数。
+
+| 检查 | 判定方法 |
+|---|---|
+| 自动找到相机、灯、几何体 | `status` 里的 camera / light 以 `cam1` / `light1` 结尾，镜像 1 个 |
+| 无警告、无报错 | `status` 的 warnings 为空，所有子节点 `errors()` 为空 |
+| 画面 | 有限值、std > 0.02、最大值 > 0.3 |
+| 光追可用且开启、版本号 | `Rtavailable`、`Raytracing`、`Version` 以 0.5 开头 |
+| `TEST.COLDSTART` | 载入 `release/BTDR_Example.tox`、关掉它的 `keep_cooking`，60 帧没人拉取后第一次 `cook(force=True)` 的画面，和再连续拉取 60 帧后的画面比：平均差 < 0.08、饱和像素 < 5%、无 NaN（0.4.0 时这张图满是彩色亮点，§11 第 32 条） |
+
+0.5.0：7 项全过，从空网络到最后一项检查约 4.5 s（含 210 帧等待）。
+
+## 11c. 开发者流程
+
+都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
+
+| 步骤 | 命令 | 结果 |
+|---|---|---|
+| 构建 | `exec(open(project.folder + '/btdr/build.py', encoding='utf-8').read())` | `release/BTDR.tox`，并复制到 Palette（`BUILD.PALETTE`）；`out/build_log.txt` |
+| 替换工程里的实例 | `tools/hotswap.py`（`HOTSWAP_TARGETS` 指定多个，`HOTSWAP_NOBUILD` 跳过构建） | 参数和连线保留 |
+| 回归测试 | `tests/m1_tests.py` | 约 20 秒，39 项；测试网络自动删除 |
+| 演示场景 | `examples/demo_scene.py` | `/project1/btdr_demo`：测试模型 AntiqueCamera + FlightHelmet（`测试模型/`，CC0）、HDRI（Rotate −96.2 对齐 light1）、原生 Render TOP 对照 `native_render`；贴图在 `/project1/tex_lib`。素材说明见 `DEMO_ASSETS.md` |
+| 发布用示例 | `examples/make_example.py` | `/project1/btdr_example`，存 `examples/` 和 `release/` 的 `BTDR_Example.tox`（`EXAMPLE.*`） |
+| 验收 | `tests/m5_acceptance.py` | §11b-2 |
+| 打包 | `tools/make_release.py` | `release/BTDR_<版本>.zip`：BTDR.tox、BTDR_Example.tox、USER_GUIDE.md、README.txt（源文件 `docs/RELEASE_README.txt`）、`hdri/`；`out/release_log.txt` 列出每个文件的 md5 |
+
+发布顺序：构建 → 回归测试 → 示例 → 验收 → 打包。
+
+示例网络（`EXAMPLE.*`）的取舍：只用 TD 自带的 SOP 和原生 PBR MAT，不带任何外部文件；相机在场景前方 ±55° 摆动（转到墙后面会看到墙背面）；灯的原生阴影关掉；Bloom 0.15 让发光方块有光晕；`keep_cooking`（帧开始时拉取 OUT）存盘前关掉，用户打开时按需计算。
+
+## 12. 尚未实现
+
+- M5 遗留：示例网络的 4060 / 2060 实测；Palette 安装说明以外的安装方式（TD 的 Package / 组件库）。
+- M4 遗留：实例化几何体进光追代理；命中点用逐纹素的贴图颜色（现在是每物体平均色）和高光；探针可见性（DDGI 的深度矩，防薄墙漏光）；光追阴影；探针多次反弹；不支持光追的机器上实测降级路径。
+- M3 遗留：High 档 SSGI 半分辨率 + 深度感知上采样；雾里的局部光源；屏幕空间光束（太阳在画面里时的径向光芒，便宜的补充）。
+- M2 遗留：物体运动矢量（物体自身运动的运动模糊、TAA 更少拖影）、景深的散景形状（目前是圆盘）、镜头切换的自动检测（现在只在换相机节点时重置历史）。
+- 之后：多盏灯、点光 / 聚光、贴图平铺 / 偏移、透明、嵌套几何体、场景变化自动检测。
+
+## 13. 变更记录
+
+| 日期 | 版本 | 变更 |
+|---|---|---|
+| 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-12 | 0.5.0 | M5 发布：示例网络 `BTDR_Example.tox`（`examples/make_example.py`）、验收测试 `tests/m5_acceptance.py`（7 项全过，含 `TEST.COLDSTART`）、发布包 `release/BTDR_0.5.0.zip`（`tools/make_release.py`）。使用手册改成纯用户手册：五分钟上手、性能建议、素材建议；开发内容（演示场景、回归测试、构建）移到 §11c。修复：渲染器第一次被拉取时 SSR / SSGI 读到未初始化的 Feedback 历史，画面满是彩色亮点（`SS.HISTRESET`，§11 第 32 条）。Quality = Low 时 Bloom 少算两级（`BUILD.BLOOMLOW`）。旧管线 `ue5r/` 归档到工程目录 `archive/`，工程里的 `/project1/ue5r` 删除。回归测试 39 项全过 |
+| 2026-11-12 | 0.4.0 | M4 硬件光追（简化版 Lumen）：节点内部实时生成光追代理（PolyReduce，默认保留 15%，跟随物体移动，`EXT.RTPROXY`）、探针 GI（只在场景 / 灯光变化时重算，`UNI.RTSTATIC`）、光追反射（1/4 分辨率比值法，Fast Build 加速结构 0.03 ms，`BUILD.RTAS`）、Ray Tracing 页、2 个 Debug View、不支持时自动关闭（`UNI.RTCHECK`）；uniform 槽位 36–39 用满。CarConcept 车底地面不再反射天空。回归测试 39 项全过（新增 `TEST.M4` 3 项）。1080p High 默认 GPU 约 +0.1 ms、CPU 约 +0.35 ms。新增 `tools/apply_stage.py`、`m4/rt_spike.py`；`perf_bench.py` 每种情况先回到出厂默认并计入 POP 的 GPU |
+| 2026-11-12 | 0.3.5 | Bloom 改成 6 级 mip 链（`BLOOM.CHAIN`），新增 Bloom Radius；修复小亮点光晕竖长、两侧硬边（旧的 ⅛ 级没有水平模糊）。Bloom Intensity 为 0 时整条链不计算。SSR 改为在细化后的交点上做厚度测试（`SSR.REFINE`），反射边缘不再按步长出现阶梯 / 条纹。回归测试 36 项全过（新增 `TEST.BLOOM`）。实测（示例场景当前参数，雾和运动模糊开）：`ssr` GPU 0.44 → 0.52 ms（细化次数增加），Bloom 链 12 个小 TOP 的 GPU 可忽略、CPU 在测量噪声内；1080p High 默认 GPU（去掉 gbuf0 等待）2.39 ms，在 5 ms 预算内。实现参考拆成两份（§0 维护规则） |
+| 2026-11-12 | 0.3.4 | Height-Field AO 只作用在接收者（地面、被罩住的面）上（`COMP.HFRECEIVER`）：0.3.3 把车身侧面也压暗了，多角度看发脏。用车底中间离地 6 cm 的机位验证：车底地面的天空反射被挡掉 |
+| 2026-11-12 | 0.3.3 | 新增 Height-Field AO（Indirect 页，默认关）：顶视深度图（与阴影图同范围、同缓存）算大范围天空遮蔽，解决车底、桌下等屏幕空间 AO 看不到的遮挡（屏幕空间 AO 只知道画面里看得到的表面，车底盘朝下，相机看不到）。uniform 槽位 34–35。回归测试 35 项。超跑测试模型 CarConcept（`DEMO_ASSETS.md`），`gltf2obj.py` 处理透射、第二套 UV、贴图平铺、emissive_strength |
+| 2026-11-12 | 0.3.2 | 构建时把 tox 复制进 TD 的 Palette（`BUILD.PALETTE`）。修复：相机静止时 `uniforms` 不再计算（§11 第 23 条），TAA 抖动、所有时间累积、阴影图变化检测都失效；`BUILD.UNICOOK` 让它每帧计算。新增：体积雾在 3D 格子里做时间重投影（`FOG.ACCUM`），采样点三个方向都抖动（`FOG.JITTER`），光束不再被逐格噪声淹没（GPU +0.025 ms）。测试：新增 `TEST.STILLCAM`，修正 TAA 抖动检查的 y 方向换算，34 项全过。`hotswap.py` 支持多个目标 |
+| 2026-11-12 | 0.3.1 | 修复：倒影和物体之间有一条缝（`SSR.SELFHIT` 只按距离判断自相交，把贴地处的反射也丢了），现在只丢弃法线同向的近距离命中 |
+| 2026-11-12 | 0.3.0 | M3：屏幕空间 AO + 反弹光（一次地平线扫描同时得到）、屏幕空间反射、时间累积、体积雾（计算着色器）；Indirect 页、Fog 页、3 个 Debug View；uniform 数组扩到 40 槽，3D pass 用纹理缓冲读（§11 第 19 条）。`taa_hist` 输入改接 `gbuf0`（避免依赖环）；TAA 和累积加 NaN 保护。回归测试 33 项全过（新增 `TEST.M3` 4 项）。1080p High 默认 GPU 1.82 ms（+1.1），体积雾 +0.1 ms |
+| 2026-11-12 | 0.2.0 | M2：TAA（抖动放在内部相机 `cam_jit` 的投影里，材质不受影响）、Bloom（曝光后阈值）、自动曝光、景深、运动模糊（仅相机运动），Post 页；uniform 数组扩到 32 槽；第 2 个输出的 alpha 改为稳定视深。修复：同一帧重复计算时 `uniforms` 把上一帧相机覆盖成当前相机（`UNI.RECOOK`）。回归测试 29 项全过（新增 `TEST.M2` 4 项；几何检查改在 TAA 关闭下做）。1080p High 默认 GPU 0.69 ms / CPU 0.84 ms，全开 1.25 / 0.88。新增 `tools/variants.py`；`perf_bench.py` 单独列出去掉 gbuf0 等待的 GPU、BTDR 情况下关掉灯的原生阴影 |
+| 2026-11-12 | 0.1.2 | 动态光源：运动时阴影图半分辨率、可选每 N 帧更新、每帧更新时绕过 Cache TOP；地面不进阴影渲染；修正光源运动时阴影查表基向量和阴影图差一帧。移动光源实测（同一时段）：比静止只多约 0.3 ms CPU |
+| 2026-11-12 | 0.1.2 | 阴影图缓存（Light 页 Shadow Update，默认 On Change）：灯光和物体不动时不再重画阴影图；`suncam` 平移改成变化时才写入的常量。新场景 1080p High：CPU 1.41 → 0.67 ms（稳态），GPU 1.19 → 0.61 ms。回归测试 25 项全过 |
+| 2026-11-12 | 0.1.2 | 示例场景换成开源测试模型（AntiqueCamera + FlightHelmet，§11d），原生对照组并进示例场景（`native_render`），删掉 `td_native`、旧贴图库内容和预览场景，工程显存约 4.8 GB → 1.0 GB。鎏金铜造像的金属度贴图改为从基础色推算（`_gilt`）。新增 `tools/gltf2obj.py`、`model_preview.py` |
+| 2026-11-12 | 0.1.2 | M2 前性能优化：G-Buffer 改 16 位（位置存相对相机坐标）、镜像材质的抖动改读 `jitter` CHOP、`SunLocal` 和 `uniforms` 去 numpy。1080p High：GPU 1.55 → 1.05 ms，CPU 1.65 → 1.25 ms（预算 1.5），见 §10。新增 Render 页 Normal Map Convention（OpenGL / DirectX）、贴图 4× 各向异性过滤。示例场景 HDRI 转到太阳和灯对齐（Rotate −96.2）、背景虚化 0.1。回归测试 23 项全过。新增 `tools/cpu_profile.py`、`shots.py`、`hotswap.py` |
+| 2026-11-12 | 0.1.1 | 示例场景法线强度默认 0.2（Tripo 法线贴图会重复叠加起伏）；`td_native` 去掉法线贴图，见 §11c |
+| 2026-11-12 | 0.1.1 | 示例场景改用原始贴图（粗糙度、金属度、法线），贴图集中到 `/project1/tex_lib`；法线约定定为 OpenGL，见 §11c |
+| 2026-11-12 | 0.1.1 | 性能实测改用 `tools/perf_bench.py`（逐渲染器单独测、取中位数），见 §10。CPU 实测 1.65 ms，此前记录的 1.0–1.3 ms 偏乐观（当时是单帧读数） |
+| 2026-11-11 | 0.1.1 | 修复：有警告时 `Refresh()` 异常（见 §11 第 10 条）。新增 Status 参数、`status` DAT、回归测试 `tests/m1_tests.py`（20 项全过）。示例场景默认曝光改为 +0.5。真实 HDRI（Poly Haven，CC0）手动测试通过，见 §11b |
+| 2026-11-11 | 0.1.0 | M1：`renderBTDR` 核心出图。场景镜像（SOP / POP / 实例化）、原生 PBR / Phong / Constant MAT、原生平行光、软阴影、摄影棚 / HDRI 环境、ACES、Debug View、三个输出、共享 uniform 数组。示例场景实测（5080 Laptop，1080p，High）：GPU 约 1.5–1.9 ms，CPU 约 1.0–1.3 ms（其中 Render TOP 约 0.55，`uniforms` 约 0.25） |

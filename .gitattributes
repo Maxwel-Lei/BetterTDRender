@@ -1,0 +1,9 @@
+*.tox binary
+*.hdr binary
+*.jpg binary
+*.glsl text eol=lf
+*.frag text eol=lf
+*.vert text eol=lf
+*.comp text eol=lf
+*.py text eol=lf
+*.md text eol=lf
