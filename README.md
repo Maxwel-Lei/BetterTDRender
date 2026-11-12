@@ -5,6 +5,10 @@ a deferred pipeline with PBR (native PBR MAT), soft shadows, studio / HDRI image
 TAA, bloom, auto exposure, depth of field, motion blur, screen-space AO / bounce light / reflections,
 volumetric fog, and hardware ray tracing (probe GI + traced reflections, a simplified Lumen).
 
+[![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
+
+**[▶ Watch the 60-second intro video](docs/media/btdr_intro.mp4)** — native Render TOP vs BTDR, debug views, SSAO / SSR, ray tracing, volumetric fog, depth of field and motion blur, all recorded in TouchDesigner.
+
 ![example](docs/images/example.jpg)
 
 Current build: **0.5.1**. Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
