@@ -11,6 +11,8 @@
 
 0.1.x–0.2.0 的历次实测和当时的分析（G-Buffer 改 16 位、阴影缓存、M2 镜头效果等）移到了 `PERF_HISTORY.md`。
 
+**0.6.0 透明（M6a）实测（2026-11-12，`tests/m6_scene.py`：5 个透明物体约占画面 1/3，`cpu_profile.py`）：** GPU `tgbuffer` 0.18 ms、`tback` 0.09、`refract` 0.34，合计约 0.6 ms；CPU `tgbuffer` 0.37、`tback` 0.23、`refract` 0.09、7 个 Render Select 约 0.18，合计约 0.85 ms。没有透明物体时 0（A/B 见 §9e）。`tback2` 的 GPU 读数 5.2 ms 是等待 GPU 队列的时间算到它头上（§11 第 17 条），不是它的开销。CPU 的大头是两个额外的 Render TOP；把 RT4 并进 RT0.a / RT2.a 可以省一个 Render Select。
+
 **0.5.1 全局性能审查（2026-11-12，demo 场景：雾和运动模糊开，`cpu_profile.py` 只统计每帧都计算的节点）：**
 
 | | 0.5.0 | 0.5.1 |
@@ -112,6 +114,8 @@
 35. 计时陷阱：对一个输入没变的 TOP `cook(force=True)`，它的 `gpuCookTime` 约 0.02 ms——GPU 上并没有重新执行。比较两个 pass 的 GPU 时间时，两个都要接一个每帧都变的输入（`ab_compare.py` 之外的手工计时都要注意）。帧开始第一个被强制计算的 GPU 节点还会吃掉等待时间，先算一个无关的节点垫底。
 36. 示例网络（`BTDR_Example.tox`）里内嵌了一份 `renderBTDR`：重新构建后要重新生成示例（`make_example.py`），A/B 测试要把两边的渲染器都换掉（`ab_compare.py` 是这样做的）。
 37. **不要把 Python 函数存进 OP 的 storage**（`op.store('x', func)`）：存 .toe / .tox 时 storage 要 pickle，函数存不进去，TD 弹出 "saved with errors: PicklingError: Can't pickle <function …>"。0.5.1 的测试脚本和 `make_example.py` 都踩过（用户存盘时报错）。延时回调要用的函数，用完马上 `unstore`（`EXAMPLE.NOSTORE`），或者把临时数据存在用完就删的测试网络上；测试结束清理 `/project1` 上的临时键。
+38. 自定义序列参数（`page.appendSequence`）**最少 1 块**（`numBlocks = 0` 抛 "Minimum size is 1 block"）；在 appendSequence 之后追加的参数进入块，名字自动变成 `<序列名><序号><小写的基础名>`（追加 `Geo` 得到 `Refr0geo`；追加时写了完整名字会变成 `Refr0refr0geo`），再设 `blockSize`。
+39. GLSL MAT 的输出数可以多于 Render TOP 的颜色缓冲数：多出的 `layout(location = 4)` 被丢弃，不报错（`gbuffer.frag` 同时供 4 缓冲的 `gbuffer` 和 5 缓冲的 `tgbuffer` 使用）。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -161,6 +165,10 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 0.5.0：7 项全过，从空网络到最后一项检查约 4.5 s（含 210 帧等待）。
 
+## 11b-3. M6 透明测试（`tests/m6_tests.py`）
+
+在 `tests/m6_scene.py` 的场景上检查：5 个槽都解析到、镜像是 `t*`、三个 Switch 打开、无报错、`refract` 全是有限值、玻璃像素占比 > 2% 且画面有变化、**非玻璃像素和 composite 完全一样**、背面有内容、玻璃默认不进阴影列表；关掉 Transparency 后 `Transcount` 为 0、Switch 旁路、`refract` 不再计算；选 Diamond 预设后 IOR = 2.42。0.6.0：全过。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -170,6 +178,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 构建 | `exec(open(project.folder + '/btdr/build.py', encoding='utf-8').read())` | `release/BTDR.tox`，并复制到 Palette（`BUILD.PALETTE`）；`out/build_log.txt` |
 | 替换工程里的实例 | `tools/hotswap.py`（`HOTSWAP_TARGETS` 指定多个，`HOTSWAP_NOBUILD` 跳过构建） | 参数和连线保留 |
 | 回归测试 | `tests/m1_tests.py` | 约 20 秒，39 项；测试网络自动删除 |
+| 透明测试 | `tests/m6_tests.py`（测试场景单独搭：`tests/m6_scene.py`，`M6_SHOT = 'tag'` 存 `out/m6_<tag>.jpg`） | §11b-3 |
 | 演示场景 | `examples/demo_scene.py` | `/project1/btdr_demo`：测试模型 AntiqueCamera + FlightHelmet（`测试模型/`，CC0）、HDRI（Rotate −96.2 对齐 light1）、原生 Render TOP 对照 `native_render`；贴图在 `/project1/tex_lib`。素材说明见 `DEMO_ASSETS.md` |
 | 发布用示例 | `examples/make_example.py` | `/project1/btdr_example`，存 `examples/` 和 `release/` 的 `BTDR_Example.tox`（`EXAMPLE.*`） |
 | 验收 | `tests/m5_acceptance.py` | §11b-2 |
@@ -187,13 +196,15 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - M4 遗留：实例化几何体进光追代理；命中点用逐纹素的贴图颜色（现在是每物体平均色）和高光；探针可见性（DDGI 的深度矩，防薄墙漏光）；光追阴影；探针多次反弹；不支持光追的机器上实测降级路径。
 - M3 遗留：High 档 SSGI 半分辨率 + 深度感知上采样；雾里的局部光源；屏幕空间光束（太阳在画面里时的径向光芒，便宜的补充）。
 - M2 遗留：物体运动矢量（物体自身运动的运动模糊、TAA 更少拖影）、景深的散景形状（目前是圆盘）、镜头切换的自动检测（现在只在换相机节点时重置历史）。
-- 之后：多盏灯、点光 / 聚光、贴图平铺 / 偏移、透明、嵌套几何体、场景变化自动检测。
+- M6 遗留：M6a 剩余项见 §9e 末尾；M6b 混合类透明（前向通道 + 排序 / OIT / 深度剥离 + 软粒子）；M6c 光追折射（Hybrid / Ray Traced）。
+- 之后：多盏灯、点光 / 聚光、贴图平铺 / 偏移、嵌套几何体、场景变化自动检测。
 
 ## 13. 变更记录
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-12 | 0.6.0 | M6a 透明与折射（`M6_TRANSPARENCY.md`，§9e）：Transparency 页的透明槽（把 Geometry COMP 拖进去，9 个预设）、从 PBR MAT 自动识别、Alpha 测试镂空；前景透明层 `tgbuffer` + 背面 `tback` 测厚度 + `refract`（两次折射、16 步深度步进找背景、按粗糙度取 mip 的磨砂、Beer-Lambert 吸收、菲涅尔、太阳高光）；合并深度给雾和 TAA。没有透明物体时全部旁路（A/B 与 0.5.1 平均差 0）。回归 39 项、M6 测试全过。透明场景 GPU +0.6 ms、CPU +0.85 ms |
 | 2026-11-12 | 0.5.1 | 开源：MIT 许可（`LICENSE` 只放标准 MIT 全文，GitHub 才能识别；HDRI 的 CC0 列在 `THIRD_PARTY_NOTICES.md`），README 去掉“私有仓库”、加上测试现状和许可；使用手册 §9、发布包 README 写明许可和源码地址；`make_showcase.py` 注释里的本机路径换成占位符 |
 | 2026-11-12 | 0.5.1 | 展示工程 `examples/make_showcase.py`：独立文件夹 BetterTDRender（BetterTDRender.toe + BTDR.tox + HDRI + 文档），一个程序化场景加凉棚，4 个预设可切换 / 自动轮播，体积雾预设用逆光（光束只在亮暗的雾交界、暗背景前才看得见）；预设逻辑放在 Text DAT 模块里（不往 storage 存函数，§11 第 37 条）。新坑：`connect(op)` 连到空闲输入时把 0 号输入顶掉了，要用 `inputConnectors[i]` 指定 |
 | 2026-11-12 | 0.5.1 | 全局性能审查（GitHub 私有仓库 `Maxwel-Lei/BetterTDRender` 的 v0.1.0 = 0.5.0）：`uniforms` 缓存 Par 对象（`UNI.PARCACHE`）、`rt_static` 键直接比较元组（`UNI.RTSTATICKEY`）；自动曝光关闭时测光链不计算（`BUILD.AEOFF`）；光照项在 composite 里现算（`COMP.INLINE`，新文件 `lighting_core.glsl`，`lighting` 只给 Debug View）；主光开着原生阴影时 Status 给出提示（`EXT.TIPS`）。demo 场景 CPU 2.13 → 1.94 ms，每帧计算的节点 58 → 50，画面不变（新工具 `tools/ab_compare.py`）。`cpu_profile.py` 只统计每帧都计算的节点。回归测试 39 项、验收 7 项全过。审查中测过但未采用的方案见 §10 |

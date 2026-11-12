@@ -2,7 +2,9 @@
 //   RT0: base colour rgb (linear) | metallic
 //   RT1: world normal xyz         | roughness
 //   RT2: position relative to the camera xyz | ambient occlusion  ([BTDR:GBUF.RELPOS] keeps 16-bit float precise near the camera)
-//   RT3: emissive rgb (linear)    | unused
+//   RT3: emissive rgb (linear)    | opacity (alpha front x alpha map; M6a transparency)
+//   RT4: x IOR, y absorption distance, z thin walled (only the transparent front layer `tgbuffer` has a 5th buffer;
+//        the opaque G-Buffer has 4 and drops it)
 // [BTDR:GBUF.MATERIAL] every uniform below is bound by expression to the source material (ext/BTDRExt.py, _bind_material)
 uniform sampler2D sBaseColor;
 uniform sampler2D sMetallic;
@@ -10,10 +12,13 @@ uniform sampler2D sRoughness;
 uniform sampler2D sAO;
 uniform sampler2D sNormal;
 uniform sampler2D sEmit;
+uniform sampler2D sAlpha;
 uniform vec4 uBase;    // rgb base colour
 uniform vec4 uPBR;     // x metallic, y roughness, z AO strength, w normal map strength (0 = no normal map, < 0 = DirectX map)
 uniform vec4 uEmit;    // rgb emissive colour, w 1 = an emissive map is assigned
 uniform vec4 uChan;    // xyz channel source of the metallic, roughness, AO maps (PBR MAT menu index), w 1 = colours are sRGB
+uniform vec4 uTrans;   // [BTDR:GBUF.TRANS] x opacity, y IOR, z absorption distance, w thin walled
+uniform vec4 uTrans2;  // x 1 = alpha map, y alpha-test threshold (< 0 = off), z roughness override (< 0 = material)
 
 in Vertex {
     vec3 worldPos;
@@ -26,6 +31,7 @@ layout(location = 0) out vec4 oAlbedo;
 layout(location = 1) out vec4 oNormal;
 layout(location = 2) out vec4 oPosition;
 layout(location = 3) out vec4 oEmissive;
+layout(location = 4) out vec4 oTrans;
 
 // PBR MAT "Channel Source" menu: luminance, red, green, blue, alpha, rgbaverage, average
 float pick(vec4 t, float mode)
@@ -51,6 +57,11 @@ void main()
     float metal = uPBR.x * pick(texture(sMetallic, uvc), uChan.x);
     float rough = uPBR.y * pick(texture(sRoughness, uvc), uChan.y);
     float ao = mix(1.0, pick(texture(sAO, uvc), uChan.z), clamp(uPBR.z, 0.0, 1.0));
+    // [BTDR:GBUF.ALPHA] opacity; alpha test = cut-out (leaves, fences). An RGB alpha map reads its red channel.
+    float alpha = uTrans.x;
+    if (uTrans2.x > 0.5) { vec4 am = texture(sAlpha, uvc); alpha *= am.a < 0.999 ? am.a : am.r; }
+    if (uTrans2.y >= 0.0 && alpha <= uTrans2.y) discard;
+    if (uTrans2.z >= 0.0) rough = uTrans2.z;
     vec3 emit = toLinear(uEmit.rgb);
     if (uEmit.w > 0.5) emit *= toLinear(texture(sEmit, uvc).rgb);
 
@@ -79,5 +90,6 @@ void main()
     oAlbedo = vec4(base, clamp(metal, 0.0, 1.0));
     oNormal = vec4(n, clamp(rough, 0.04, 1.0));
     oPosition = vec4(iVert.worldPos - iVert.camPos, ao);
-    oEmissive = vec4(emit, 1.0);
+    oEmissive = vec4(emit, clamp(alpha, 0.0, 1.0));
+    oTrans = vec4(uTrans.y, uTrans.z, uTrans.w, 0.0);
 }

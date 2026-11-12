@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.5.1'
+VERSION = '0.6.0'
 BLOG = []
 
 def _read(rel):
@@ -226,6 +226,28 @@ def build_btdr(dest, name='renderBTDR'):
     for p, v in zip(pg.appendRGB('Fogcolor', label='Fog Color (Albedo)'), (1.0, 1.0, 1.0)):
         setup(p, v); p.enableExpr = 'me.par.Fog'
 
+    # [BTDR:BUILD.TRANSPARS] M6a transparency: Refractive slots (drag Geometry COMPs in), global defaults
+    pg = C.appendCustomPage('Transparency')
+    setup(pg.appendToggle('Transparency', label='Transparency')[0], True)
+    p = setup(pg.appendInt('Transcount', label='Transparent Objects')[0], 0); p.readOnly = True
+    setup(pg.appendFloat('Defaultior', label='Default IOR')[0], 1.5, 1.0, 3.0, True)
+    setup(pg.appendFloat('Absorbdist', label='Absorption Distance')[0], 1.0, 0.01, 10, True)
+    sq = pg.appendSequence('Refr', label='Refractive')
+    setup(pg.appendStr('Geo', label='Geometry')[0], '')
+    menu(pg.appendMenu('Preset', label='Preset')[0],
+         ['glass', 'frosted', 'tinted', 'water', 'ice', 'crystal', 'diamond', 'acrylic', 'window', 'custom'],
+         ['Glass', 'Frosted Glass', 'Tinted Glass', 'Water', 'Ice', 'Crystal', 'Diamond', 'Acrylic', 'Window (thin)', 'Custom'], 'glass')
+    setup(pg.appendFloat('Ior', label='IOR')[0], 1.5, 1.0, 3.0, True)
+    setup(pg.appendFloat('Rough', label='Roughness Override')[0], -1.0, -1.0, 1.0, True)
+    setup(pg.appendToggle('Thin', label='Thin Walled')[0], False)
+    setup(pg.appendFloat('Absorb', label='Absorption Distance')[0], 1.0, 0.01, 10, True)
+    menu(pg.appendMenu('Shadow', label='Cast Shadow')[0], ['none', 'opaque'], ['None', 'Opaque'], 'none')
+    setup(pg.appendToggle('Inrt', label='In Ray Tracing')[0], False)
+    try:
+        C.seq.Refr.blockSize = 8       # a sequence keeps at least one block: an empty slot is ignored
+    except Exception as e:
+        BLOG.append('refr seq %r' % e)
+
     pg = C.appendCustomPage('Grade')
     setup(pg.appendFloat('Exposure', label='Exposure (EV)')[0], 0.0, -5, 5)
     menu(pg.appendMenu('Tonemap', label='Tone Mapping')[0], ['aces', 'none'], ['ACES', 'None'], 'aces')
@@ -240,7 +262,7 @@ def build_btdr(dest, name='renderBTDR'):
     names = ['gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag', 'env_studio.frag', 'env_prefilter.frag',
              'lighting.frag', 'composite.frag', 'taa.frag', 'grade.frag', 'debug.frag', 'depth.frag',
              'dof.frag', 'mblur.frag', 'bloom_pre.frag', 'bloom_down.frag', 'bloom_up.frag', 'lum.frag', 'exposure.frag',
-             'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag']
+             'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag', 'refract.frag']
     D = {}
     for i, n in enumerate(names):
         D[n] = dat(n.replace('.', '_'), _shader(n), X0, 400 - i * 100)
@@ -497,6 +519,53 @@ def build_btdr(dest, name='renderBTDR'):
                 RW, RH, ['rgba16float'], 200, 400)
     _menu(comp.par.inputextenduv, ['repeat'])
 
+    # [BTDR:BUILD.TRANS] M6a front transparent layer ([BTDR:REFR.*]): the refractive mirrors scene/t* are drawn by
+    # `tgbuffer` (5 colour buffers, same material shader) and by `tback` (front faces culled: the nearest back face,
+    # for the thickness). `refract` composites them over the opaque image. With no transparent object the Switch TOPs
+    # stay on the opaque inputs and none of these cook.
+    TON = '1 if (parent.BTDR.par.Transparency and parent.BTDR.par.Transcount > 0) else 0'
+    tg = place(C.create(renderTOP, 'tgbuffer'), -600, -400)
+    tg.par.camera = 'cam_jit'; tg.par.geometry = 'scene/t*'; tg.par.lights = ''
+    tg.par.numcolorbufs = 5
+    res(tg, RW, RH, ['rgba16float'])
+    _menu(tg.par.antialias, ['aa1', '1x', '1'])
+    tg.par.bgcolorr = tg.par.bgcolorg = tg.par.bgcolorb = tg.par.bgcolora = 0
+    tgs = []
+    for i in range(5):
+        r = place(C.create(renderselectTOP, 'tgbuf%d' % i), -400, -300 - i * 80)
+        r.par.top = tg; r.par.bufferindex = i
+        tgs.append(r)
+    tb = place(C.create(renderTOP, 'tback'), -600, -800)
+    tb.par.camera = 'cam_jit'; tb.par.geometry = 'scene/t*'; tb.par.lights = ''
+    tb.par.numcolorbufs = 3
+    res(tb, RW, RH, ['rgba16float'])
+    _menu(tb.par.antialias, ['aa1', '1x', '1'])
+    _menu(tb.par.cullface, ['frontfaces'])
+    tb.par.bgcolorr = tb.par.bgcolorg = tb.par.bgcolorb = tb.par.bgcolora = 0
+    tbs = []
+    for i in (1, 2):
+        r = place(C.create(renderselectTOP, 'tback%d' % i), -400, -760 - i * 80)
+        r.par.top = tb; r.par.bufferindex = i
+        tbs.append(r)
+    refr = glsl('refract', D['refract.frag'], [comp, rs[2], rs[1]] + tgs + [tbs[1], tbs[0], shs, esw, eat],
+                RW, RH, ['rgba16float'], 400, -300)
+    refr.par.numcolorbufs = 3
+    try: _menu(refr.par.inputfiltertype, ['mipmap'])
+    except Exception as e: BLOG.append('refract filter %r' % e)
+    rsel = []
+    for i in (1, 2):
+        r = place(C.create(renderselectTOP, 'refract%d' % i), 600, -300 - i * 80)
+        r.par.top = refr; r.par.bufferindex = i
+        rsel.append(r)
+    def tsw(nm, a, b, y):
+        s_ = place(C.create(switchTOP, nm), 800, y)
+        a.outputConnectors[0].connect(s_); b.outputConnectors[0].connect(s_)
+        s_.par.index.expr = TON
+        return s_
+    tsrc = tsw('trans_src', comp, refr, -300)
+    tpos = tsw('tpos_src', rs[2], rsel[0], -400)
+    tnrm = tsw('tnrm_src', rs[1], rsel[1], -480)
+
     # [BTDR:BUILD.FOG] volumetric fog: froxel scattering (3D) -> front-to-back integration (3D) -> apply per pixel,
     # before TAA (it resolves the slice dither). Bypassed by a Switch TOP when off.
     FX = "160 if parent.BTDR.par.Quality != 'low' else 128"
@@ -522,12 +591,12 @@ def build_btdr(dest, name='renderBTDR'):
     fac = vol('fog_accum', 'fog_accum.comp', [fsc, fhi], 100, 1300, True)
     fhi.par.top = fac
     fin = vol('fog_integrate', 'fog_integrate.comp', [fac], 200, 1200, False)
-    fap = glsl('fog_apply', D['fog_apply.frag'], [comp, rs[2], fin], RW, RH, ['rgba16float'], 200, 1050)
+    fap = glsl('fog_apply', D['fog_apply.frag'], [tsrc, tpos, fin], RW, RH, ['rgba16float'], 200, 1050)
     _menu(fap.par.inputextenduv, ['hold'])
     fsw = place(C.create(switchTOP, 'fog_src'), 250, 300)
-    comp.outputConnectors[0].connect(fsw); fap.outputConnectors[0].connect(fsw)
+    tsrc.outputConnectors[0].connect(fsw); fap.outputConnectors[0].connect(fsw)
     fsw.par.index.expr = '1 if parent.BTDR.par.Fog else 0'
-    taa = glsl('taa', D['taa.frag'], [fsw, fbk, rs[2], rs[1]], RW, RH, ['rgba16float'], 300, 400)
+    taa = glsl('taa', D['taa.frag'], [fsw, fbk, tpos, tnrm], RW, RH, ['rgba16float'], 300, 400)
     fbk.par.top = taa
     # [BTDR:BUILD.POST] depth of field -> motion blur (each bypassed by a Switch TOP when off), bloom, auto exposure
     def sw(nm, a, b, expr, x, y):

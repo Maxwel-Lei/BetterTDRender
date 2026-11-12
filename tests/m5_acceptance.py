@@ -43,7 +43,7 @@ try:
             check('picture: finite, not empty, object lit', np.isfinite(a).all() and a.std() > 0.02 and a.max() > 0.3,
                   'mean %.3f std %.3f max %.3f' % (a.mean(), a.std(), a.max()))
             check('ray tracing available and on', R.par.Rtavailable.eval() and R.par.Raytracing.eval())
-            check('version', R.par.Version.eval().startswith('0.5'), R.par.Version.eval())
+            check('version', R.par.Version.eval().startswith('0.6'), R.par.Version.eval())
             o.save(BT + '/out/m5_acceptance.jpg')
             # [BTDR:TEST.COLDSTART] the example dropped into a network nobody views: its first picture, cooked once after
             # 60 idle frames, must match a warmed-up picture (0.4.0: uninitialised Feedback TOPs showed as coloured sparkles)

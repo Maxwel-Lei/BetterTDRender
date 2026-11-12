@@ -27,6 +27,8 @@ btdr/
   examples/make_example.py  生成发布用的示例网络 BTDR_Example.tox（只用 TD 自带 SOP，§11c）
   examples/make_showcase.py  在另一个工程里生成可整体打包的展示工程（4 个预设，§11c）
   tests/m1_tests.py       回归测试：39 项检查（M1–M4），结果写 out/m1_tests.txt
+  tests/m6_scene.py       M6 透明测试场景 /project1/m6_test（玻璃球、磨砂板、有色方块、水块、薄窗）
+  tests/m6_tests.py       M6 透明检查（§11b-3），结果写 out/m6_tests.txt
   tests/m5_acceptance.py  验收：按使用手册 §2.2 从空网络搭场景 + 示例冷启动检查，结果写 out/m5_acceptance.txt
   tools/make_release.py   打发布包 release/BTDR_<版本>.zip（§11c）
   tools/perf_bench.py     性能测量（逐渲染器），结果写 out/perf_bench.txt
@@ -67,10 +69,13 @@ gbuf0..3 + shadow_src + env_src + env_atlas ─▶ lighting (4 个输出) ─▶
 gbuf1 + gbuf2 + taa_hist ─▶ ssgi ─▶ ssgi_acc ◀─ ssgi_hist (Feedback) ─┐ ssgi_src (Switch: 常量 / ssgi_acc)
 gbuf1 + gbuf2 + taa_hist ─▶ ssr  ─▶ ssr_acc  ◀─ ssr_hist  (Feedback) ─┘ ssr_src  (Switch: 常量 / ssr_acc)
 gbuf0..3 + shadow_src + env_src + ssgi_src + ssr_src + hf_src + rt_src + env_atlas + probe_src0..3 ─▶ composite（光照项在这里现算）
+scene/t* ─▶ tgbuffer (5 个颜色缓冲) ─▶ tgbuf0..4;  scene/t* ─▶ tback (剔除正面) ─▶ tback1/2      （M6a，§9e）
+composite + gbuf2 + gbuf1 + tgbuf0..4 + tback2/1 + shadow_src + env_src + env_atlas ─▶ refract (3 个输出) ─▶ refract1/2
+trans_src (Switch: composite / refract)、tpos_src (gbuf2 / refract1)、tnrm_src (gbuf1 / refract2)：没有透明物体时都在左边
 shadow_src + env_src + env_atlas ─▶ fog_scatter (3D 计算) ─▶ fog_accum (3D 计算) ◀─ fog_hist (Feedback, Target TOP = fog_accum)
 fog_accum ─▶ fog_integrate (3D 计算)
-composite + gbuf2 + fog_integrate ─▶ fog_apply;  fog_src (Switch: composite / fog_apply)
-fog_src ─▶ taa ◀─ taa_hist (Feedback, Target TOP = taa, 输入接 gbuf0 只用来定尺寸)
+trans_src + tpos_src + fog_integrate ─▶ fog_apply;  fog_src (Switch: trans_src / fog_apply)
+fog_src + tpos_src + tnrm_src ─▶ taa ◀─ taa_hist (Feedback, Target TOP = taa, 输入接 gbuf0 只用来定尺寸)
 taa ─▶ post_dof (Switch: taa / dof) ─▶ post_mb (Switch: 上一级 / mblur) ═▶ out2 (HDR，alpha = 视深)
 post_mb ─▶ bloom_pre (½) ─▶ bloom_d1 (¼) ─▶ … ─▶ bloom_d6 (1/128) ─▶ bloom_u5 ─▶ … ─▶ bloom_u0 (½)；bloom_src (Switch: bloom_off / bloom_u0)
 post_mb ─▶ ae_lum (256×144) ─▶ ae_avg (Analyze, 平均) ─▶ ae_exposure (1×1) ◀─ ae_hist (Feedback)；ae_src (Switch: ae_off / ae_exposure)
@@ -125,6 +130,7 @@ composite 接 rt_src（2D 第 9 个）和 probe_src0..3（3D 1–4）；debug �
 | `BUILD.TBUF` | 渲染到 3D 纹理的着色器用纹理缓冲读 uniform（见 §11 第 19 条） |
 | `BUILD.RTPARS` | Ray Tracing 页（M4） |
 | `BUILD.RT` / `BUILD.RTPROBES` / `BUILD.RTREFL` / `BUILD.RTAS` | M4 光追：`rtscene`、两个 GLSL POP、POP to TOP、Switch、累积；加速结构的构建方式（§9d） |
+| `BUILD.TRANSPARS` / `BUILD.TRANS` | M6a：Transparency 页（含序列参数 `Refr`，每块 8 个参数）；`tgbuffer`、`tback`、`refract` 和三个 Switch（§9e） |
 
 构建流程：在 `/project1/btdr_build` 里生成 `renderBTDR` → 存成 `release/BTDR.tox` → 复制到 Palette → 删掉构建副本。tox 不引用任何外部文件（已验证：从 Palette 载入后没有 DAT 的 File 参数指向外部）。
 注意：脚本新建的 GLSL TOP / GLSL MAT 会自带几个停靠的模板 DAT，`undock()` 把它们删掉，否则会被存进 `.tox`。
@@ -192,6 +198,7 @@ composite 接 rt_src（2D 第 9 个）和 probe_src0..3（3D 1–4）；debug �
 | `EXT.JITCAM` | `_setup_jitcam(cam)`：`cam_jit` 的父物体设成用户相机（自身变换为 0），投影类型、视角、近远裁剪等镜头参数用表达式跟随；`gbuffer` 的相机设成 `cam_jit` |
 | `EXT.SHADOWWATCH` / `EXT.CASTERS` | 阴影缓存要监视的对象；投射阴影的物体列表（见下） |
 | `EXT.RTPROXY` / `EXT.RTMAT` / `EXT.RTGRID` | M4：光追代理链、每物体材质表、探针网格范围（§9d） |
+| `EXT.SLOTS` / `EXT.TRANSCLASS` / `EXT.TRANSSPLIT` / `EXT.TRANSMAT` / `EXT.TRANSSHADOW` / `EXT.REFRPRESET` | M6a：透明槽解析、透明分类、镜像分流到 `scene/t*`、材质的透明 uniform、玻璃不投影、预设（§9e） |
 | `EXT.TIPS` | 0.5.1：不算问题、但白白耗时的场景设置，写进 Status（不加警告标记）和 `status` DAT（`tip:` 开头），`status` 存储里是 `tips`。目前一条：主光开着原生阴影（Shadow Type ≠ Off） |
 
 ### 场景镜像（`EXT.MIRROR`）
@@ -243,7 +250,8 @@ Cache TOP 不激活（Active 关）时不拉取输入，`shadow` 就不再重画
 | RT0 `gbuf0` | 基础色（线性） | 金属度 |
 | RT1 `gbuf1` | 世界法线 | 粗糙度 |
 | RT2 `gbuf2` | 相对相机的坐标（世界坐标 − 相机位置） | 材质 AO |
-| RT3 `gbuf3` | 自发光（线性） | — |
+| RT3 `gbuf3` | 自发光（线性） | 不透明度（`alphafront` × Alpha 贴图，0.6.0） |
+| RT4（只有 `tgbuffer`） | x IOR、y 吸收距离、z 薄壁 | — |
 
 - 顶点属性一律用 `TDPos()`、`TDNormal()`、`TDTexCoord(0)`：SOP 和 POP 通用。**直接写 `P`、`N`、`uv[0]` 时 POP 几何体画不出来**（踩过）。
 - 实例化由 `TDDeform()` 自动处理，着色器里不用管。
@@ -258,6 +266,7 @@ Cache TOP 不激活（Active 关）时不拉取输入，`shadow` 就不再重画
 - `GBUF.NORMAL`：几何体没有法线属性时，用世界坐标的导数算平面法线。
 - sRGB：`uChan.w` 为 1 时（跟随 Render 页的 sRGB 开关），基础色和自发光的颜色参数、贴图都做 2.2 次幂转线性。背景颜色用的是 `uView.y`。
 - 背景判定：法线长度平方 < 0.25。
+- `GBUF.TRANS` / `GBUF.ALPHA`（0.6.0）：`uTrans`（不透明度、IOR、吸收距离、薄壁）、`uTrans2`（有无 Alpha 贴图、Alpha 测试阈值、粗糙度覆盖）。Alpha 测试按阈值 discard（镂空）。RGB 的 Alpha 贴图读红通道，带 alpha 的读 alpha。第 5 个输出只有 `tgbuffer` 接；不透明 G-Buffer 只有 4 个缓冲，多出的输出被丢弃（实测无报错、画面不变）。
 
 ## 7. 环境（`env_studio.frag`、`env_prefilter.frag`、`env_lookup.glsl`）
 
@@ -406,5 +415,43 @@ Cache TOP 不激活（Active 关）时不拉取输入，`shadow` 就不再重画
 **不支持光追时（`UNI.RTCHECK`）**：Refresh 后第 30 帧强制计算两个 GLSL POP 读 `errors()`（刚建出来时可能残留编译错误，所以先强制计算）；有错就把只读参数 Rtavailable 关掉，Switch 切到 `rt_off` / `rt_probe_off`（2×2×2 全零 3D 纹理），并加一条警告。没有不支持光追的机器，这条路径只验证过"出错 → 关闭"的逻辑，没有在真机上测过。
 
 **调试画面**：Debug View 14 探针 GI（中灰表面 × 探针辐照度）、15 光追反射比值（`DEBUG.RT`）。
+
+## 9e. M6a：透明与折射（0.6.0）
+
+设计和取舍见 `M6_TRANSPARENCY.md`。这里记录实现。
+
+**分类（`EXT.SLOTS`、`EXT.TRANSCLASS`）**
+- Transparency 页的序列参数 `Refr`：每块 8 个参数（`Refr<i>geo / preset / ior / rough / thin / absorb / shadow / inrt`）。序列最少 1 块，空的 Geometry 被忽略。
+- Refresh 时先解析槽：一个物体可能被多个槽匹配，以第一个槽为准，后面的给警告。槽里的物体不在 Geometry 匹配范围内时会补进场景。
+- 没进槽的物体看 PBR MAT 自动判断：Alpha Test 开 → 不透明（镂空）；`alphafront` < 1 或有 Alpha 贴图 → 折射类。开了 Blending 又有 Alpha 贴图 → 警告（混合类在 M6b）。
+- Transparency 关闭时全部按不透明处理。只读参数 `Transcount` 是 Switch 的开关依据（参数表达式能跟踪依赖，storage 不行）。
+
+**镜像和材质（`EXT.TRANSSPLIT`、`EXT.TRANSMAT`、`EXT.REFRPRESET`）**
+- 折射类镜像命名为 `scene/t<i>`：`gbuffer` 的几何体模式是 `scene/g*`，自然不画它们；`tgbuffer` / `tback` 画 `scene/t*`。
+- 镜像材质按（源材质、类别、槽）各建一份，因为同一个 PBR MAT 在不同槽里的 IOR 不同。
+- `uTrans` / `uTrans2` 全部是表达式：槽参数（`parent.BTDR.par.Refr<i>ior` 等）或全局默认（`Defaultior`、`Absorbdist`），加上 PBR MAT 的 `alphafront`、`alphamap`、`alphatest`、`alphathreshold`。材质仍然不读每帧数据（`GBUF.SHARED`）。
+- 预设由 `parexec` 在 `Refr<i>preset` 变化时调用 `ApplyPreset(i)` 写进槽参数；改 geo / shadow / inrt 或增删槽触发 Refresh。
+- `EXT.TRANSSHADOW`：折射类默认不进阴影的投影物体列表（`scene/t<i>`，槽的 Cast Shadow = Opaque 时才进）；默认也不进光追代理（In Ray Tracing）。
+
+**渲染（`BUILD.TRANS`）**
+- `tgbuffer`：相机 `cam_jit`（和不透明 G-Buffer 同一个抖动），5 个 rgba16float 颜色缓冲，深度测试只在透明物体之间，所以得到最前面一层。
+- `tback`：同样的几何体和材质，Cull Face = Front Faces，得到最近的背面；用 1（法线）和 2（位置）两个缓冲。
+- 与不透明物体的遮挡在 `refract` 里逐像素判断（两个 Render TOP 没有共享深度）。
+
+**`refract.frag`（`REFR.*`）**
+- `REFR.LAYER`：透明表面在不透明表面前面才处理，否则原样输出。
+- `REFR.THICKNESS`：厚度 = 背面视深（被不透明表面截断）− 正面视深，再除以视线和相机朝向的夹角余弦换算成沿视线的长度。没有背面（单面网格）当薄壁。
+- `REFR.DIR`：
+  - 薄壁：方向不变。
+  - 实心：正面折射得到 T1；沿 T1 走厚度到 Pb，在 Pb 的屏幕位置重新读背面缓冲，取那里的背面位置（投影到 T1 上的距离）和法线；在背面再折射一次。
+  - 掠射（cos < 0.3）或全内反射时，出射方向退回视线方向（平板的出射方向）。第一版直接用视线处的背面、并在全内反射时反射，结果顶面发黑、球边有黑环，改成这样后消失。
+- `REFR.SAMPLE`：从出射点沿出射方向做 16 步指数步进（2 cm 起、每步 ×1.6，约到 20 m），对照不透明深度找交点。取不透明画面（`composite`，本身没有透明物体，所以不会采到玻璃自己）的 mip：`lod = 粗糙度² × 9 + 粗糙度 × log2(1 + 距离 × 4)`（薄壁不加距离项），就是磨砂。出屏幕或到相机后面时用 `envRadiance(T, 粗糙度)`，靠近屏幕边缘时渐变过去。
+- `REFR.ABSORB`：Beer-Lambert，透射率 = Base Color^(厚度 / 吸收距离)；薄壁直接乘 Base Color。
+- `REFR.SURFACE`：环境镜面（菲涅尔用 `envBRDFApprox`，F0 由 IOR 算）+ 太阳 GGX 高光（`sunShadow`，玻璃本身不在阴影图里）+ 不透明度那部分按漫反射涂层算（环境辐照度 + 太阳 / π）+ 自发光。合成：`(1 − F) × [(1 − α) × 透射 × 吸收 + α × 涂层] + 反射 + 高光 + 自发光`。
+- 输出 1 / 2：合并后的位置和法线（透明层在前就用它），交给 `fog_apply`、`taa`（以及读 TAA alpha 深度的景深、运动模糊），玻璃轮廓有自己的深度。
+
+**旁路**：`trans_src` / `tpos_src` / `tnrm_src` 的表达式 `Transparency and Transcount > 0`。为 0 时 `refract`、`tgbuffer`、`tback` 都不被拉取。实测：A/B 和 0.5.1 比（示例网络，没有透明物体）最终画面平均差 0.00000，99.9% 分位 0.00012，只有 0.004% 的像素差超过 1/255。
+
+**还没做（M6a 剩余）**：3 个 Debug View（透明层、厚度、折射偏移）、材质库 tox、拖到节点方块上自动建槽、Quality Low 半分辨率、把 RT4 打包进 RT0.a / RT2.a（省一个 Render Select）、镂空物体在阴影里也镂空。
 
 （§10 起见 `IMPLEMENTATION_2.md`。）

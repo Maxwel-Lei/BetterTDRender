@@ -1,12 +1,13 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.5.1。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.6.0。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
 - 时间性抗锯齿（TAA）、Bloom（泛光）、自动曝光、景深、运动模糊
 - 环境遮蔽（AO）、反弹光、反射、体积雾
 - 硬件光追（简化版 Lumen）：探针全局光照和光追反射，画面外、被挡住的东西也参与反射和间接光
+- 透明与折射（0.6.0）：玻璃、水、冰、宝石、磨砂玻璃，真实的折射、按厚度变深的颜色和菲涅尔反射；Alpha 测试镂空
 
 想了解内部实现，看 `IMPLEMENTATION.md` 和 `IMPLEMENTATION_2.md`（面向开发者）。
 
@@ -199,6 +200,50 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 雾按 160×90×64（Low：128×72×48）个格子计算，光束的边缘比较柔和，细小的物体留不下清晰的影子。
 雾的结果会和前几帧混合来去掉噪点（时间累积），所以改灯光、雾的参数之后约 10 帧（1/6 秒）才完全跟上，灯光快速运动时光束会有轻微拖影。
 
+### Transparency 页（透明与折射，0.6.0）
+
+玻璃、水、宝石这类**折射类**透明物体。做法和 UE5 的"前景透明层"、Unity HDRP 的屏幕空间折射同一路线：透明物体单独渲染一层，再测出它的厚度，最后算折射、吸收和反射。场景里没有透明物体时这一页不占任何性能。
+
+**最简单的用法：把物体拖进槽里**
+1. 在 Transparency 页的 **Refractive** 列表点 **+**（默认已有 1 个空槽）。
+2. 把玻璃物体的 **Geometry COMP 拖进槽的 Geometry 框**，或者手写路径，可以用通配符，例如 `glass_*`。
+3. 选一个 **Preset**，完成。
+
+拖进槽里的物体即使不在 Render 页 Geometry 参数的匹配范围里，也会被加入渲染。
+
+**不设置也能用**：没放进槽的物体，如果它的 PBR MAT 的 Alpha 页 **Alpha Front 小于 1**、或挂了 **Alpha Map**，自动按玻璃（Default IOR）渲染。PBR MAT 的 Common 页打开 **Alpha Test** 时按镂空处理（树叶、铁丝网），不当透明。
+
+| 参数 | 作用 |
+|---|---|
+| Transparency | 总开关。关闭时所有物体按不透明画 |
+| Transparent Objects | 只读：当前按折射类渲染的物体数 |
+| Default IOR | 自动识别出来的透明物体用的折射率 |
+| Absorption Distance | 自动识别出来的物体的吸收距离（见下） |
+| Refractive（列表） | 透明槽，每条一组物体 |
+| · Geometry | 拖入 Geometry COMP，或写路径 / 通配符 |
+| · Preset | Glass、Frosted Glass（磨砂）、Tinted Glass（茶色）、Water、Ice、Crystal、Diamond、Acrylic、Window (thin)（薄窗玻璃）、Custom。选了以后自动填下面几项 |
+| · IOR | 折射率：玻璃 1.5、水 1.333、冰 1.31、钻石 2.42。越大，透过去的画面弯得越厉害 |
+| · Roughness Override | -1 = 用材质的粗糙度；大于等于 0 时覆盖，磨砂玻璃一般 0.2–0.5 |
+| · Thin Walled | 薄壁：窗玻璃、肥皂泡、单面的平面。只着色、不偏移、不按厚度吸收 |
+| · Absorption Distance | 吸收距离（场景单位）：光在物体里走这么远后，颜色正好是材质的 Base Color。越小颜色越浓；越厚的地方越深 |
+| · Cast Shadow | None（默认，玻璃不挡光）/ Opaque（按不透明物体投影） |
+| · In Ray Tracing | 是否进入光追代理（默认关：光直接穿过玻璃） |
+
+材质参数怎么用：
+- **Base Color**：透明体内部的颜色。清玻璃用接近白色，有色玻璃、水用浅色，配合 Absorption Distance 控制浓淡。
+- **Alpha Front**：0 = 完全透明；中间值 = 表面带一层雾面的漫反射涂层（有色塑料、脏玻璃）。
+- **Roughness**：同时控制反射和透射的模糊，磨砂玻璃就是调它（或用槽的 Roughness Override）。
+- **Normal Map**：扰动折射，水面波纹、压花玻璃都靠它。
+- **Metallic** 在透明物体上不起作用。
+
+限制（这一版的取舍）：
+- 只处理最前面一层透明表面：玻璃后面的另一块玻璃看不见。互相穿插、嵌套的透明物体（杯子里的水）会算错。
+- 折射只能"看到"画面里有的东西，看到画面外时改用环境贴图。
+- 玻璃不投彩色阴影，没有焦散和色散。
+- 烟雾、半透明贴片这类"不折射的透明"（Blended）还没做；挂了 Alpha 贴图又开了 Blending 的材质暂时按折射类画，节点上会提示。
+
+性能（RTX 5080 Laptop，1080p，测试场景里透明物体占画面约三分之一）：GPU 约 +0.6 ms，CPU 约 +0.85 ms（两个额外的 Render TOP）。没有透明物体时为 0。
+
 ### Post 页（镜头效果）
 
 都在 HDR 画面上计算，顺序是 体积雾 → 抗锯齿 → 景深 → 运动模糊 → Bloom / 自动曝光 → 调色。除 Bloom 外默认都关，关闭的效果不占性能。
@@ -293,7 +338,7 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 
 - 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。
 - 只支持透视相机。
-- 不读取：贴图的平铺 / 偏移 / 采样方式、第二套 UV、高度图和视差、透明和 Alpha 测试、Specular Level、Rim。
+- 不读取：贴图的平铺 / 偏移 / 采样方式、第二套 UV、高度图和视差、Specular Level、Rim。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影）。
 - 不支持：骨骼变形、Material SOP 逐面材质、Geometry COMP 嵌套（子级里的 Geometry COMP）。
 - 内部位置存成相对相机的 16 位浮点：离相机越远精度越低（5 m 处约 4 mm，50 m 处约 3 cm），几十米外的物体阴影可能出现瑕疵。阴影只覆盖 Shadow Range 以内。
 - 反射、AO、反弹光是屏幕空间算法，限制见 Indirect 页一节；光追部分的限制见 Ray Tracing 页一节。

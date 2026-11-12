@@ -12,6 +12,19 @@ SRGB = '1 if parent.BTDR.par.Srgbcolors else 0'
 # [BTDR:EXT.NCONV] negative normal strength = DirectX (Y-) normal map, see gbuffer.frag
 NCONV = "(-1 if parent.BTDR.par.Normalconvention == 'directx' else 1)"
 CHANNELS = ('metallicmapchannelsource', 'roughnessmapchannelsource', 'ambientocclusionmapchannelsource')
+# [BTDR:EXT.REFRPRESET] Refractive slot presets: IOR, roughness override (-1 = the material's), thin walled,
+# absorption distance (m). Material colours still come from the PBR MAT.
+REFR_PRESETS = {
+    'glass':   (1.5, -1, False, 1.0),
+    'frosted': (1.5, 0.35, False, 1.0),
+    'tinted':  (1.52, -1, False, 0.4),
+    'water':   (1.333, -1, False, 2.0),
+    'ice':     (1.31, 0.12, False, 1.0),
+    'crystal': (1.54, -1, False, 1.0),
+    'diamond': (2.42, -1, False, 1.0),
+    'acrylic': (1.49, -1, False, 0.3),
+    'window':  (1.5, -1, True, 1.0),
+}
 
 
 class BTDRExt:
@@ -56,14 +69,21 @@ class BTDRExt:
             if a is not None: a.val = '4x'
 
     # ------------------------------------------------------------------ materials
-    def _bind_material(self, m, src, warn):
+    def _bind_material(self, m, src, warn, tr=None):
         # [BTDR:EXT.MATERIAL] bind the internal G-Buffer material to the user's material by expression,
         # so edits to the source material show up immediately without a refresh.
         white = "parent.BTDR.op('white')"
         S = "op('%s')" % src.path if src is not None else None
         tex = lambda par: "%s.par.%s.eval() or %s" % (S, par, white)
-        maps = dict(sBaseColor=white, sMetallic=white, sRoughness=white, sAO=white, sNormal=white, sEmit=white)
+        maps = dict(sBaseColor=white, sMetallic=white, sRoughness=white, sAO=white, sNormal=white, sEmit=white, sAlpha=white)
         base, pbr, emit, chan = (0.5, 0.5, 0.5, 1), (0, 0.5, 0, 0), (0, 0, 0, 0), (1, 1, 1, SRGB)
+        # [BTDR:EXT.TRANSMAT] uTrans: opacity, IOR, absorption distance, thin walled; uTrans2: alpha map on, alpha-test
+        # threshold (-1 = off), roughness override (-1 = the material's). IOR / absorption / thin / roughness come from the
+        # object's Refractive slot (tr) or the global defaults; opacity and alpha test from the PBR MAT.
+        tr = tr or {}
+        trans = (1, tr.get('ior', 'parent.BTDR.par.Defaultior'), tr.get('absorb', 'parent.BTDR.par.Absorbdist'),
+                 tr.get('thin', 0))
+        trans2 = (0, -1, tr.get('rough', -1), 0)
         t = src.OPType if src is not None else None
         if t == 'pbrMAT':
             base = tuple('%s.par.basecolor%s' % (S, c) for c in 'rgb') + (1,)
@@ -72,7 +92,10 @@ class BTDRExt:
             emit = tuple('%s.par.emit%s' % (S, c) for c in 'rgb') + ('1 if %s.par.emitmap.eval() else 0' % S,)
             chan = tuple('%s.par.%s.menuIndex' % (S, c) for c in CHANNELS) + (SRGB,)
             maps = dict(sBaseColor=tex('basecolormap'), sMetallic=tex('metallicmap'), sRoughness=tex('roughnessmap'),
-                        sAO=tex('ambientocclusionmap'), sNormal=tex('normalmap'), sEmit=tex('emitmap'))
+                        sAO=tex('ambientocclusionmap'), sNormal=tex('normalmap'), sEmit=tex('emitmap'), sAlpha=tex('alphamap'))
+            trans = ('%s.par.alphafront' % S,) + trans[1:]
+            trans2 = ('1 if %s.par.alphamap.eval() else 0' % S,
+                      '(%s.par.alphathreshold.eval() if %s.par.alphatest.eval() else -1)' % (S, S)) + trans2[2:]
         elif t == 'phongMAT':
             base = tuple('%s.par.diff%s' % (S, c) for c in 'rgb') + (1,)
             emit = tuple('%s.par.emit%s' % (S, c) for c in 'rgb') + (0,)
@@ -84,10 +107,10 @@ class BTDRExt:
             warn.append('%s is a Constant MAT: only its colour is used (roughness 0.5).' % src.path)
         elif src is not None:
             warn.append('%s (%s) is not supported: rendered with the default grey material. Use a PBR MAT.' % (src.path, src.OPType))
-        self._vecs(m, [('uBase', base), ('uPBR', pbr), ('uEmit', emit), ('uChan', chan)])
+        self._vecs(m, [('uBase', base), ('uPBR', pbr), ('uEmit', emit), ('uChan', chan), ('uTrans', trans), ('uTrans2', trans2)])
         self._samplers(m, list(maps.items()))
 
-    def _new_material(self, scene, name, src, warn):
+    def _new_material(self, scene, name, src, warn, tr=None):
         C = self.ownerComp
         m = scene.create(glslMAT, name)
         m.par.vdat = C.op('gbuffer_vert')
@@ -96,11 +119,84 @@ class BTDRExt:
             d.destroy()
         # no per-frame uniform in the material (TAA jitter lives in the projection of `cam_jit`, [BTDR:EXT.JITCAM]),
         # so the mirror materials never re-cook
-        self._bind_material(m, src, warn)
+        self._bind_material(m, src, warn, tr)
         return m
 
+    # ------------------------------------------------------------------ transparency (M6a)
+    def _slots(self):
+        """[BTDR:EXT.SLOTS] the Refractive slots of the Transparency page: [(index, geometry pattern), ...]"""
+        C = self.ownerComp
+        try:
+            n = C.seq.Refr.numBlocks
+        except Exception:
+            return []
+        return [(i, str(getattr(C.par, 'Refr%dgeo' % i).eval() or '').strip()) for i in range(n)]
+
+    def _slot_exprs(self, slot):
+        if slot is None:
+            return None
+        P = 'parent.BTDR.par.Refr%d' % slot
+        return dict(ior=P + 'ior', absorb=P + 'absorb', thin='1 if %sthin else 0' % P, rough=P + 'rough')
+
+    def _classify(self, geos, warn):
+        """[BTDR:EXT.TRANSCLASS] per Geometry COMP: kind (opaque / refr), slot, cast shadow, in ray tracing.
+        Layer 1: the first Refractive slot whose pattern matches. Layer 2: inferred from the PBR MAT (alpha < 1 or an
+        alpha map -> refractive). Slot objects outside the Geometry pattern are added to the scene."""
+        C = self.ownerComp
+        on = bool(C.par.Transparency.eval())
+        slot_of = {}
+        extra = []
+        for i, pat in self._slots():
+            if not pat:
+                continue
+            hits = self._find(pat, ('geometryCOMP',))
+            if not hits:
+                warn.append('Refractive slot %d: nothing matches "%s".' % (i + 1, pat))
+            for g in hits:
+                if g.path in slot_of:
+                    warn.append('%s is in Refractive slots %d and %d: slot %d is used.' % (g.path, slot_of[g.path] + 1, i + 1, slot_of[g.path] + 1))
+                    continue
+                slot_of[g.path] = i
+                if g not in geos and g not in extra:
+                    extra.append(g)
+        geos = list(geos) + extra
+        info = []
+        for g in geos:
+            d = dict(kind='opaque', slot=None, cast=True, inrt=True)
+            if on and g.path in slot_of:
+                i = slot_of[g.path]
+                d.update(kind='refr', slot=i, cast=getattr(C.par, 'Refr%dshadow' % i).eval() == 'opaque',
+                         inrt=bool(getattr(C.par, 'Refr%dinrt' % i).eval()))
+            elif on:
+                m = g.par.material.eval()
+                if m is not None and m.OPType == 'pbrMAT':
+                    try:
+                        if m.par.alphatest.eval():
+                            pass                 # alpha test = opaque cut-out ([BTDR:GBUF.ALPHA])
+                        elif m.par.alphafront.eval() < 0.999 or m.par.alphamap.eval() is not None:
+                            d.update(kind='refr', cast=False, inrt=False)
+                            if m.par.blending.eval() and m.par.alphamap.eval() is not None:
+                                warn.append('%s looks like a blended (sprite) material: blended transparency comes in M6b, '
+                                            'drawn as refractive for now.' % g.path)
+                    except Exception:
+                        pass
+            info.append(d)
+        return geos, info
+
+    def ApplyPreset(self, i):
+        """Fill a Refractive slot from its Preset menu ([BTDR:EXT.REFRPRESET])."""
+        C = self.ownerComp
+        v = REFR_PRESETS.get(getattr(C.par, 'Refr%dpreset' % i).eval())
+        if v is None:
+            return
+        ior, rough, thin, absorb = v
+        getattr(C.par, 'Refr%dior' % i).val = ior
+        getattr(C.par, 'Refr%drough' % i).val = rough
+        getattr(C.par, 'Refr%dthin' % i).val = thin
+        getattr(C.par, 'Refr%dabsorb' % i).val = absorb
+
     # ------------------------------------------------------------------ scene mirror
-    def _mirror(self, geos, warn):
+    def _mirror(self, geos, warn, info=None):
         # [BTDR:EXT.MIRROR] one hidden Geometry COMP per source Geometry COMP:
         #   Select SOP / Select POP for every child with its Render flag on,
         #   Parent Object = the source (inherits its world transform),
@@ -111,8 +207,11 @@ class BTDRExt:
                 c.destroy()
         mats = {}
         count = 0
+        info = info or [dict(kind='opaque', slot=None)] * len(geos)
         for i, src in enumerate(geos):
-            g = scene.create(geometryCOMP, 'g%d' % i)
+            # [BTDR:EXT.TRANSSPLIT] refractive objects become scene/t<i>: not drawn by `gbuffer` (scene/g*), drawn by
+            # `tgbuffer` / `tback` (scene/t*)
+            g = scene.create(geometryCOMP, ('t%d' if info[i]['kind'] == 'refr' else 'g%d') % i)
             for c in list(g.children):
                 c.destroy()
             g.nodeX, g.nodeY = 200, -i * 120
@@ -137,9 +236,10 @@ class BTDRExt:
             g.par.parentobject = src.path
             g.par.render.expr = "op('%s').par.render" % src.path
             msrc = src.par.material.eval()
-            key = msrc.path if msrc is not None else ''
+            slot = info[i].get('slot')
+            key = (msrc.path if msrc is not None else '', info[i]['kind'], slot)
             if key not in mats:
-                mats[key] = self._new_material(scene, 'm%d' % len(mats), msrc, warn)
+                mats[key] = self._new_material(scene, 'm%d' % len(mats), msrc, warn, self._slot_exprs(slot))
                 mats[key].nodeX, mats[key].nodeY = 0, -(len(mats) - 1) * 120
             g.par.material = mats[key]
             # [BTDR:EXT.INSTANCING] every parameter of the Instance pages follows the source by expression;
@@ -333,7 +433,7 @@ class BTDRExt:
                 par.expr = ''
                 par.val = par.default
 
-    def _shadow_casters(self, geos):
+    def _shadow_casters(self, geos, info=None):
         # [BTDR:EXT.CASTERS] a ground plane only receives shadows: leave it out of the shadow pass (one draw less).
         # Ground = flat in Y (height < 2% of its width) and not above the lowest point of every other object.
         boxes = []
@@ -352,10 +452,15 @@ class BTDRExt:
                 low = min(o[1] for o in others)
                 size = max(max(o[3] for o in others) - min(o[0] for o in others), max(o[4] for o in others) - low, 1e-6)
                 ground = (b[4] - b[1]) < 0.02 * w and b[4] <= low + 0.01 * size
+            refr = info is not None and info[i]['kind'] == 'refr'
+            if refr and not info[i]['cast']:
+                continue                     # [BTDR:EXT.TRANSSHADOW] glass casts no shadow unless its slot says Opaque
             if not ground:
-                casters.append('scene/g%d' % i)
+                casters.append(('scene/t%d' if refr else 'scene/g%d') % i)
         sh = self.ownerComp.op('shadow')
-        sh.par.geometry = ' '.join(casters) if len(casters) < len(geos) else 'scene/g*'
+        nopaque = sum(1 for d in (info or [dict(kind='opaque')] * len(geos)) if d['kind'] != 'refr')
+        allg = len(casters) == nopaque == len(geos)
+        sh.par.geometry = 'scene/g*' if allg else (' '.join(casters) or 'none')
         self.ownerComp.store('shadow_casters', casters)
 
     def SunLocal(self):
@@ -441,8 +546,11 @@ class BTDRExt:
         C.par.Mainlight = light.path if light is not None else '(built-in key light)'
         self._setup_jitcam(cam)
         C.op('gbuffer').par.camera = 'cam_jit'
-        n = self._mirror(geos, warn)
-        nrt = self._rt_build(geos, warn)
+        geos, info = self._classify(geos, warn)
+        n = self._mirror(geos, warn, info)
+        ntr = sum(1 for d in info if d['kind'] == 'refr')
+        C.par.Transcount = ntr
+        nrt = self._rt_build([g for g, d in zip(geos, info) if d['kind'] != 'refr' or d['inrt']], warn)
         C.par.Rtavailable = True              # re-tested by `uniforms` ([BTDR:UNI.RTCHECK])
         if C.par.Shadowfit.eval():
             fit = self._fit_shadow(geos)
@@ -450,7 +558,7 @@ class BTDRExt:
                 C.par.Shadowcenterx, C.par.Shadowcentery, C.par.Shadowcenterz = [float(v) for v in fit[0]]
                 C.par.Shadowrange = max(fit[1], 0.5)
         self._setup_suncam(light)
-        self._shadow_casters(geos)
+        self._shadow_casters(geos, info)
         # [BTDR:EXT.SHADOWWATCH] what the shadow cache watches for changes: the light, every source Geometry COMP,
         # its rendered SOP / POP children and instance source
         watch_x, watch_c = [light.path] if light is not None else [], []
