@@ -184,6 +184,8 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 发布顺序：构建 → 回归测试 → 示例 → 验收 → 打包。
 
+**版本备份（`BUILD.BACKUP`，0.8.0 起的规则）**：每次发布都另存一份文件名带版本号的 tox，以后的版本不覆盖它。`build.py` / `make_example.py` / `make_shell.py` 自动写 `release/versions/BTDR_<版本>.tox`、`BTDR_Example_<版本>.tox`、`BTDR_Shell_<版本>.tox`（提交进 git），并复制到 Palette 的 `BTDR` 文件夹；不带版本号的 `BTDR.tox` 等仍是“最新版”。0.7.5、0.7.6 的备份从 git 历史里补齐。案例场景另存为 `examples/BTDR_SSS_Case.tox` 和 `BTDR_SSS_Case_<版本>.tox`（模型按绝对路径引用 `ue5/模型_简化`，不在 tox 里）。
+
 示例网络（`EXAMPLE.*`）的取舍：只用 TD 自带的 SOP 和原生 PBR MAT，不带任何外部文件；相机在场景前方 ±55° 摆动（转到墙后面会看到墙背面）；灯的原生阴影关掉；Bloom 0.15 让发光方块有光晕；`keep_cooking`（帧开始时拉取 OUT）存盘前关掉，用户打开时按需计算。
 
 ## 12. 尚未实现

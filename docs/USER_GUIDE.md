@@ -59,6 +59,8 @@
 把 `BTDR.tox` 复制到 `文档/Derivative/Palette/BTDR/BTDR.tox`（没有就新建 `BTDR` 文件夹），重启 TD 后 Palette 的 My Components 里就有 BTDR，以后从这里拖。
 BTDR.tox 是自包含的，不引用任何外部文件，拖进任何工程都能用。
 
+Palette 的 BTDR 文件夹里还有带版本号的旧版本（如 `BTDR_0.7.6.tox`），不带版本号的 `BTDR.tox` 永远是最新版；新版有问题时可以换回旧版对比。
+
 ### 2.4 什么时候要点 Refresh Scene
 
 `renderBTDR` 在内部给每个几何体建了一份"镜像"。下面这些改动是实时跟随的，**不用**刷新：

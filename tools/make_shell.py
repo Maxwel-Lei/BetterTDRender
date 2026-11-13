@@ -35,6 +35,13 @@ try:
     if os.path.isdir(pal):
         shutil.copyfile(BT + '/release/BTDR_Shell.tox', os.path.join(pal, 'BTDR_Shell.tox'))
         SLOG.append('copied to the Palette')
+    # [BTDR:BUILD.BACKUP] versioned copy (release/versions/ and the Palette), never overwritten
+    ver = S.fetch('version', '') or 'unknown'
+    os.makedirs(BT + '/release/versions', exist_ok=True)
+    shutil.copyfile(BT + '/release/BTDR_Shell.tox', BT + '/release/versions/BTDR_Shell_%s.tox' % ver)
+    if os.path.isdir(pal):
+        shutil.copyfile(BT + '/release/BTDR_Shell.tox', os.path.join(pal, 'BTDR_Shell_%s.tox' % ver))
+    SLOG.append('versioned copies: BTDR_Shell_%s.tox' % ver)
     tmp.destroy()
     SLOG.insert(0, 'STATUS DONE')
 except Exception:

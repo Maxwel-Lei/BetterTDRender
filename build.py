@@ -925,6 +925,14 @@ try:
         os.makedirs(os.path.join(_pal, 'BTDR'), exist_ok=True)
         shutil.copyfile(BT + '/release/BTDR.tox', os.path.join(_pal, 'BTDR', 'BTDR.tox'))
         BLOG.append('copied to %s' % os.path.join(_pal, 'BTDR', 'BTDR.tox').replace('\\', '/'))
+    # [BTDR:BUILD.BACKUP] (0.8.0, author's rule) every build also keeps a copy named with its version, never
+    # overwritten by later versions: release/versions/ (committed to git) and the Palette folder
+    import shutil
+    os.makedirs(BT + '/release/versions', exist_ok=True)
+    shutil.copyfile(BT + '/release/BTDR.tox', BT + '/release/versions/BTDR_%s.tox' % VERSION)
+    if os.path.isdir(os.path.join(_pal, 'BTDR')):
+        shutil.copyfile(BT + '/release/BTDR.tox', os.path.join(_pal, 'BTDR', 'BTDR_%s.tox' % VERSION))
+    BLOG.append('versioned copies: BTDR_%s.tox' % VERSION)
     _tmp.destroy()
     BLOG.insert(0, 'STATUS DONE')
 except Exception:

@@ -90,6 +90,13 @@ try:
             _pal = os.path.join(os.path.expanduser('~'), 'Documents', 'Derivative', 'Palette', 'BTDR')
             if os.path.isdir(_pal):
                 shutil.copyfile(BT + '/release/BTDR_Example.tox', os.path.join(_pal, 'BTDR_Example.tox'))
+            # [BTDR:BUILD.BACKUP] versioned copy (release/versions/ and the Palette), never overwritten
+            import re as _re
+            _v = _re.search(r"^VERSION = '([^']+)'", open(BT + '/build.py', encoding='utf-8').read(), _re.M).group(1)
+            os.makedirs(BT + '/release/versions', exist_ok=True)
+            shutil.copyfile(BT + '/release/BTDR_Example.tox', BT + '/release/versions/BTDR_Example_%s.tox' % _v)
+            if os.path.isdir(_pal):
+                shutil.copyfile(BT + '/release/BTDR_Example.tox', os.path.join(_pal, 'BTDR_Example_%s.tox' % _v))
             open(BT + '/out/example_log.txt', 'w', encoding='utf-8').write(('STATUS DONE' if not errs else 'STATUS ERR') + '\n' + '\n'.join(LOG))
         except Exception:
             open(BT + '/out/example_log.txt', 'w', encoding='utf-8').write('STATUS ERR\n' + traceback.format_exc())
