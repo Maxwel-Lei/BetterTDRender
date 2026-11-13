@@ -1,10 +1,11 @@
 # [BTDR:FILE.UNIFORMS] Script CHOP callbacks for `uniforms`.
-# [BTDR:UNI.BLOCK] Fills the shared uniform array uB[44] once per frame: 4 channels (xyzw) x 44 samples (40 until 0.7.4).
+# [BTDR:UNI.BLOCK] Fills the shared uniform array uB[68] once per frame: 4 channels (xyzw) x 68 samples (40 until 0.7.4,
+# 44 until 0.7.6).
 # Slot layout must match shaders/common.glsl.
 import math
 import numpy as np
 
-NSLOT = 44
+NSLOT = 68
 _STATE = {}      # per-CHOP runtime state (previous camera, frame counter); not saved with the file
 
 def _halton(i, b):
@@ -226,6 +227,30 @@ def onCook(scriptOp):
             d = q['dimmer'].eval()
             ar += q['cr'].eval() * d; ag += q['cg'].eval() * d; ab += q['cb'].eval() * d
     a[40] = (ar, ag, ab, 0.0)
+    # [BTDR:UNI.SSS] 0.8.0 subsurface: globals + one profile per Subsurface slot (first 8), read every frame so slot
+    # edits apply at once (only the slots that exist are read)
+    if 'Subsurface' in Q:
+        sq = Q['Sssquality'].eval()
+        hi_s = sq == 'high' or (sq == 'auto' and Q['Quality'].eval() != 'low')
+        sc = Q['Sssscale'].eval()
+        a[41] = (1.0 if Q['Subsurface'].eval() else 0.0, sc, 7.0 if hi_s else 4.0, 1.0 if Q['Ssstransmission'].eval() else 0.0)
+        try:
+            nb = min(C.seq.Sss.numBlocks, 8)
+        except Exception:
+            nb = 0
+        for k in range(nb):
+            P = 'Sss%d' % k
+            if (P + 'geo') not in Q:
+                _PARS.pop(C.id, None); Q = _pars(C)       # blocks added since the cache was built
+                if (P + 'geo') not in Q:
+                    break
+            thin = bool(Q[P + 'thin'].eval())
+            r = Q[P + 'radius'].eval() * sc
+            ts = Q[P + 'transstrength'].eval()
+            a[44 + 3 * k] = (r * Q[P + 'scatterr'].eval(), r * Q[P + 'scatterg'].eval(), r * Q[P + 'scatterb'].eval(),
+                             0.0 if thin else Q[P + 'strength'].eval())
+            a[45 + 3 * k] = (ts * Q[P + 'transr'].eval(), ts * Q[P + 'transg'].eval(), ts * Q[P + 'transb'].eval(), 1.0 if thin else 0.0)
+            a[46 + 3 * k] = (Q[P + 'detail'].eval(), Q[P + 'thickness'].eval(), 0.0, 0.0)
     a[17] = (2.0 ** Q['Exposure'].eval(), Q['Vignette'].eval(), Q['Grain'].eval(),
              1.0 if Q['Tonemap'].eval() == 'aces' else 0.0)
     a[18] = (float(Q['Debugview'].menuIndex), 1.0 if Q['Srgbcolors'].eval() else 0.0, Q['Fadestart'].eval(), Q['Fadeend'].eval())

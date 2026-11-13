@@ -1,8 +1,15 @@
 # [BTDR:FILE.PAREXEC] Parameter Execute DAT: custom parameters of renderBTDR -> extension
 def onValueChange(par, prev):
     n = par.name
-    if n in ('Camera', 'Geometry', 'Lights', 'Shadowfit', 'Transparency', 'Refr', 'Blend', 'Refrmethod'):
+    if n in ('Camera', 'Geometry', 'Lights', 'Shadowfit', 'Transparency', 'Refr', 'Blend', 'Refrmethod', 'Sss'):
         parent().Refresh()
+    elif n.startswith('Sss') and n[3:4].isdigit():
+        # [BTDR:EXT.SSSSLOTS] Subsurface slots: a preset fills the slot, the geometry rebuilds; the rest is read per frame
+        i = int(''.join(c for c in n[3:] if c.isdigit()))
+        if n.endswith('preset'):
+            parent().ApplySssPreset(i)
+        elif n.endswith('geo'):
+            parent().Refresh()
     elif n.startswith('Blend') and n[5:6].isdigit():
         # [BTDR:EXT.SLOTS] Blended slots: the geometry pattern rebuilds; mode / lit / soft are bound by expression
         if n.endswith('geo'):

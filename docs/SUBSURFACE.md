@@ -1,6 +1,6 @@
 # 0.8 次表面散射（Subsurface Scattering，SSS）：设计方案（草案 v1，2026-11-14）
 
-状态：**方案，未实现**。实现后，记录写进 `IMPLEMENTATION_2.md` 和 `USER_GUIDE.md`，本文件保留为设计记录。
+状态：**已实现（0.8.0，0.8a + 0.8b 一起交付）**。实现记录在 `IMPLEMENTATION_2.md`（变更记录、§11 第 51–53 条、§11b-5），用法在 `USER_GUIDE.md` 的 Subsurface 页一节；本文件保留为设计记录。和方案的差别：透射乘 0.5（板状物体的漫透射只有一半向前）、透射也乘材质底色；Low 档仍是全分辨率、只减采样数（9 个）；Debug View 的透射视图由 composite 直接输出。
 
 ## 0. 目标和原则
 

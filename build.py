@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.7.6'
+VERSION = '0.8.0'
 BLOG = []
 
 def _read(rel):
@@ -126,10 +126,11 @@ def build_btdr(dest, name='renderBTDR'):
     menu(pg.appendMenu('Quality', label='Quality')[0], ['high', 'low', 'custom'], ['High', 'Low', 'Custom'], 'high')
     menu(pg.appendMenu('Debugview', label='Debug View')[0],
          ['final', 'basecolor', 'normal', 'roughness', 'metallic', 'ao', 'emissive', 'depth', 'direct', 'envdiffuse', 'envspecular',
-          'ssao', 'ssgi', 'ssr', 'rtgi', 'rtrefl'],
+          'ssao', 'ssgi', 'ssr', 'rtgi', 'rtrefl', 'sssprofile', 'sssirradiance', 'ssstransmission'],
          ['Final Image', 'Base Color', 'Normal', 'Roughness', 'Metallic', 'Material AO', 'Emissive', 'Depth',
           'Direct Light', 'Environment Diffuse', 'Environment Specular',
-          'Screen-Space AO', 'Bounce Light (SSGI)', 'Reflections (SSR)', 'Probe GI (RT)', 'Traced Reflections (RT)'], 'final')
+          'Screen-Space AO', 'Bounce Light (SSGI)', 'Reflections (SSR)', 'Probe GI (RT)', 'Traced Reflections (RT)',
+          'Subsurface Profile', 'Subsurface Irradiance (before | after)', 'Subsurface Transmission'], 'final')
     setup(pg.appendToggle('Srgbcolors', label='sRGB Colors and Color Maps')[0], True)
     # [BTDR:BUILD.TAAPARS] temporal anti-aliasing parameters
     menu(pg.appendMenu('Antialias', label='Anti-Aliasing')[0], ['taa', 'none'], ['TAA (Temporal)', 'None'], 'taa')
@@ -302,6 +303,35 @@ def build_btdr(dest, name='renderBTDR'):
         except Exception as e:
             BLOG.append('blend seq %r' % e)
 
+    # [BTDR:BUILD.SSSPARS] 0.8.0 subsurface scattering (docs/SUBSURFACE.md): Subsurface slots (drag Geometry COMPs in,
+    # up to 8 profiles), global switches. Plain parameters first: the ones appended after the sequence join its block.
+    pg = C.appendCustomPage('Subsurface')
+    setup(pg.appendToggle('Subsurface', label='Subsurface')[0], True)
+    p = setup(pg.appendInt('Ssscount', label='Subsurface Objects')[0], 0); p.readOnly = True
+    menu(pg.appendMenu('Sssquality', label='Subsurface Quality')[0], ['auto', 'high', 'low'],
+         ['Auto (from Quality)', 'High (15 taps)', 'Low (9 taps)'], 'auto')
+    setup(pg.appendFloat('Sssscale', label='Scatter Scale')[0], 1.0, 0.01, 10, True)
+    setup(pg.appendToggle('Ssstransmission', label='Transmission')[0], True)
+    pg.appendSequence('Sss', label='Subsurface')
+    setup(pg.appendStr('Geo', label='Geometry')[0], '')
+    menu(pg.appendMenu('Preset', label='Preset')[0],
+         ['skin', 'jade', 'wax', 'marble', 'milk', 'soap', 'leaf', 'paper', 'custom'],
+         ['Skin', 'Jade', 'Wax', 'Marble', 'Milk', 'Soap', 'Leaf (thin)', 'Paper (thin)', 'Custom'], 'skin')
+    for p, v in zip(pg.appendRGB('Scatter', label='Scatter Color'), (0.9, 0.35, 0.2)):
+        setup(p, v, 0, 1, True, True)
+    setup(pg.appendFloat('Radius', label='Scatter Radius (m)')[0], 0.012, 0.0, 0.1, True)
+    setup(pg.appendFloat('Strength', label='Strength')[0], 1.0, 0, 1, True, True)
+    setup(pg.appendFloat('Detail', label='Texture Detail')[0], 0.5, 0, 1, True, True)
+    for p, v in zip(pg.appendRGB('Trans', label='Transmission Color'), (1.0, 0.4, 0.25)):
+        setup(p, v, 0, 1, True, True)
+    setup(pg.appendFloat('Transstrength', label='Transmission Strength')[0], 1.0, 0, 4, True)
+    setup(pg.appendToggle('Thin', label='Thin (sheet)')[0], False)
+    setup(pg.appendFloat('Thickness', label='Sheet Thickness (m)')[0], 0.0005, 0.0, 0.01, True)
+    try:
+        C.seq.Sss.blockSize = 10       # parameter groups per block (RGB = one); a new sequence starts with 0
+    except Exception as e:
+        BLOG.append('sss seq %r' % e)
+
     pg = C.appendCustomPage('Grade')
     setup(pg.appendFloat('Exposure', label='Exposure (EV)')[0], 0.0, -5, 5)
     menu(pg.appendMenu('Tonemap', label='Tone Mapping')[0], ['aces', 'none'], ['ACES', 'None'], 'aces')
@@ -326,12 +356,13 @@ def build_btdr(dest, name='renderBTDR'):
     names = ['gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag', 'env_studio.frag', 'env_prefilter.frag',
              'lighting.frag', 'composite.frag', 'taa.frag', 'grade.frag', 'debug.frag', 'depth.frag',
              'dof.frag', 'mblur.frag', 'bloom_pre.frag', 'bloom_down.frag', 'bloom_up.frag', 'lum.frag', 'exposure.frag',
-             'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag', 'refract.frag', 'rt_refr.comp'] + (['forward.frag', 'blend_comp.frag'] if M6B else [])
+             'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag', 'refract.frag', 'rt_refr.comp', 'sss.frag'] + (['forward.frag', 'blend_comp.frag'] if M6B else [])
     D = {}
     for i, n in enumerate(names):
         D[n] = dat(n.replace('.', '_'), _shader(n), X0, 400 - i * 100)
     D['white_frag'] = dat('white_frag', 'out vec4 fragColor;\nvoid main() { fragColor = vec4(1.0); }\n', X0 - 250, -100)   # unused pixel stage of compute TOPs
     D['rt_accum.frag'] = dat('rt_accum_frag', '#define RT_ACC\n' + _shader('ss_accum.frag'), X0, 300 - len(names) * 100)
+    D['sss_v.frag'] = dat('sss_v_frag', '#define SSS_V\n' + _shader('sss.frag'), X0 - 250, -200)
     D['bloom_karis.frag'] = dat('bloom_karis_frag', '#define BLOOM_KARIS\n' + _shader('bloom_down.frag'), X0, 400 - len(names) * 100)
     dat('BTDRExt', _read('ext/BTDRExt.py'), X0 - 250, 400)
     dat('status', 'OK', X0 - 250, 0)
@@ -596,6 +627,22 @@ def build_btdr(dest, name='renderBTDR'):
                 RW, RH, ['rgba16float'], 200, 400)
     _menu(comp.par.inputextenduv, ['repeat'])
 
+    # [BTDR:BUILD.SSS] 0.8.0 subsurface scattering ([BTDR:SSS.*]): composite gets a second colour buffer (irradiance to
+    # blur | profile) only while a Subsurface slot holds an object; sss_h / sss_v blur it and put it back. With no
+    # subsurface object `sss_src` stays on composite and nothing here cooks.
+    SON = '(parent.BTDR.par.Subsurface and parent.BTDR.par.Ssscount > 0)'
+    comp.par.numcolorbufs.expr = '2 if %s else 1' % SON
+    sirr = place(C.create(renderselectTOP, 'sss_irr'), 400, 700)
+    sirr.par.top = comp; sirr.par.bufferindex = 1
+    ssh = glsl('sss_h', D['sss.frag'], [sirr, rs[2]], RW, RH, ['rgba16float'], 600, 700)
+    ssv = glsl('sss_v', D['sss_v.frag'], [ssh, rs[2], comp, sirr, rs[0]], RW, RH, ['rgba16float'], 800, 700)
+    ssv.par.numcolorbufs.expr = "2 if parent.BTDR.par.Debugview == 'sssirradiance' else 1"
+    sblur = place(C.create(renderselectTOP, 'sss_blur'), 1000, 800)
+    sblur.par.top = ssv; sblur.par.bufferindex = 1
+    ssrc = place(C.create(switchTOP, 'sss_src'), 1000, 700)
+    comp.outputConnectors[0].connect(ssrc); ssv.outputConnectors[0].connect(ssrc)
+    ssrc.par.index.expr = '1 if %s else 0' % SON
+
     # [BTDR:BUILD.TRANS] M6a front transparent layer ([BTDR:REFR.*]): the refractive mirrors scene/t* are drawn by
     # `tgbuffer` (5 colour buffers, same material shader) and by `tback` (front faces culled: the nearest back face,
     # for the thickness). `refract` composites them over the opaque image. With no transparent object the Switch TOPs
@@ -647,7 +694,7 @@ def build_btdr(dest, name='renderBTDR'):
     rrs = place(C.create(switchTOP, 'rtr_src'), RX + 1000, RY - 1200)
     rroff.outputConnectors[0].connect(rrs); rra.outputConnectors[0].connect(rrs)
     rrs.par.index.expr = RTRON
-    refr = glsl('refract', D['refract.frag'], [comp, rs[2], rs[1]] + tgs + [tbs[1], tbs[0], shs, esw, rrs, eat],
+    refr = glsl('refract', D['refract.frag'], [ssrc, rs[2], rs[1]] + tgs + [tbs[1], tbs[0], shs, esw, rrs, eat],
                 RW, RH, ['rgba16float'], 400, -300)
     refr.par.numcolorbufs = 3
     try: _menu(refr.par.inputfiltertype, ['mipmap'])
@@ -662,7 +709,7 @@ def build_btdr(dest, name='renderBTDR'):
         a.outputConnectors[0].connect(s_); b.outputConnectors[0].connect(s_)
         s_.par.index.expr = TON
         return s_
-    tsrc = tsw('trans_src', comp, refr, -300)
+    tsrc = tsw('trans_src', ssrc, refr, -300)
     tpos = tsw('tpos_src', rs[2], rsel[0], -400)
     tnrm = tsw('tnrm_src', rs[1], rsel[1], -480)
 
@@ -792,7 +839,15 @@ def build_btdr(dest, name='renderBTDR'):
     asrc.outputConnectors[0].connect(bpre)
     # [BTDR:BUILD.GRADE]
     grd = glsl('grade', D['grade.frag'], [smb, bsrc, asrc], RW, RH, ['rgba8fixed'], 400, 400)
-    dbg = glsl('debug', D['debug.frag'], rs[:3] + [rs[3], litb[0], litb[1], litb[2], ssg, ssr, litb[3], rts] + psrc, RW, RH, ['rgba8fixed'], 400, 250)
+    # [BTDR:BUILD.SSSDEBUG] the subsurface buffers only exist while a Subsurface slot is used: Switch TOPs keep the
+    # Debug View from pulling them otherwise
+    dsw = []
+    for nm, src, cond in (('dbg_sss1', sirr, SON), ('dbg_sss2', sblur, "%s and parent.BTDR.par.Debugview == 'sssirradiance'" % SON)):
+        s_ = place(C.create(switchTOP, nm), 200, 150 - len(dsw) * 80)
+        white.outputConnectors[0].connect(s_); src.outputConnectors[0].connect(s_)
+        s_.par.index.expr = '1 if (%s) else 0' % cond
+        dsw.append(s_)
+    dbg = glsl('debug', D['debug.frag'], rs[:3] + [rs[3], litb[0], litb[1], litb[2], ssg, ssr, litb[3], rts] + psrc + dsw, RW, RH, ['rgba8fixed'], 400, 250)
     view = place(C.create(switchTOP, 'view'), 600, 400)
     grd.outputConnectors[0].connect(view); dbg.outputConnectors[0].connect(view)
     view.par.index.expr = "0 if parent.BTDR.par.Debugview == 'final' else 1"

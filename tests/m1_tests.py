@@ -136,7 +136,7 @@ try:
             w = ' | '.join(st.get('warnings', []))
             check('warnings for phong / constant / custom', all(k in w for k in ('Phong', 'not supported')), w[:300])
             u = R.op('uniforms')
-            check('uniform block 4 x 44', u.numChans == 4 and u.numSamples == 44, '%d chans %d samples' % (u.numChans, u.numSamples))
+            check('uniform block 4 x 68', u.numChans == 4 and u.numSamples == 68, '%d chans %d samples' % (u.numChans, u.numSamples))
             mats = R.findChildren(type=glslMAT, path='*/scene/*')
             check('materials: no per-frame uniform, 4x anisotropic; G-Buffer through cam_jit',
                   mats and all(all(getattr(m.par, 'array%dchop' % i).eval() is None for i in range(m.seq.array.numBlocks)) and m.par.sampler0anisotropy.eval() == '4x' for m in mats)

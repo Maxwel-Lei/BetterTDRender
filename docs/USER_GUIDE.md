@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.7.6。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.8.0。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -274,6 +274,54 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 
 性能（RTX 5080 Laptop，1080p，测试场景里透明物体占画面约三分之一）：GPU 约 +0.6 ms，CPU 约 +0.85 ms（两个额外的 Render TOP）。没有透明物体时为 0。
 
+### Subsurface 页（次表面散射，0.8.0）
+
+**次表面散射**（Subsurface Scattering，SSS）：光钻进半透明材质内部、散开后从附近别的位置射出来。皮肤边缘透红，玉、蜡、大理石、牛奶看起来"软"，耳朵、树叶、灯罩背光时透亮，都是它。做法和 UE5 一样分两部分：
+- **散射**（对应 UE5 的 Subsurface Profile）：只把漫反射光照在屏幕上按一条散射曲线模糊开，高光和反射保持清晰。
+- **透射**（对应 UE5 的 Subsurface / Two Sided Foliage）：背光时光从物体背面透过来。厚度直接从太阳的阴影图量出来，不需要厚度贴图。
+
+场景里没有 SSS 物体时这一页不占任何性能（相关节点全部旁路）。
+
+**用法：和透明槽一样，把物体拖进槽里**
+1. 在 Subsurface 页的 **Subsurface** 列表点 **+**（默认已有 1 个空槽）。
+2. 把模型的 **Geometry COMP 拖进槽的 Geometry 框**，或者写路径 / 通配符，例如 `skin_*`。
+3. 选一个 **Preset**，完成。颜色、粗糙度、法线贴图仍然读 PBR MAT。
+
+| 参数 | 作用 |
+|---|---|
+| Subsurface | 总开关 |
+| Subsurface Objects | 只读：当前按 SSS 渲染的物体数 |
+| Subsurface Quality | Auto（跟随 Render 页的 Quality）/ High（每个方向 15 个采样）/ Low（9 个） |
+| Scatter Scale | 所有槽的散射半径一起乘这个数。**模型比例不是“1 单位 = 1 米”时用它校正**：比如 10 个单位高的人头，设成约 30 |
+| Transmission | 透射总开关 |
+| Subsurface（列表） | SSS 槽，最多 8 条，每条一个“散射档案”，可以管一批物体 |
+| · Geometry | 拖入 Geometry COMP，或写路径 / 通配符 |
+| · Preset | Skin（皮肤）、Jade（玉）、Wax（蜡）、Marble（大理石）、Milk（牛奶 / 奶油）、Soap（肥皂）、Leaf (thin)（树叶）、Paper (thin)（纸、灯罩）、Custom。选了以后自动填颜色、半径、薄片设置 |
+| · Scatter Color | 散射颜色：哪个通道的值大，那个颜色的光在材质里走得远。皮肤红光走得最远，所以阴影边缘发红 |
+| · Scatter Radius (m) | 光在材质里横向扩散的距离（米）。皮肤约 1 cm、玉约 2 cm。越大越“软”，细节越糊 |
+| · Strength | 0 = 不散射，1 = 完全按档案散射 |
+| · Texture Detail | 贴图细节保留多少：0 = 贴图一起被糊开，1 = 贴图完全清晰（颜色会偏平），默认 0.5 |
+| · Transmission Color | 背光透过来的光的颜色（再乘材质的 Base Color）。黑色 = 不透光 |
+| · Transmission Strength | 透射强度 |
+| · Thin (sheet) | 薄片模式：树叶、纸、灯罩。不做散射模糊，只算透射，厚度用下面的值，背面的环境光也会透过来 |
+| · Sheet Thickness (m) | 薄片的厚度，只在 Thin 打开时用 |
+
+调法：
+- 物体看起来像蜡、细节糊了：减小 Scatter Radius，或把 Texture Detail 调大。
+- 背光时不透光：确认 Light 页的阴影是开着的（透射靠阴影图量厚度），厚的部分本来就不透光，只有耳朵、手指、薄边、镂空雕刻这类几厘米以内的地方会亮。
+- 透光太亮：减小 Transmission Strength。
+- 同一个物体既在透明槽又在 SSS 槽里时按透明画，Status 会提示；Constant MAT 不受光，不做 SSS。
+
+**Debug View** 新增三项：Subsurface Profile（按槽上色，灰色 = 不是 SSS 物体）、Subsurface Irradiance（左半边模糊前、右半边模糊后的光照）、Subsurface Transmission（只看透射）。
+
+限制：
+- 屏幕空间方法只能散射画面里看得到的光：物体背面、画面外的光散不过来；镜头贴得很近时散射范围被限制在 64 像素，会显得偏硬。
+- 透射只来自那一盏平行光。阴影图分不清“自己的背面”和“别的遮挡物”：被别的物体挡住时透射也会变弱（一般是对的）。
+- 反射（SSR、光追）里看到的 SSS 物体是散射过的上一帧画面；光追代理里只有平均色，不散射。
+- 切换 Subsurface 开关的头几秒，阴影和时间累积会重新收敛一次。
+
+性能（RTX 5080 Laptop，1080p，SSS 物体占画面 1/4 到 1/3）：GPU 约 +0.15 ms（`sss_h`、`sss_v` 各约 0.05–0.07 ms，composite 多写一张缓冲约 0.04 ms），CPU 约 +0.1 ms（两个 GLSL TOP）。没有 SSS 物体时为 0。
+
 ### Post 页（镜头效果）
 
 都在 HDR 画面上计算，顺序是 体积雾 → 抗锯齿 → 景深 → 运动模糊 → Bloom / 自动曝光 → 调色。除 Bloom 外默认都关，关闭的效果不占性能。
@@ -368,7 +416,7 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 
 ## 6. 当前限制
 
-- 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
+- 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。次表面散射的透射也只来自这盏灯。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
 - 只支持透视相机。
 - 不读取：贴图的平铺 / 偏移 / 采样方式、第二套 UV、高度图和视差、Specular Level、Rim。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影）。
 - 不支持：骨骼变形、Material SOP 逐面材质。Geometry COMP 嵌套（子级里的 Geometry COMP）0.7.5 起支持；Geometry COMP 的 Render 标志关掉就不画（和原生一样）。线条（Line SOP 等）能画，但不参与光追。

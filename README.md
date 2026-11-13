@@ -7,10 +7,13 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 - **refraction** (0.6.0): glass, water, ice, gems and frosted glass with measured thickness, absorption and Fresnel
   (drag a Geometry COMP into a Refractive slot, or just give its PBR MAT an alpha below 1);
 - **ray-traced refraction** (0.7.0): Refraction Method = Hybrid or Ray Traced traces through the glass with hardware
-  ray tracing — glass behind glass, objects off screen, total internal reflection.
+  ray tracing — glass behind glass, objects off screen, total internal reflection;
+- **subsurface scattering** (0.8.0): skin, jade, wax, marble, leaves — separable screen-space scattering plus
+  transmission measured from the shadow map (drag a Geometry COMP into a Subsurface slot and pick a preset).
 
 ![refraction test scene: glass ball, frosted panel, tinted cube, water block](docs/images/m6_refraction.jpg)
 ![ray-traced refraction: the same scene with Refraction Method = Ray Traced](docs/images/m6c_raytraced.jpg)
+![subsurface scattering off / on: jade Buddha, back-lit white-jade plaque](docs/images/sss_compare.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
@@ -18,7 +21,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.7.0** (M6a screen-space refraction + M6c ray-traced refraction; design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.8.0** (subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 

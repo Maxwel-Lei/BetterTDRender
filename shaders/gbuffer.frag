@@ -2,7 +2,8 @@
 //   RT0: base colour rgb (linear) | metallic
 //   RT1: world normal xyz         | roughness
 //   RT2: position relative to the camera xyz | ambient occlusion  ([BTDR:GBUF.RELPOS] keeps 16-bit float precise near the camera)
-//   RT3: emissive rgb (linear)    | opacity (alpha front x alpha map; M6a transparency)
+//   RT3: emissive rgb (linear)    | opacity (alpha front x alpha map; M6a transparency); [BTDR:GBUF.SSSID] (0.8.0) opaque
+//        layer: 2 + subsurface profile k for objects in a Subsurface slot (the opaque layer never reads its opacity)
 //   RT4: x IOR, y absorption distance, z thin walled (only the transparent front layer `tgbuffer` has a 5th buffer;
 //        the opaque G-Buffer has 4 and drops it)
 // [BTDR:GBUF.MATERIAL] every uniform below is bound by expression to the source material (ext/BTDRExt.py, _bind_material)
@@ -19,6 +20,7 @@ uniform vec4 uEmit;    // rgb emissive colour, w 1 = an emissive map is assigned
 uniform vec4 uChan;    // xyz channel source of the metallic, roughness, AO maps (PBR MAT menu index), w 1 = colours are sRGB
 uniform vec4 uTrans;   // [BTDR:GBUF.TRANS] x opacity, y IOR, z absorption distance, w thin walled
 uniform vec4 uTrans2;  // x 1 = alpha map, y alpha-test threshold (< 0 = off), z roughness override (< 0 = material), w 1 = unlit
+uniform vec4 uSSS;     // x subsurface profile (Subsurface slot index), < 0 = none ([BTDR:GBUF.SSSID])
 
 in Vertex {
     vec3 worldPos;
@@ -97,6 +99,6 @@ void main()
     oAlbedo = vec4(base, clamp(metal, 0.0, 1.0));
     oNormal = vec4(n, clamp(rough, 0.04, 1.0));
     oPosition = vec4(iVert.worldPos - iVert.camPos, ao);
-    oEmissive = vec4(emit, clamp(alpha, 0.0, 1.0));
+    oEmissive = vec4(emit, uSSS.x >= 0.0 ? 2.0 + uSSS.x : clamp(alpha, 0.0, 1.0));
     oTrans = vec4(uTrans.y, uTrans.z, uTrans.w, 0.0);
 }

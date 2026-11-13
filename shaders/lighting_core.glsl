@@ -68,8 +68,13 @@ float sunShadow(vec3 wp, vec3 n, float NoL)
     return lit / 24.0;
 }
 
+// [BTDR:LIGHT.SSSIRR] (0.8.0) the subsurface pass needs irradiance without the base colour: lightingTerms leaves the
+// sun's diffuse irradiance (shadowed, before the distance fade) and the environment irradiance (before AO) here
+vec3 gSunIrr = vec3(0.0);
+vec3 gEnvIrr = vec3(0.0);
 void lightingTerms(vec2 uv, out vec4 oDirect, out vec4 oAmbDiff, out vec4 oAmbSpec, out vec4 oBRDF)
 {
+    gSunIrr = vec3(0.0); gEnvIrr = vec3(0.0);
     vec4 g0 = texture(LC_BASE, uv);
     vec4 g1 = texture(LC_NRM, uv);
     vec4 g2 = texture(LC_POS, uv);
@@ -112,12 +117,14 @@ void lightingTerms(vec2 uv, out vec4 oDirect, out vec4 oAmbDiff, out vec4 oAmbSp
         float sh = sunShadow(wp, N, NoL);
         vec3 spec = D_GGX(a2, NoH) * V_SmithJointApprox(a, NoV, NoL) * F_Schlick(F0, VoH);
         direct = (diffuseColor / PI + spec) * uSunColor.rgb * uSunDir.w * NoL * sh;
+        gSunIrr = uSunColor.rgb * uSunDir.w * NoL * sh / PI;
     }
 
     // [BTDR:LIGHT.IBL]
     vec3 R = reflect(-V, N);
     R = normalize(mix(R, N, a * a));                  // rough reflections bend toward the normal
     vec3 irradiance = envIrradiance(N);
+    gEnvIrr = irradiance;
     vec3 prefiltered = envRadiance(R, rough);
     float specOcc = clamp(pow(NoV + ao, exp2(-16.0 * rough - 1.0)) - 1.0 + ao, 0.0, 1.0);
     float horizon = clamp(1.0 + dot(R, N), 0.0, 1.0);

@@ -98,6 +98,9 @@
 48. 着色器里用 `帧号 × 常数` 做每帧随机数：帧号只在切相机时归零，32 位浮点下乘积到 1e6 左右就没有小数精度，噪声退化成固定图案（时间累积平均不掉）。`uFrame.x` 现在按 4096 取模（`UNI.FRAMEWRAP`）。
 50. 探针网格不能直接按包围盒均分固定的格子数：包围盒很扁时某个方向的间距会小到 0.1 m，每个探针 64 条光线的噪声在相邻层之间来回跳，平整的表面上出现一道道彩色条纹（材质场景的台子）。按形状分配格子数，让间距各向一致。
 49. 雾格子在深度方向一片几十厘米厚，比百叶的光片（十几厘米间距）粗得多：每片只取一个点时光片和切片形成摩尔纹（斜带，方向和光无关）。时间抖动必须覆盖整片才能平均掉；0.7.2 给百叶场景调的 Fog Jitter 0.5 只覆盖半片，斜带就是这么来的。另：TD 里没人看的网络不计算，用 `numpyArray()` / `save()` 抓图只会强制算一帧，雾的时间累积根本没跑——测时间累积一类效果要先让网络每帧计算（`keep_cooking`）。
+51. **GLSL TOP 改 `numcolorbufs` 后不会重新编译着色器**：`TD_NUM_COLOR_BUFFERS` 这个宏有，但它停留在第一次编译时的值。0.8.0 的 composite 按场景在 1 / 2 张缓冲之间切换，用 `#if TD_NUM_COLOR_BUFFERS > 1` 包起来的第二个输出一直是 0。解决：输出始终声明、始终写；没有对应缓冲时这次写入被丢弃，不报错（实测）。
+52. **序列参数（sequence）要手动设 `blockSize`**：`appendSequence` 之后追加的参数会进块，但 `blockSize` 是 0，`numBlocks = 2` 会报 "Could not set numBlocks…name conflicts"。`blockSize` 按**参数组**计（一个 RGB 算 1 个），Subsurface 槽是 10。
+53. 刚 `loadTox` 的 BTDR，同一帧里用脚本改参数时 `parexec` 不触发（例如选 Preset 不会填值）：脚本里要等一两帧再设，或者直接写各项的值。界面上操作没有这个问题。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -155,6 +158,10 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 在 `tests/m6b_scene.py` 的场景上检查：9 个混合类物体（7 个由 PBR MAT 自动识别、2 个来自 Blended 槽）、玻璃仍是折射类、镜像是 `b*`、`blend_src` 打开、无报错、`ub_tex` 和 `uniforms` 逐值一致、`tblend` 有限值且 alpha ≤ 1、烟雾覆盖率在 5%–90%、存在叠加像素（rgb 亮、alpha 为 0）、**没有混合类的像素和 `trans_src` 完全一样**、混合类不进阴影列表；切到 Order Independent 后无报错、Render TOP 模式正确、有画面；关掉 Transparency 后 `Blendcount` 为 0、Switch 旁路、`tblend` 不再计算。0.7.0：全过。
 
+## 11b-5. 0.8.0 次表面散射测试（`tests/m8_tests.py`）
+
+18 项：版本、uniform 数组 4 × 68；没有 SSS 槽时旁路（composite 1 张缓冲、`sss_src` 在 composite、无报错）；两个槽（Jade、Skin）预设生效、2 张缓冲、`sss_src` 打开；G-Buffer RT3.a 和 composite 第 2 输出里有档案编号；**同一帧里比较 composite（之前）和 `sss_v`（之后）**：无 NaN、非 SSS 像素完全不变（不漏光）、SSS 像素有变化、能量误差 < 3%（实测 0.07%）、皮肤上 95 分位梯度变小（0.0073 → 0.0024）、红通道变化比蓝通道大；GPU `sss_h` + `sss_v` < 0.5 ms；透射：背光的 1 cm 板比 8 cm 板亮（0.027 vs 0.0008）、背光树叶 > 0、正面光照下 ≈ 0；三个 Debug View 无报错；关掉 Subsurface 后旁路。0.8.0：全过。`tests/m8_showcase.py` 出对比图（玉佛、白玉镂空牌，需要 `MODELS` 指向模型文件夹）。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -186,6 +193,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - M3 遗留：High 档 SSGI 半分辨率 + 深度感知上采样；雾里的局部光源；屏幕空间光束（太阳在画面里时的径向光芒，便宜的补充）。
 - M2 遗留：物体运动矢量（物体自身运动的运动模糊、TAA 更少拖影）、景深的散景形状（目前是圆盘）、镜头切换的自动检测（现在只在换相机节点时重置历史）。
 - M6 遗留：M6a 剩余项见 §9e 末尾；M6b 混合透明默认不构建（§9f 写了要改进的地方）；M6c：命中点用贴图颜色、色散、光追玻璃投彩色阴影（焦散）。
+- 0.8 遗留（次表面散射，`docs/SUBSURFACE.md`）：可选的厚度贴图（Thickness Map）、多光源的透射、光追反射 / 探针里的 SSS 物体不散射、半分辨率的 Low 档。
 - 之后：多盏灯、点光 / 聚光、贴图平铺 / 偏移、场景比例参数（AO 半径、雾、景深按“1 单位 = 1 米”设计）、正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
 
 ## 13. 变更记录
@@ -193,6 +201,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-14 | 0.8.0 | 次表面散射（方案 `docs/SUBSURFACE.md`）：Subsurface 页 + SSS 槽（序列参数，拖入 Geometry COMP，最多 8 个档案，8 个预设 Skin / Jade / Wax / Marble / Milk / Soap / Leaf / Paper，`EXT.SSSPRESET`）。档案编号写进不透明 G-Buffer 的 RT3.a（= 2 + k，`GBUF.SSSID`；不透明层本来不读这个通道），不加缓冲；材质里是静态的 `uSSS`。composite 在有 SSS 物体时多一个输出：不乘底色的辐照度 × 底色^(1 − Texture Detail) | 档案（`COMP.SSS`，太阳 / 环境的辐照度由 `lightingTerms` 留在全局变量 `gSunIrr` / `gEnvIrr`，`LIGHT.SSSIRR`）。`sss_h` / `sss_v`：可分离的屏幕空间散射（Jimenez 结构 + 每通道两个指数的 Burley 型曲线，按 (i/N)² 布点，跨档案或深度差超过半径时取中心值，能量守恒，最大 64 像素，`SSS.*`），`sss_v` 只改漫反射部分。透射（`COMP.SSSTRANS`）：厚度 = 到阴影相机的距离 − 阴影图深度（4 点平均），exp(−厚度 / 每通道散射距离) × 0.5；薄片模式用固定厚度并透过背面环境光。uniform 数组 44 → 68（41 全局，44 + 3k 档案）。Debug View 新增 3 项（`DEBUG.SSS`，用 Switch 挡住不存在的缓冲）。没有 SSS 物体时全部旁路。新测试 `tests/m8_tests.py` 18 项全过。实测（1080p，SSS 约占画面 1/4–1/3）：GPU `sss_h` + `sss_v` 约 0.1–0.13 ms，composite +0.04 ms；CPU 约 +0.1 ms |
 | 2026-11-13 | 0.7.6 | 加密发布用的壳（`EXT.SHELL`，`tools/make_shell.py` → `release/BTDR_Shell.tox`）：用户给 `renderBTDR` 加 TD Privacy 后节点预览为空（`opviewer` 指向的内部 `out1` 从外面访问不到，渲染和输出口都正常）。壳 = 公开的 Base COMP（标签 `BTDRshell`）：`copyParameters` 复制全部自定义参数页（含序列），三个 Out TOP 接 `core` 的输出口，`opviewer` 指向壳里的 `out1`；`core` 的参数绑定到壳上（`SyncShell`：普通参数 bind，双向，Status / Quality 写回都能看到；OP 类参数用表达式 `parent().par.X.eval()`，相对路径按壳所在网络解析；序列块数每次 Refresh / `scene_watch` 时对齐并补绑），`_find` 以壳的父网络为基准；脉冲不经过绑定，由壳里的 `shell_pulse` 转发。实测：改 Geometry、Quality、加透明槽、按 Refresh Scene 都生效，无报错。`make_example.py` 同时更新 Palette 里的示例 |
 | 2026-11-13 | 0.7.5 | “和原生 Render TOP 一样用”（和原生并排对比后列出的问题，新测试 `tests/m7_tests.py` 13 项）：① 时间轴暂停时拖入不再卡在加载封面：`execute` 里同步 Refresh（延时调用只做后备），暂停时跳过预热直接出画面（`EXT.PAUSED`；用户机器上暂停时帧完全不推进，`run(delayFrames)` 永远不触发）；`scene_watch` 改用 `absTime.frame`。② 删掉相机不再留下红色错误：`cam_jit` 的表达式在相机不存在时退回默认值（`EXT.CAMGONE`）。③ 跟随 Geometry COMP 的 Render 标志、画嵌套的 Geometry COMP（`EXT.GEOS`）。④ Background 新增 Transparent：`grade` 用 HDR alpha 里的稳定深度和 3×3 邻域最近深度算覆盖率，预乘输出（`GRADE.ALPHA`，`uEnv.z = -1`）；和原生的 alpha 平均值差 0.0004。⑤ Constant MAT 不受光（`EXT.UNLIT` / `GBUF.UNLIT`：颜色走自发光，base 0 + metallic 1 + roughness 1 + AO 0 让所有光照项为 0，不占 G-Buffer 通道）；Tone Mapping = None 时红色实测 (1, 0, 0)。⑥ Vignette、Grain 默认 0。⑦ 弹窗每个工程只弹一次（`EXT.INFOONCE`，Info 页 Show At Startup 弹过后自动关）；Info 页 Cover While Loading 可关封面。⑧ `scene_watch` 的签名加上 Render 标志、材质路径、带 Render 标志的 SOP / POP：换材质节点、换 SOP 自动刷新（`EXT.WATCH`）。⑨ Ambient Light COMP：颜色 × Dimmer 加到漫反射环境项（`EXT.AMBIENT` / `UNI.AMBIENT` / `COMP.AMBIENT`）；uniform 数组 40 → 44 槽（`uAmb` = 40，41–43 空闲）。⑩ 开放曲线不进光追代理（`EXT.RTLINES`：一条 Line SOP 曾让整个场景的 `rt_refl` / `rt_probes` 报错）|
 | 2026-11-13 | 0.7.4 | 封面和加载画面（`BUILD.COVER` / `EXT.COVER`，`shaders/cover.frag`）：第 1 个输出在找到相机、渲染预热 60 帧之前显示 TD学长 的 Logo（有向距离场绘制，tox 里没有图片文件；加载时扫光、等待相机时三个小条慢闪），`out_src` 只拉取选中的一支，渲染画面出来后封面不计算；加载期间 `cover_warm` 每帧拉取 `view` 让着色器编译、时间累积填满。没有相机时每 30 帧查一次 Camera 参数（`CoverPoll`），相机出现就自动刷新。只在启动 / 新建后出现一次（`warmed` 不存盘）。About 页改为 Info 页：版本、作者、微信、闲鱼、两个邮箱、许可、源码和 About / Contact... 按钮；每次 TD 运行第一次加载时弹出作者和联系方式（`EXT.INFO`，`op.TDResources.PopDialog`，同一次运行只弹一次）。`TEST.M4` 的探针数检查改成按 `EXT.RTGRIDDIMS` 的规则（0.7.3 起不再是 16×8×16）。修复（用户在新工程里发现）：先拖入 BTDR、后建几何体时场景一直是空的，空的光追场景让 `rt_refl` / `rt_probes` 编译失败、`rtscene/merge` 没有输入，节点上一串红色错误。现在 `scene_watch` 每 30 帧比较一次 Camera / Geometry / Lights 解析出的路径，有变化就自动 Refresh（`EXT.WATCH`，取代只等相机的轮询）；光追代理为空时 Ray Tracing Available 为关，光追节点不被拉取（`EXT.RTEMPTY`）。环境：Source 新增 Auto 并设为默认（`BUILD.ENVAUTO` / `EXT.ENVLIGHT` / `UNI.ENVAUTO`），和原生 Render TOP 一样读 Lights 匹配到的 Environment Light COMP（贴图、Dimmer、Rotate Y）；以前用户放了 Environment Light COMP，金属球却只反射内置摄影棚。和原生对比：太阳、云的方位一致；原生不算遮挡，球下半部分映出被地面挡住的海面，BTDR 映出地面 |

@@ -1,7 +1,7 @@
 // [BTDR:FILE.COMMON] common.glsl — prepended to every BTDR shader by build.py
 // [BTDR:UNI.BLOCK] one shared uniform array, filled once per frame by the Script CHOP `uniforms`
 // (ext/uniforms_chop.py). Slot layout must match that file.
-uniform vec4 uB[44];
+uniform vec4 uB[68];
 #define uCamPos    uB[0]    // xyz camera position
 #define uCamRight  uB[1]    // xyz camera right
 #define uCamUp     uB[2]    // xyz camera up
@@ -42,7 +42,12 @@ uniform vec4 uB[44];
 #define uRT2       uB[37]   // xyz probe grid minimum, w rays per probe
 #define uRT3       uB[38]   // xyz probe spacing, w radiance clamp
 #define uRT4       uB[39]   // x / y traced-reflection grid width / height, z reflection intensity
-#define uAmb       uB[40]   // 0.7.5: rgb Ambient Light COMPs (colour x dimmer, summed); slots 41-43 are free
+#define uAmb       uB[40]   // 0.7.5: rgb Ambient Light COMPs (colour x dimmer, summed)
+#define uSSSG      uB[41]   // 0.8.0 subsurface: x on, y Scatter Scale, z taps per side, w transmission on; 42-43 free
+// [BTDR:UNI.SSS] subsurface profile k (0..7) = Subsurface slot k: three slots each, 44 + 3k ..
+#define SSS_A(k)   uB[44 + 3 * (k)]   // rgb scatter distance per channel (m, x Scatter Scale), w scatter strength (0 = thin)
+#define SSS_B(k)   uB[45 + 3 * (k)]   // rgb transmission colour x strength, w 1 = thin (sheet)
+#define SSS_C(k)   uB[46 + 3 * (k)]   // x texture detail (post-scatter share), y sheet thickness (m)
 const float PI = 3.14159265359;
 
 float hash12(vec2 p)

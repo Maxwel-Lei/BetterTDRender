@@ -26,6 +26,20 @@ REFR_PRESETS = {
     'window':  (1.5, -1, True, 1.0),
 }
 
+# [BTDR:EXT.SSSPRESET] 0.8.0 Subsurface slot presets: scatter colour, radius (m), transmission colour, thin (sheet),
+# sheet thickness (m). Strength / texture detail / transmission strength are left as they are.
+SSS_PRESETS = {
+    'skin':   ((0.90, 0.35, 0.20), 0.012, (1.00, 0.40, 0.25), False, 0.0005),
+    'jade':   ((0.45, 0.95, 0.60), 0.020, (0.70, 1.00, 0.80), False, 0.0005),
+    'wax':    ((1.00, 0.75, 0.45), 0.015, (1.00, 0.80, 0.60), False, 0.0005),
+    'marble': ((0.95, 0.93, 0.88), 0.008, (0.80, 0.80, 0.78), False, 0.0005),
+    'milk':   ((1.00, 0.97, 0.90), 0.025, (1.00, 1.00, 0.95), False, 0.0005),
+    'soap':   ((0.95, 0.90, 0.95), 0.010, (0.95, 0.90, 0.95), False, 0.0005),
+    'leaf':   ((0.50, 0.90, 0.30), 0.003, (1.00, 1.00, 0.50), True, 0.0005),
+    'paper':  ((1.00, 0.97, 0.92), 0.002, (1.00, 0.95, 0.85), True, 0.0003),
+}
+MAX_SSS = 8
+
 
 # [BTDR:EXT.INFO] author / contact, shown on the Info page and in the start-up dialog
 INFO_TEXT = ('BetterTDRender (renderBTDR) 来自 TD学长\n'
@@ -222,7 +236,7 @@ class BTDRExt:
             if a is not None: a.val = '4x'
 
     # ------------------------------------------------------------------ materials
-    def _bind_material(self, m, src, warn, tr=None):
+    def _bind_material(self, m, src, warn, tr=None, sss=None):
         # [BTDR:EXT.MATERIAL] bind the internal G-Buffer material to the user's material by expression,
         # so edits to the source material show up immediately without a refresh.
         white = "parent.BTDR.op('white')"
@@ -260,10 +274,13 @@ class BTDRExt:
             trans2 = trans2[:3] + (1,)          # [BTDR:EXT.UNLIT] unlit like in TD: colour only, no lighting or reflections
         elif src is not None:
             warn.append('%s (%s) is not supported: rendered with the default grey material. Use a PBR MAT.' % (src.path, src.OPType))
-        self._vecs(m, [('uBase', base), ('uPBR', pbr), ('uEmit', emit), ('uChan', chan), ('uTrans', trans), ('uTrans2', trans2)])
+        # [BTDR:EXT.SSSMAT] subsurface profile = Subsurface slot index (static); unlit materials never scatter
+        k = -1 if (sss is None or t == 'constantMAT') else sss
+        self._vecs(m, [('uBase', base), ('uPBR', pbr), ('uEmit', emit), ('uChan', chan), ('uTrans', trans), ('uTrans2', trans2),
+                       ('uSSS', (k, 0, 0, 0))])
         self._samplers(m, list(maps.items()))
 
-    def _new_material(self, scene, name, src, warn, tr=None):
+    def _new_material(self, scene, name, src, warn, tr=None, sss=None):
         C = self.ownerComp
         m = scene.create(glslMAT, name)
         m.par.vdat = C.op('gbuffer_vert')
@@ -272,7 +289,7 @@ class BTDRExt:
             d.destroy()
         # no per-frame uniform in the material (TAA jitter lives in the projection of `cam_jit`, [BTDR:EXT.JITCAM]),
         # so the mirror materials never re-cook
-        self._bind_material(m, src, warn, tr)
+        self._bind_material(m, src, warn, tr, sss)
         return m
 
     def _new_forward_material(self, scene, name, src, warn, slot):
@@ -377,6 +394,24 @@ class BTDRExt:
                     slot_of[g.path] = (seq, i)
                     if g not in geos and g not in extra:
                         extra.append(g)
+        # [BTDR:EXT.SSSCLASS] 0.8.0 Subsurface slots: profile = slot index (the first 8); refractive / blended wins
+        sss_of = {}
+        for i, pat in self._slots('Sss'):
+            if not pat:
+                continue
+            if i >= MAX_SSS:
+                warn.append('Subsurface slot %d: only the first %d subsurface slots are used.' % (i + 1, MAX_SSS))
+                continue
+            hits = self._find(pat, ('geometryCOMP',))
+            if not hits:
+                warn.append('Subsurface slot %d: nothing matches "%s".' % (i + 1, pat))
+            for g in hits:
+                if g.path in sss_of:
+                    warn.append('%s is in Subsurface slots %d and %d: the first is used.' % (g.path, sss_of[g.path] + 1, i + 1))
+                    continue
+                sss_of[g.path] = i
+                if g not in geos and g not in extra:
+                    extra.append(g)
         geos = list(geos) + extra
         info = []
         for g in geos:
@@ -403,6 +438,12 @@ class BTDRExt:
                                             'in this build, drawn as refractive.' % g.path)
                     except Exception:
                         pass
+            if g.path in sss_of:
+                if d['kind'] == 'opaque':
+                    d['sss'] = sss_of[g.path]
+                else:
+                    warn.append('%s is transparent and in Subsurface slot %d: drawn as transparent, no subsurface.'
+                                % (g.path, sss_of[g.path] + 1))
             info.append(d)
         return geos, info
 
@@ -417,6 +458,20 @@ class BTDRExt:
         getattr(C.par, 'Refr%drough' % i).val = rough
         getattr(C.par, 'Refr%dthin' % i).val = thin
         getattr(C.par, 'Refr%dabsorb' % i).val = absorb
+
+    def ApplySssPreset(self, i):
+        """Fill a Subsurface slot from its Preset menu ([BTDR:EXT.SSSPRESET])."""
+        C = self.ownerComp
+        v = SSS_PRESETS.get(getattr(C.par, 'Sss%dpreset' % i).eval())
+        if v is None:
+            return
+        sc, rad, tc, thin, th = v
+        for c, a, b in zip('rgb', sc, tc):
+            getattr(C.par, 'Sss%dscatter%s' % (i, c)).val = a
+            getattr(C.par, 'Sss%dtrans%s' % (i, c)).val = b
+        getattr(C.par, 'Sss%dradius' % i).val = rad
+        getattr(C.par, 'Sss%dthin' % i).val = thin
+        getattr(C.par, 'Sss%dthickness' % i).val = th
 
     # ------------------------------------------------------------------ scene mirror
     def _mirror(self, geos, warn, info=None):
@@ -461,12 +516,13 @@ class BTDRExt:
             g.par.render.expr = "op('%s').par.render" % src.path
             msrc = src.par.material.eval()
             slot = info[i].get('slot')
-            key = (msrc.path if msrc is not None else '', info[i]['kind'], slot)
+            sss = info[i].get('sss')
+            key = (msrc.path if msrc is not None else '', info[i]['kind'], slot, sss)
             if key not in mats:
                 if info[i]['kind'] == 'blend':
                     mats[key] = self._new_forward_material(scene, 'm%d' % len(mats), msrc, warn, slot)
                 else:
-                    mats[key] = self._new_material(scene, 'm%d' % len(mats), msrc, warn, self._slot_exprs(slot))
+                    mats[key] = self._new_material(scene, 'm%d' % len(mats), msrc, warn, self._slot_exprs(slot), sss)
                 mats[key].nodeX, mats[key].nodeY = 0, -(len(mats) - 1) * 120
             g.par.material = mats[key]
             # [BTDR:EXT.INSTANCING] every parameter of the Instance pages follows the source by expression;
@@ -831,6 +887,8 @@ class BTDRExt:
         n = self._mirror(geos, warn, info)
         ntr = sum(1 for d in info if d['kind'] == 'refr')
         C.par.Transcount = ntr
+        if hasattr(C.par, 'Ssscount'):
+            C.par.Ssscount = sum(1 for d in info if d.get('sss') is not None)
         if hasattr(C.par, 'Blendcount'):
             C.par.Blendcount = sum(1 for d in info if d['kind'] == 'blend')
         nrt = self._rt_build(geos, warn, info)
