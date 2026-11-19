@@ -285,6 +285,12 @@ class BTDRExt:
         m = scene.create(glslMAT, name)
         m.par.vdat = C.op('gbuffer_vert')
         m.par.pdat = C.op('gbuffer_frag')
+        # [BTDR:GBUF.POPUV] (0.8.1) POP geometry keeps its texture coordinates in the point attribute `Tex`: declared
+        # here so gbuffer.vert can read it with TDTexAttrib_Tex() (which is uv[0] on SOPs). TDTexCoord(0) is 0 on POPs,
+        # so every map sampled one corner (found on a POP membrane in a commission, 2026-11-16).
+        m.seq.attr.numBlocks = 1
+        m.par.attr0name = 'Tex'
+        m.par.attr0type = 'float3'
         for d in list(m.docked):             # TD adds template shader DATs to every new GLSL MAT
             d.destroy()
         # no per-frame uniform in the material (TAA jitter lives in the projection of `cam_jit`, [BTDR:EXT.JITCAM]),
@@ -367,7 +373,7 @@ class BTDRExt:
         if slot is None:
             return None
         P = 'parent.BTDR.par.Refr%d' % slot
-        return dict(ior=P + 'ior', absorb=P + 'absorb', thin='1 if %sthin else 0' % P, rough=P + 'rough')
+        return dict(ior=P + 'ior', absorb=P + 'absorb', thin='(1 + %sthinlift) if %sthin else 0' % (P, P), rough=P + 'rough')
 
     def _classify(self, geos, warn):
         """[BTDR:EXT.TRANSCLASS] per Geometry COMP: kind (opaque / refr), slot, cast shadow, in ray tracing.

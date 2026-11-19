@@ -12,12 +12,12 @@ out Vertex {
 
 void main()
 {
-    // TDPos / TDNormal / TDTexCoord work for both SOP and POP geometry
+    // TDPos / TDNormal work for both SOP and POP geometry; texture coordinates: [BTDR:GBUF.POPUV]
     vec4 wp = TDDeform(TDPos());
     gl_Position = TDWorldToProj(wp);
     oVert.worldPos = wp.xyz;
     oVert.worldNorm = TDDeformNorm(TDNormal());
-    oVert.texCoord = TDTexCoord(0).st;
+    oVert.texCoord = TDTexAttrib_Tex(0).st;   // [BTDR:GBUF.POPUV] uv[0] on SOPs, `Tex` on POPs
     oVert.camPos = uTDMats[TDCameraIndex()].camInverse[3].xyz;
     oVert.color = TDInstanceColor(vec4(1.0));
 }

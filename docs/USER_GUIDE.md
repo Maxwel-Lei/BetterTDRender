@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.8.0。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.8.1。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -250,7 +250,8 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | · Preset | Glass、Frosted Glass（磨砂）、Tinted Glass（茶色）、Water、Ice、Crystal、Diamond、Acrylic、Window (thin)（薄窗玻璃）、Custom。选了以后自动填下面几项 |
 | · IOR | 折射率：玻璃 1.5、水 1.333、冰 1.31、钻石 2.42。越大，透过去的画面弯得越厉害 |
 | · Roughness Override | -1 = 用材质的粗糙度；大于等于 0 时覆盖，磨砂玻璃一般 0.2–0.5 |
-| · Thin Walled | 薄壁：窗玻璃、肥皂泡、单面的平面。只着色、不偏移、不按厚度吸收 |
+| · Thin Walled | 薄壁：窗玻璃、肥皂泡、单面的平面、薄膜。不偏移、不按厚度吸收；有粗糙度时是“磨砂薄膜”：贴着它的东西清楚，离得越远越模糊（0.8.1） |
+| · Thin Transmission Lift | 只对薄壁有效（0.8.1）：透过薄膜看到的颜色往白色提亮多少。0 = 按 Base Color 染色（以前的效果）；薄膜、纸、皮肤这类很薄的东西透过来的光比表面颜色浅，一般 0.3–0.6 |
 | · Absorption Distance | 吸收距离（场景单位）：光在物体里走这么远后，颜色正好是材质的 Base Color。越小颜色越浓；越厚的地方越深 |
 | · Cast Shadow | None（默认，玻璃不挡光）/ Opaque（按不透明物体投影） |
 | · In Ray Tracing | 是否进入光追代理（默认关：光直接穿过玻璃） |
@@ -416,8 +417,13 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 
 常见警告：Lights 没匹配到灯（改用内置主光）、材质不是 PBR MAT、相机不是透视相机、几何体里没有开 Render 标志的节点。
 
+## 5b. 进入组件看内部（0.8.1）
+
+`renderBTDR` 内部的每个节点都写了注释（节点 Comment），左边有一块总览面板说明整条渲染流程，几组节点用框圈了起来。只是想用 BTDR 不需要进去；想了解它怎么工作、或者排查问题时可以看。中间结果用 Render 页的 Debug View 看更方便。
+
 ## 6. 当前限制
 
+- POP 几何体的贴图 0.8.1 起正常显示（以前只读到一个角的颜色）。
 - 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。次表面散射的透射也只来自这盏灯。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
 - 只支持透视相机。
 - 不读取：贴图的平铺 / 偏移 / 采样方式、第二套 UV、高度图和视差、Specular Level、Rim。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影）。

@@ -18,7 +18,7 @@ uniform vec4 uBase;    // rgb base colour
 uniform vec4 uPBR;     // x metallic, y roughness, z AO strength, w normal map strength (0 = no normal map, < 0 = DirectX map)
 uniform vec4 uEmit;    // rgb emissive colour, w 1 = an emissive map is assigned
 uniform vec4 uChan;    // xyz channel source of the metallic, roughness, AO maps (PBR MAT menu index), w 1 = colours are sRGB
-uniform vec4 uTrans;   // [BTDR:GBUF.TRANS] x opacity, y IOR, z absorption distance, w thin walled
+uniform vec4 uTrans;   // [BTDR:GBUF.TRANS] x opacity, y IOR, z absorption distance, w thin walled: 0 = solid, 1 + lift = thin
 uniform vec4 uTrans2;  // x 1 = alpha map, y alpha-test threshold (< 0 = off), z roughness override (< 0 = material), w 1 = unlit
 uniform vec4 uSSS;     // x subsurface profile (Subsurface slot index), < 0 = none ([BTDR:GBUF.SSSID])
 
@@ -100,5 +100,5 @@ void main()
     oNormal = vec4(n, clamp(rough, 0.04, 1.0));
     oPosition = vec4(iVert.worldPos - iVert.camPos, ao);
     oEmissive = vec4(emit, uSSS.x >= 0.0 ? 2.0 + uSSS.x : clamp(alpha, 0.0, 1.0));
-    oTrans = vec4(uTrans.y, uTrans.z, uTrans.w, 0.0);
+    oTrans = vec4(uTrans.y, uTrans.z, uTrans.w > 0.5 ? 1.0 : 0.0, max(uTrans.w - 1.0, 0.0));   // w: thin transmission lift
 }

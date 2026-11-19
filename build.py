@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.8.0'
+VERSION = '0.8.1'
 BLOG = []
 
 def _read(rel):
@@ -284,11 +284,12 @@ def build_btdr(dest, name='renderBTDR'):
     setup(pg.appendFloat('Ior', label='IOR')[0], 1.5, 1.0, 3.0, True)
     setup(pg.appendFloat('Rough', label='Roughness Override')[0], -1.0, -1.0, 1.0, True)
     setup(pg.appendToggle('Thin', label='Thin Walled')[0], False)
+    setup(pg.appendFloat('Thinlift', label='Thin Transmission Lift')[0], 0.0, 0.0, 1.0, True, True)   # [BTDR:REFR.THINTINT]
     setup(pg.appendFloat('Absorb', label='Absorption Distance')[0], 1.0, 0.01, 10, True)
     menu(pg.appendMenu('Shadow', label='Cast Shadow')[0], ['none', 'opaque'], ['None', 'Opaque'], 'none')
     setup(pg.appendToggle('Inrt', label='In Ray Tracing')[0], False)
     try:
-        C.seq.Refr.blockSize = 8       # a sequence keeps at least one block: an empty slot is ignored
+        C.seq.Refr.blockSize = 9       # a sequence keeps at least one block: an empty slot is ignored
     except Exception as e:
         BLOG.append('refr seq %r' % e)
     # M6b blended transparency: Blended slots + how they are layered ([BTDR:FWD.*], built only with M6B)
@@ -913,6 +914,10 @@ try:
     _tmp = op('/project1').op('btdr_build') or op('/project1').create(baseCOMP, 'btdr_build')
     _tmp.nodeX, _tmp.nodeY = 900, -250
     _C = build_btdr(_tmp)
+    # [BTDR:BUILD.ANNOT] (0.8.1) TD 自带的注释：节点 Comment、分组框、总览面板（ext/annotations.py）。只加注释，不动节点
+    _ns = {}
+    exec(open(BT + '/ext/annotations.py', encoding='utf-8').read(), _ns)
+    _ns['annotate'](_C, VERSION, BLOG)
     os.makedirs(BT + '/release', exist_ok=True)
     os.makedirs(BT + '/out', exist_ok=True)
     _C.save(BT + '/release/BTDR.tox')

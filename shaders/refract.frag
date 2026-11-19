@@ -4,7 +4,7 @@
 // 2D inputs: 0 opaque HDR image (composite, mipmapped: rough glass reads a blurrier level),
 //            1 opaque camera-relative position (gbuf2), 2 opaque normal | roughness (gbuf1),
 //            3..7 transparent front layer (tgbuffer): 3 base | metal, 4 normal | roughness, 5 camera-relative position,
-//            6 emissive | opacity, 7 x IOR, y absorption distance, z thin walled, w unused
+//            6 emissive | opacity, 7 x IOR, y absorption distance, z thin walled, w thin transmission lift (0.8.1)
 //            8 back faces of the transparent objects (tback): camera-relative position, 9 their normals,
 //            10 shadow map (shadow_src), 11 sharp environment,
 //            12 ray-traced transmission (rtr_src, M6c: radiance | valid, reduced resolution; [BTDR:REFR.RT])
@@ -122,18 +122,56 @@ void main()
         dist *= 1.6;
     }
     float maxLod = log2(float(max(textureSize(sTD2DInputs[0], 0).x, 1)));
-    float lod = clamp(rough * rough * 9.0 + (thin ? 0.0 : rough * log2(1.0 + dist * 4.0)), 0.0, maxLod - 2.0);
+    // [BTDR:REFR.DIFFUSE] (0.8.1) a rough thin sheet is a diffuser (frosted film, paper, skin): what touches it stays
+    // sharp, the blur grows with the distance from the sheet to the surface behind it (width = (distance + 1 cm) x
+    // roughness^2 x 2, measured in pixels at that surface). Before 0.8.1 thin sheets blurred by roughness only, the
+    // same near and far. Solid glass keeps the roughness + path-length choice.
+    float lod;
+    if (thin) {
+        float dBehind = dist;
+        if (inScreen(ruv)) { vec4 oqd = fetchAt(sTD2DInputs[1], ruv); if (isGeoRel(oqd)) dBehind = length(oqd.xyz + uCamPos.xyz - exitP); }
+        vec3 fwd = uCamFwd.xyz;
+        vec3 side = normalize(abs(fwd.y) < 0.9 ? cross(fwd, vec3(0.0, 1.0, 0.0)) : cross(fwd, vec3(1.0, 0.0, 0.0)));
+        float blurW = (dBehind + 0.01) * rough * rough * 2.0;
+        vec3 qb = exitP + T * dBehind;
+        float px = length((curUV(qb + side * blurW) - curUV(qb)) * vec2(textureSize(sTD2DInputs[0], 0)));
+        lod = clamp(log2(max(px, 1.0)), 0.0, maxLod - 2.0);
+    } else {
+        lod = clamp(rough * rough * 9.0 + rough * log2(1.0 + dist * 4.0), 0.0, maxLod - 2.0);
+    }
     vec3 envT = envRadiance(T, rough);
     vec3 trans = envT;
     if (found || inScreen(ruv)) {
-        vec3 s = textureLod(sTD2DInputs[0], ruv, lod).rgb;
+        // [BTDR:REFR.SMOOTHBLUR] (0.8.1) frosted transmission: a rotated 12-tap disc one mip level finer instead of one
+        // bilinear tap of a box-filtered mip (which shows as blocks). The rotation is interleaved gradient noise
+        // (Jimenez 2014) that changes every frame, so TAA averages it out; a per-pixel hash fixed in time (the first
+        // version, in a commission) left a faint static diagonal pattern.
+        vec3 s = vec3(0.0);
+        if (lod < 0.75) s = textureLod(sTD2DInputs[0], clamp(ruv, 0.0, 1.0), lod).rgb;
+        else {
+            vec2 tx = exp2(lod) / vec2(textureSize(sTD2DInputs[0], 0));
+            vec2 fp = gl_FragCoord.xy + 5.588238 * mod(uFrame.x, 64.0);
+            float ang = fract(52.9829189 * fract(dot(fp, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+            mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
+            const vec2 K[12] = vec2[12](vec2(-0.326,-0.406), vec2(-0.840,-0.074), vec2(-0.696,0.457), vec2(-0.203,0.621),
+                                        vec2(0.962,-0.195), vec2(0.473,-0.480), vec2(0.519,0.767), vec2(0.185,-0.893),
+                                        vec2(0.507,0.064), vec2(0.896,0.412), vec2(-0.322,-0.933), vec2(-0.792,-0.598));
+            // taps that leave the frame would read black (the darker band along the edge): clamp them inside
+            vec2 lim = 0.5 * exp2(max(lod - 1.0, 0.0)) / vec2(textureSize(sTD2DInputs[0], 0));
+            for (int k = 0; k < 12; k++) s += textureLod(sTD2DInputs[0], clamp(ruv + rot * K[k] * tx, lim, 1.0 - lim), max(lod - 1.0, 0.0)).rgb;
+            s /= 12.0;
+        }
         vec2 e = min(ruv, 1.0 - ruv);
-        float edge = clamp(min(e.x, e.y) * 20.0, 0.0, 1.0);    // fade to the environment near the frame edge
+        // [BTDR:REFR.EDGE] (0.8.1) only the outermost pixels fade to the environment: the old 5 % band showed as a
+        // darker frame around frosted / refractive surfaces that fill the picture
+        float edge = clamp(min(e.x, e.y) * 400.0, 0.0, 1.0);
         trans = mix(envT, s, edge);
     }
 
     // [BTDR:REFR.ABSORB] Beer-Lambert: the base colour is the transmittance after `absorption distance` of material
-    vec3 tint = thin ? base : exp(log(max(base, vec3(1e-3))) * (thick / absd));
+    // [BTDR:REFR.THINTINT] (0.8.1) a thin sheet transmits a lighter colour than its surface colour (light passes once
+    // through a thin layer); the slot's Thin Transmission Lift mixes the tint toward white, 0 = the base colour as before
+    vec3 tint = thin ? mix(base, vec3(1.0), clamp(t4.w, 0.0, 1.0)) : exp(log(max(base, vec3(1e-3))) * (thick / absd));
     vec3 transT = trans * tint;
     // [BTDR:REFR.RT] M6c (uRT4.w: 1 Hybrid, 2 Ray Traced): the traced transmission already contains the bending and the
     // absorption of every glass segment it crossed. Hybrid keeps the sharper screen-space result where it found the

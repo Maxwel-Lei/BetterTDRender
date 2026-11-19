@@ -74,7 +74,9 @@ try:
 
     # ---- 1. no Subsurface slot: everything bypassed
     def s1():
-        check('version 0.8.0', R.par.Version.eval() == '0.8.0', R.par.Version.eval())
+        import re as _re
+        _v = _re.search(r"^VERSION = '([^']+)'", open(BT + '/build.py', encoding='utf-8').read(), _re.M).group(1)
+        check('version (same as build.py)', R.par.Version.eval() == _v, '%s / %s' % (R.par.Version.eval(), _v))
         check('uniform block 4 x 68', R.op('uniforms').numSamples == 68, str(R.op('uniforms').numSamples))
         check('no subsurface object: bypassed (1 colour buffer, sss_src on composite, no errors)',
               R.par.Ssscount.eval() == 0 and int(R.op('composite').par.numcolorbufs.eval()) == 1
