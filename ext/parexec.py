@@ -1,7 +1,8 @@
 # [BTDR:FILE.PAREXEC] Parameter Execute DAT: custom parameters of renderBTDR -> extension
 def onValueChange(par, prev):
     n = par.name
-    if n in ('Camera', 'Geometry', 'Lights', 'Shadowfit', 'Transparency', 'Refr', 'Blend', 'Refrmethod', 'Sss'):
+    if n in ('Camera', 'Geometry', 'Lights', 'Shadowfit', 'Transparency', 'Refr', 'Blend', 'Refrmethod', 'Sss',
+             'Sceneunit', 'Unitsize'):          # [BTDR:UNI.UNIT] probe-grid margins are in metres
         parent().Refresh()
     elif n.startswith('Sss') and n[3:4].isdigit():
         # [BTDR:EXT.SSSSLOTS] Subsurface slots: a preset fills the slot, the geometry rebuilds; the rest is read per frame

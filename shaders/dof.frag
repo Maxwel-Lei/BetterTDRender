@@ -8,6 +8,7 @@ float depthAt(vec2 uv) { return texture(sTD2DInputs[0], uv).a; }
 // [BTDR:DOF.COC] thin-lens circle of confusion, as a radius in output pixels
 float blurSize(float d)
 {
+    d *= uUnit.y;                       // [BTDR:UNI.UNIT] thin-lens maths in metres (focus distance is converted in uniforms)
     float f = uDOF.x * 0.001;
     float A = f / uDOF.y;
     float S1 = max(uDOF.z, f * 1.01);

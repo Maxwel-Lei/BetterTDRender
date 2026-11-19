@@ -10,10 +10,14 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
   ray tracing — glass behind glass, objects off screen, total internal reflection;
 - **subsurface scattering** (0.8.0): skin, jade, wax, marble, leaves — separable screen-space scattering plus
   transmission measured from the shadow map (drag a Geometry COMP into a Subsurface slot and pick a preset).
+- **texture coordinates and scene unit** (0.8.3): every map follows its PBR MAT's Extend, Filter, UV set (uv0 + one
+  more) and Screen Space mode, pixel for pixel like the native Render TOP; Scene Unit (Meters / Centimeters / Inches …)
+  keeps AO, reflections, fog and scattering at real-world size in centimetre or inch scenes.
 
 ![refraction test scene: glass ball, frosted panel, tinted cube, water block](docs/images/m6_refraction.jpg)
 ![ray-traced refraction: the same scene with Refraction Method = Ray Traced](docs/images/m6c_raytraced.jpg)
 ![subsurface scattering off / on: jade Buddha, back-lit white-jade plaque](docs/images/sss_compare.jpg)
+![texture coordinates: BTDR's G-Buffer and the native Render TOP with a second UV set](docs/images/uv_compare.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
@@ -21,7 +25,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.8.0** (subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.8.3** (texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 

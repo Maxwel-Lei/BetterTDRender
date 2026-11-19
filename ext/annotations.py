@@ -1,4 +1,4 @@
-# [BTDR:FILE.ANNOT] annotations.py — 给 renderBTDR 内部网络加 TD 自带的注释（0.8.2）。
+# [BTDR:FILE.ANNOT] annotations.py — 给 renderBTDR 内部网络加 TD 自带的注释（0.8.2 起含排版）。
 # build.py 构建完后执行 annotate(C)：
 #   1. 每个节点的 Comment（NOTES / 着色器 DAT 按 SHADER_NOTES 自动生成）；
 #   2. 按功能重排节点位置（layout），再给每组画 Network Box（GROUPS）；
@@ -13,7 +13,7 @@ NOTES = {
     'execute': '组件创建 / 工程打开时同步 Refresh 一次，2 帧后再补一次，5 帧后按需弹出作者信息。源文件 ext/execute.py。[BTDR:FILE.EXECUTE]',
     'scene_watch': '每 30 帧比较一次场景签名（相机、几何体、材质、灯），有变化就自动 Refresh。开销约 0.04 ms / 30 帧。[BTDR:EXT.WATCH]',
     'cover_warm': '加载封面显示期间每帧拉取渲染结果，让着色器编译、时间累积填满，封面撤下时画面已经稳定。[BTDR:EXT.COVER]',
-    'uniforms': '全局 uniform 数组（4 通道 × 68 槽，uB[]）：相机、太阳、阴影、环境、各效果开关和参数，每帧算一次，所有着色器共用。[BTDR:UNI.BLOCK]',
+    'uniforms': '全局 uniform 数组（4 通道 × 68 槽，uB[]）：相机、太阳、阴影、环境、各效果开关和参数（0.8.3 起按 Render 页的 Scene Unit 把按米设计的距离换算成场景单位，uB[42]），所有着色器共用。[BTDR:UNI.BLOCK]',
     'uniforms_callbacks': '`uniforms` 的计算脚本：把参数和场景状态写进 uB 的各个槽位。源文件 ext/uniforms_chop.py。[BTDR:FILE.UNIFORMS]',
     'uniforms_callbacks1': 'TD 新建 Script CHOP 时自动带的模板回调，没有被使用（真正的回调是 uniforms_callbacks）。',
     'status': '状态文本：相机、灯、几何体的解析结果和所有警告。Render 页的 Status 参数显示它的第一条。',
@@ -30,7 +30,7 @@ NOTES = {
     'gbuf1': 'G-Buffer 缓冲 1：世界法线 | 粗糙度。',
     'gbuf2': 'G-Buffer 缓冲 2：相对相机的位置（16 位浮点）| 材质 AO。很多屏幕空间效果从它重建深度。',
     'gbuf3': 'G-Buffer 缓冲 3：自发光 | 不透明层里存 2 + SSS 档案编号（[BTDR:GBUF.SSSID]）。',
-    'gbuffer_vert': 'G-Buffer 材质的顶点着色器：位置、法线、实例颜色、贴图坐标（SOP 用 uv[0]，POP 用 Tex 属性，[BTDR:GBUF.POPUV]）。源文件 shaders/gbuffer.vert。',
+    'gbuffer_vert': 'G-Buffer 材质的顶点着色器：位置、法线、实例颜色、贴图坐标（SOP 用 uv[0]，POP 用 Tex 属性，[BTDR:GBUF.POPUV]；0.8.3 起再传一套材质要用的 uv[n]，[BTDR:GBUF.UVSET]）。源文件 shaders/gbuffer.vert。',
     'gbuffer_frag': 'G-Buffer 材质的像素着色器：读 PBR MAT 的数值和贴图，写 4 个缓冲；透明层多写第 5 个（IOR、吸收、薄壁）。源文件 shaders/gbuffer.frag。',
     # ---------------- 主光阴影 ----------------
     'shadow': '主光阴影图：Render TOP，从 suncam 画投影物体，存到光源的线性距离。只在灯或物体变化时重画。[BTDR:SHADOW.*]',

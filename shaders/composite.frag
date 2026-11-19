@@ -59,7 +59,7 @@ float hfHeight(vec2 xz)
 float heightFieldAO(vec3 p, vec3 N)
 {
     float dist = length(p - uCamPos.xyz);
-    vec3 o = p + N * (0.02 + 0.002 * dist);            // off the surface (16-bit position precision)
+    vec3 o = p + N * (UM(0.02) + 0.002 * dist);            // off the surface (16-bit position precision)
     float R = uHF2.z;
     int nd = int(uHF2.w + 0.5);
     float rot = hash12(gl_FragCoord.xy + uFrame.x * 7.13) * 6.2831853 / float(nd);   // TAA averages the rotation
@@ -75,7 +75,7 @@ float heightFieldAO(vec3 p, vec3 N)
         float ms = 0.0;
         for (int k = 0; k < 4; k++) {
             float t = (float(k) + 0.25 + 0.5 * jit) / 4.0;
-            float r = R * t * t + 0.02;                                      // dense near the point
+            float r = R * t * t + UM(0.02);                                      // dense near the point
             float dy = hfHeight(o.xz + dir * r) - (o.y + slope * r);
             if (dy > 0.0) ms = max(ms, dy * inversesqrt(dy * dy + r * r));
         }
@@ -96,14 +96,14 @@ vec3 sssTransmission(int k, vec3 wp, vec3 N)
     float NoL = dot(N, L);
     vec3 sun = uSunColor.rgb * uSunDir.w / PI;
     if (B.w > 0.5) {                                        // sheet: leaf, paper, lampshade
-        float t = exp(-Cc.y / 0.002);
+        float t = exp(-Cc.y / UM(0.002));
         float sh = NoL < 0.0 ? sunShadow(wp, -N, -NoL) : 0.0;
         return B.rgb * t * (sun * max(-NoL, 0.0) * sh + envIrradiance(-N) * 0.5);
     }
     if (uSunPos.w < 0.5 || uSunDir.w <= 0.0) return vec3(0.0);
     float back = clamp(0.3 - 0.7 * NoL, 0.0, 1.0);        // lit side: none; terminator and back: some
     if (back <= 0.0) return vec3(0.0);
-    vec3 p = wp - N * 0.004;                                // just inside the surface
+    vec3 p = wp - N * UM(0.004);                            // just inside the surface (4 mm)
     vec3 rel = p - uSunPos.xyz;
     vec2 suv = vec2(dot(rel, uSunRight.xyz), dot(rel, uSunUp.xyz)) / uSunRight.w + 0.5;
     if (any(lessThan(suv, vec2(0.0))) || any(greaterThan(suv, vec2(1.0)))) return vec3(0.0);
@@ -145,7 +145,7 @@ void main()
         // The objects themselves (sides, hood, roof) are left alone: the height field cannot tell their own
         // overhangs from real occluders, and darkening them looked dirty (0.3.3).
         float top = hfHeight(p.xz);
-        bool isTop = top > -1e8 && top - p.y < 0.03 + 0.003 * length(rp);
+        bool isTop = top > -1e8 && top - p.y < UM(0.03) + 0.003 * length(rp);
         if (N.y > 0.6 && !isTop) hf = mix(1.0, heightFieldAO(p, N), uHF2.y);
     }
     float aoD = min(ao, hf);                            // the two overlap at contacts: take the stronger, not both

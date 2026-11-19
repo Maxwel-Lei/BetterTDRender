@@ -33,6 +33,7 @@ in Vertex {
     vec2 texCoord;
     vec3 camPos;
     vec4 color;
+    vec2 texCoord1;   // [BTDR:GBUF.UVSET] declared to match gbuffer.vert (forward materials read uv0 only)
 } iVert;
 
 layout(location = 0) out vec4 oColor;

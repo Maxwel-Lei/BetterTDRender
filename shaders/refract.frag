@@ -55,7 +55,7 @@ void main()
     vec3 base = clamp(t0.rgb, 0.0, 1.0);
     float alpha = clamp(t3.a, 0.0, 1.0);
     float ior = max(t4.x, 1.0001);
-    float absd = max(t4.y, 1e-3);
+    float absd = max(UM(t4.y), 1e-6);          // [BTDR:UNI.UNIT] absorption distance is in metres
     bool thin = t4.z > 0.5;
     float rough = clamp(tn.w, 0.02, 1.0);
 
@@ -95,7 +95,7 @@ void main()
             if (isGeoRel(bq)) {
                 float tq = dot(bq.xyz + uCamPos.xyz - P, T1);
                 if (tq > 0.0) {
-                    exitP = P + T1 * min(tq, thick * 3.0 + 0.01);
+                    exitP = P + T1 * min(tq, thick * 3.0 + UM(0.01));
                     Nb = normalize(fetchAt(sTD2DInputs[9], ub).xyz);
                 }
             }
@@ -109,11 +109,11 @@ void main()
     // the opaque image where it passes behind a surface; rougher glass and longer paths read a blurrier mip level.
     // Off-screen or behind the camera: the environment in that direction.
     vec2 ruv = vec2(-1.0);
-    float dist = 0.02;
+    float dist = UM(0.02);
     bool found = false;
     for (int k = 0; k < 16; k++) {
         vec3 q = exitP + T * dist;
-        if (viewDepth(q) < 1e-3) break;
+        if (viewDepth(q) < UM(1e-3)) break;
         vec2 u = curUV(q);
         if (!inScreen(u)) break;
         ruv = u;
@@ -132,7 +132,7 @@ void main()
         if (inScreen(ruv)) { vec4 oqd = fetchAt(sTD2DInputs[1], ruv); if (isGeoRel(oqd)) dBehind = length(oqd.xyz + uCamPos.xyz - exitP); }
         vec3 fwd = uCamFwd.xyz;
         vec3 side = normalize(abs(fwd.y) < 0.9 ? cross(fwd, vec3(0.0, 1.0, 0.0)) : cross(fwd, vec3(1.0, 0.0, 0.0)));
-        float blurW = (dBehind + 0.01) * rough * rough * 2.0;
+        float blurW = (dBehind + UM(0.01)) * rough * rough * 2.0;
         vec3 qb = exitP + T * dBehind;
         float px = length((curUV(qb + side * blurW) - curUV(qb)) * vec2(textureSize(sTD2DInputs[0], 0)));
         lod = clamp(log2(max(px, 1.0)), 0.0, maxLod - 2.0);

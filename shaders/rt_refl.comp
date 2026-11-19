@@ -49,8 +49,8 @@ void main()
     vec3 R = reflect(V, importanceGGX(xi, N, a));
     if (dot(R, N) <= 0.0) R = reflect(V, N);
     // [BTDR:RT.OFFSET] the proxy is a decimated copy of the surface: start a little off it (16-bit positions too)
-    vec3 O = P + N * (0.01 + 0.003 * dist);
-    Hit h = traceScene(O, R, 0.02 + 0.006 * dist, 100.0);
+    vec3 O = P + N * (UM(0.01) + 0.003 * dist);
+    Hit h = traceScene(O, R, UM(0.02) + 0.006 * dist, UM(100.0));
     vec3 Rm = normalize(mix(reflect(V, N), N, a * a));
     vec3 Lenv = envRadiance(Rm, rough);
     vec3 ratio = vec3(1.0);
@@ -59,7 +59,7 @@ void main()
         // [BTDR:RT.BACKFACE] a back face right at the start: the ray began inside the (decimated) proxy, leave it to
         // the environment. Further away it is a real surface with the other winding (single-sided or inconsistently
         // wound meshes, e.g. under a car): shade it two-sided.
-        if (h.backface && h.t < 0.05 + 0.01 * dist) valid = 0.0;
+        if (h.backface && h.t < UM(0.05) + 0.01 * dist) valid = 0.0;
         else ratio = clamp(shadeHit(O, R, h) / max(Lenv, vec3(1e-3)), 0.0, 4.0);   // 4: no fireflies
     }
     Refl[id] = vec4(ratio, valid);

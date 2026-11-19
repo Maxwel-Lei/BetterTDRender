@@ -104,6 +104,11 @@
 51. **GLSL TOP 改 `numcolorbufs` 后不会重新编译着色器**：`TD_NUM_COLOR_BUFFERS` 这个宏有，但它停留在第一次编译时的值。0.8.0 的 composite 按场景在 1 / 2 张缓冲之间切换，用 `#if TD_NUM_COLOR_BUFFERS > 1` 包起来的第二个输出一直是 0。解决：输出始终声明、始终写；没有对应缓冲时这次写入被丢弃，不报错（实测）。
 52. **序列参数（sequence）要手动设 `blockSize`**：`appendSequence` 之后追加的参数会进块，但 `blockSize` 是 0，`numBlocks = 2` 会报 "Could not set numBlocks…name conflicts"。`blockSize` 按**参数组**计（一个 RGB 算 1 个），Subsurface 槽是 10。
 53. 刚 `loadTox` 的 BTDR，同一帧里用脚本改参数时 `parexec` 不触发（例如选 Preset 不会填值）：脚本里要等一两帧再设，或者直接写各项的值。界面上操作没有这个问题。
+57. **GLSL 宏的参数名会替换掉成员访问**：`#define UM(x) ((x) * uUnit.x)` 展开后 `uUnit.x` 变成 `uUnit.(0.01)`，报 "unexpected FLOATCONSTANT"。宏参数不要用 `x / y / z / w / r / g / b / a` 这类会出现在分量名里的名字（现在叫 `m_`）。
+58. **原生 PBR MAT 的 Texture Sampling Mode = Triplanar 在 TD 2025.33230 里不起作用**：SOP 上画面和 Regular 完全一样，POP 上整个表面读成贴图正中一个像素（0.8.3 用“颜色 = UV”的贴图并排实测）。Screen Space 正常：UV = 像素坐标 ÷ 分辨率。GLSL MAT 的像素着色器里没有 `uTDOutputInfo`，分辨率要自己传（`uScr`）。
+59. **还没改 VERSION 就构建，会覆盖已发布版本的备份**：0.8.3 开发时第一次构建还是 0.8.2，`release/versions/BTDR_0.8.2.tox` 和 Palette 里的同名文件被开发中的版本覆盖（从 git 恢复）。现在 `release/versions/RELEASED.txt` 列出已发布的版本，`build.py` / `make_example.py` / `make_shell.py` 遇到这些版本号只构建、不写带版本号的备份（`BUILD.BACKUP`）。发布后把版本号加进这个文件。
+60. 原生 PBR MAT 的 SOP Texture Coord 在 GLSL MAT 里用 `TDTexAttrib_Tex(n)` 读（等于 `TDTexCoord(n)`，下标可以是 uniform）；超出 0–1 的部分由采样器的 Extend 处理，所以 BTDR 只要把 Extend 绑到材质上，结果就和原生逐像素一致（`GBUF.UVSET`，S3 验证通过）。
+61. 测试里拿“对照用的原生材质”做比较时，两边要改**同一张贴图**的参数：0.8.3 的测试第一版给原生材质改了 `basecolormap*`，可它显示的是 Emit Map，结果四项“对不上”全是测试自己的错。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -165,6 +170,12 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 18 项：版本、uniform 数组 4 × 68；没有 SSS 槽时旁路（composite 1 张缓冲、`sss_src` 在 composite、无报错）；两个槽（Jade、Skin）预设生效、2 张缓冲、`sss_src` 打开；G-Buffer RT3.a 和 composite 第 2 输出里有档案编号；**同一帧里比较 composite（之前）和 `sss_v`（之后）**：无 NaN、非 SSS 像素完全不变（不漏光）、SSS 像素有变化、能量误差 < 3%（实测 0.07%）、皮肤上 95 分位梯度变小（0.0073 → 0.0024）、红通道变化比蓝通道大；GPU `sss_h` + `sss_v` < 0.5 ms；透射：背光的 1 cm 板比 8 cm 板亮（0.027 vs 0.0008）、背光树叶 > 0、正面光照下 ≈ 0；三个 Debug View 无报错；关掉 Subsurface 后旁路。0.8.0：全过。`tests/m8_showcase.py` 出对比图（玉佛、白玉镂空牌，需要 `MODELS` 指向模型文件夹）。
 
+## 11b-6. 0.8.3 贴图坐标和场景比例测试（`tests/m83_tests.py`）
+
+- **贴图坐标**：一张“颜色 = 自己的 UV”的 GLSL TOP 贴图，方盒的 uv[1] 用 Texture SOP 设成 uv[0] × 2.5。BTDR 用它当 Base Color Map（sRGB 关、TAA 关），读 G-Buffer RT0；原生 Render TOP 画同一个方盒，同一张贴图当 Emit Map、不开灯，输出就是贴图。跳过 UV 接缝处的像素后逐像素比较，五种情况（uv0、uv1、uv1 + Extend Hold、uv1 + Extend Mirror、Screen Space）中位误差都是 0.001。另查镜像材质的 `uUV0 / uUV1 / uScr`、采样器 Extend 跟着材质变。
+- **场景比例**：同一场景（地面、球、金属方块；AO、反弹光、SSR、雾、Height-Field AO、景深、光追全开）建两份，一份按米，一份所有长度 × 100、Scene Unit = Centimeters。150 帧后最终画面平均差 0.0013（验收线 0.01），再逐个比较 Depth / SSAO / SSGI / SSR / Probe GI / Traced Reflections / Direct Light 的 Debug View，都小于 0.003。
+- 0.8.3：18 项全过。Meters 下示例场景和 0.8.2 的 A/B 差值为 0（`ab_compare.py`）。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -175,6 +186,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 替换工程里的实例 | `tools/hotswap.py`（`HOTSWAP_TARGETS` 指定多个，`HOTSWAP_NOBUILD` 跳过构建） | 参数和连线保留 |
 | 回归测试 | `tests/m1_tests.py` | 约 20 秒，39 项；测试网络自动删除 |
 | 0.8.1 专项 | `tests/m81_tests.py` | 8 项：POP 贴图、薄壁按距离模糊、圆盘旋转逐帧变化、边缘无暗带、薄壁透射提亮 |
+| 0.8.3 专项 | `tests/m83_tests.py` | 18 项，§11b-6：贴图坐标和原生逐像素对比、场景比例 |
 | 透明测试 | `tests/m6_tests.py`（测试场景单独搭：`tests/m6_scene.py`，`M6_SHOT = 'tag'` 存 `out/m6_<tag>.jpg`） | §11b-3 |
 | 混合透明测试 | `tests/m6b_tests.py`（场景：`tests/m6b_scene.py`，`M6_SHOT` 存 `out/m6b_<tag>.jpg`） | §11b-4 |
 | 原生用法测试 | `tests/m7_tests.py` | 13 项：空网络封面 / 等待相机、Info 页、场景自动识别、Render 标志、嵌套、线条不破坏光追、Constant MAT 纯色、透明背景对比原生、换材质 / Ambient Light 自动跟上、删相机无报错、Environment Light、封面开关、暂停时拖入；约 6 秒 |
@@ -188,7 +200,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 发布顺序：构建 → 回归测试 → 示例 → 验收 → 打包。
 
-**版本备份（`BUILD.BACKUP`，0.8.0 起的规则）**：每次发布都另存一份文件名带版本号的 tox，以后的版本不覆盖它。`build.py` / `make_example.py` / `make_shell.py` 自动写 `release/versions/BTDR_<版本>.tox`、`BTDR_Example_<版本>.tox`、`BTDR_Shell_<版本>.tox`（提交进 git），并复制到 Palette 的 `BTDR` 文件夹；不带版本号的 `BTDR.tox` 等仍是“最新版”。0.7.5、0.7.6 的备份从 git 历史里补齐。案例场景另存为 `examples/BTDR_SSS_Case.tox` 和 `BTDR_SSS_Case_<版本>.tox`（模型按绝对路径引用 `ue5/模型_简化`，不在 tox 里）。
+**版本备份（`BUILD.BACKUP`，0.8.0 起的规则）**：每次发布都另存一份文件名带版本号的 tox，以后的版本不覆盖它。`build.py` / `make_example.py` / `make_shell.py` 自动写 `release/versions/BTDR_<版本>.tox`、`BTDR_Example_<版本>.tox`、`BTDR_Shell_<版本>.tox`（提交进 git），并复制到 Palette 的 `BTDR` 文件夹；不带版本号的 `BTDR.tox` 等仍是“最新版”。0.7.5、0.7.6 的备份从 git 历史里补齐。0.8.3 起 `release/versions/RELEASED.txt` 列出已发布的版本，这些版本号的备份不再被覆盖（§11 第 59 条）：开始开发新版本时先改 `VERSION`，发布时把它加进 `RELEASED.txt`。案例场景另存为 `examples/BTDR_SSS_Case.tox` 和 `BTDR_SSS_Case_<版本>.tox`（模型按绝对路径引用 `ue5/模型_简化`，不在 tox 里）。
 
 示例网络（`EXAMPLE.*`）的取舍：只用 TD 自带的 SOP 和原生 PBR MAT，不带任何外部文件；相机在场景前方 ±55° 摆动（转到墙后面会看到墙背面）；灯的原生阴影关掉；Bloom 0.15 让发光方块有光晕；`keep_cooking`（帧开始时拉取 OUT）存盘前关掉，用户打开时按需计算。
 
@@ -200,13 +212,15 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - M2 遗留：物体运动矢量（物体自身运动的运动模糊、TAA 更少拖影）、景深的散景形状（目前是圆盘）、镜头切换的自动检测（现在只在换相机节点时重置历史）。
 - M6 遗留：M6a 剩余项见 §9e 末尾；M6b 混合透明默认不构建（§9f 写了要改进的地方）；M6c：命中点用贴图颜色、色散、光追玻璃投彩色阴影（焦散）。
 - 0.8 遗留（次表面散射，`docs/SUBSURFACE.md`）：可选的厚度贴图（Thickness Map）、多光源的透射、光追反射 / 探针里的 SSS 物体不散射、半分辨率的 Low 档。
-- 之后：多盏灯、点光 / 聚光、贴图平铺 / 偏移、场景比例参数（AO 半径、雾、景深按“1 单位 = 1 米”设计）、正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
+- 0.8.3 遗留：三平面投影（原生本身不起作用，§11 第 58 条；需要时可以自己实现）、POP 的自定义贴图坐标属性、一个材质里第三套 UV、实例纹理坐标（Instance Texture）。光追折射在 m6 的 M6c 两项测试里经常第一次就失败（0.8.2 同样，数值完全相同），要查 `rt_refr` 首帧读数的时机。m83 的场景比例场景（`docs/images/sceneunit_compare.jpg`）里，金属方块顶边和球旁的光滑地面上有方格状暗斑，米 / 厘米两边一样，疑似 1/4 分辨率光追反射的放大，待查。
+- 之后：多盏灯、点光 / 聚光、正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
 
 ## 13. 变更记录
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-19 | 0.8.3 | 贴图坐标和场景比例（`ROADMAP_0.9.md` §3）。**贴图坐标**（`GBUF.UVSET` / `EXT.UVSET` / `EXT.SAMPLERSTATE`）：镜像材质每张贴图的 Extend U / V、Filter 用表达式绑到 PBR MAT（各向异性取材质的、最低 4×）；新增 `uUV0` / `uUV1`（每张贴图的代码 = UV 套 + 2 × 屏幕空间，`uUV1.w` = 额外那套 UV 的编号）和 `uScr`（1 / 分辨率），`gbuffer.vert` 多传一套 `texCoord1 = TDTexAttrib_Tex(uUV1.w)`，`gbuffer.frag` 的 `uvOf()` 按代码取 uv0 / uv1 / 屏幕坐标，法线贴图的切线框架用它自己的坐标。Triplanar 不支持（§11 第 58 条），用了会提示。和原生逐像素一致（§11b-6）。**场景比例**（`BUILD.SCENEUNIT` / `UNI.UNIT`）：Render 页 Scene Unit（Meters / Centimeters / Millimeters / Inches / Feet / Custom + Unit Size）；`uniforms` 算 K = 每米多少场景单位，写进 `uB[42]`（`uUnit`），按米设计的参数乘 K（AO / GI 半径、SSR 距离和厚度、雾的浓度 / 衰减 ÷ K、基准高度和距离 × K、HF AO 半径、散射半径、薄片厚度），景深在米里算（对焦距离 × 米每单位，`dof.frag` 把深度换成米），吸收距离在 `refract` / `rt_refr` 里用 `UM()`；着色器里按米写死的常数都包上 `UM()`（阴影 / 雾的偏移和 PCSS 搜索范围、SSR / 光追的起点偏移、光追反射的最远距离、SSS 透射的偏移和薄片衰减、折射步进起点、雾的噪声频率），探针网格的边距也乘 K。改 Scene Unit 自动 Refresh。**备份保护**：`RELEASED.txt`（§11 第 59 条）。新测试 `tests/m83_tests.py` 18 项；回归 m1 39、m81 8、m8 18、m7 13、m5 7 全过；m6 除 M6c 两项外全过（0.8.2 同样失败，§12）。Meters 下和 0.8.2 的 A/B 差 0 |
 | 2026-11-19 | 0.8.2 | 内部网络重新排版（`ANNOT.LAYOUT`，`ext/annotations.py` 的 `layout()`）：只改节点的 nodeX / nodeY，不增删节点、不改连线和参数（构建前后 199 条连线逐条比对一致）。GROUPS 改成 20 组、按一帧的数据流排序，每项多了“每行几个”；组内排成网格，组与组像书架一样从左到右排，一排超过 4400 换行；组宽至少等于标题宽，标题不会压到隔壁。没写进 GROUPS 的新节点会自动放进“其他”组并记进构建日志。结果：20 个分组框，0 个跳过（0.8.1 只有 4 个）。m81 / m8 的版本检查改成读 build.py 的 VERSION。回归 m81 8、m8 18、m1 39 全过 |
 | 2026-11-19 | 0.8.1 | 把皮肤鼓包委托（2026-11-16）里改在工程副本上的修复并回仓库，并做成通用的：① **POP 贴图坐标**（`GBUF.POPUV`）：镜像材质声明 `Tex` 属性，`gbuffer.vert` 用 `TDTexAttrib_Tex(0)`（SOP 上等于 `uv[0]`）；以前 POP 上 `TDTexCoord(0)` 是 0，所有贴图只采到一个角。② **薄壁磨砂按距离模糊**（`REFR.DIFFUSE`）：模糊宽度 = (到背后表面的距离 + 1 cm) × 粗糙度² × 2，换算成那个表面处的像素；以前薄壁只按粗糙度模糊，远近一样。③ **平滑模糊**（`REFR.SMOOTHBLUR`）：精细一级 mip 上的 12 点旋转圆盘代替直接读盒式 mip（方块感）；旋转用逐帧变化的交错梯度噪声（Jimenez 2014），委托里的版本用固定的逐像素哈希，留下一层静态的淡斜纹。④ **边缘**（`REFR.EDGE`）：只有最外几像素淡到环境（以前 5%）；圆盘采样坐标限制在画面内——画面外的采样读到黑色才是磨砂表面边缘暗带的真正原因。⑤ **薄壁透射提亮**（`REFR.THINTINT`）：透明槽新增 Thin Transmission Lift（默认 0，等于以前），编码进 `uTrans.w`（0 实心，1 + 提亮 = 薄壁），写到透明层 RT4.w。委托里的 `REFR.LENS`（薄膜鼓包当凸透镜，写死了朝上方向和强度）没有并入，留作以后的通用 Refraction Scale。⑥ **内部注释**（`BUILD.ANNOT`，`ext/annotations.py`）：186 个节点的 Comment、总览面板、4 个分组框（其余分组的节点交错摆放，不挪节点就框不干净，构建日志列出跳过的组；0.8.2 重新排版后 20 组全部画出）。新测试 `tests/m81_tests.py` 8 项；回归 m1 39、m6、m7 13、m8 18、m5 7 全过（m6 的光追首帧偶发一次，§11 第 43 条） |
 | 2026-11-14 | 0.8.0 | 次表面散射（方案 `docs/SUBSURFACE.md`）：Subsurface 页 + SSS 槽（序列参数，拖入 Geometry COMP，最多 8 个档案，8 个预设 Skin / Jade / Wax / Marble / Milk / Soap / Leaf / Paper，`EXT.SSSPRESET`）。档案编号写进不透明 G-Buffer 的 RT3.a（= 2 + k，`GBUF.SSSID`；不透明层本来不读这个通道），不加缓冲；材质里是静态的 `uSSS`。composite 在有 SSS 物体时多一个输出：不乘底色的辐照度 × 底色^(1 − Texture Detail) | 档案（`COMP.SSS`，太阳 / 环境的辐照度由 `lightingTerms` 留在全局变量 `gSunIrr` / `gEnvIrr`，`LIGHT.SSSIRR`）。`sss_h` / `sss_v`：可分离的屏幕空间散射（Jimenez 结构 + 每通道两个指数的 Burley 型曲线，按 (i/N)² 布点，跨档案或深度差超过半径时取中心值，能量守恒，最大 64 像素，`SSS.*`），`sss_v` 只改漫反射部分。透射（`COMP.SSSTRANS`）：厚度 = 到阴影相机的距离 − 阴影图深度（4 点平均），exp(−厚度 / 每通道散射距离) × 0.5；薄片模式用固定厚度并透过背面环境光。uniform 数组 44 → 68（41 全局，44 + 3k 档案）。Debug View 新增 3 项（`DEBUG.SSS`，用 Switch 挡住不存在的缓冲）。没有 SSS 物体时全部旁路。新测试 `tests/m8_tests.py` 18 项全过。实测（1080p，SSS 约占画面 1/4–1/3）：GPU `sss_h` + `sss_v` 约 0.1–0.13 ms，composite +0.04 ms；CPU 约 +0.1 ms |
@@ -216,13 +230,4 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 2026-11-13 | 0.7.3 | 许可从 MIT 改为 PolyForm Noncommercial 1.0.0（禁止商用；再分发必须保留 `LICENSE` 首行的 `Required Notice:` 出处声明）。README、THIRD_PARTY_NOTICES、使用手册 §9、介绍视频片尾同步 |
 | 2026-11-13 | 0.7.3 | 粒子示例（`examples/swirl.comp`）：沙子悬在镜面上方 15 cm（`CH_Y 0.15`），换图形时弹跳、横向抖动（`act = sin(π·s)`），落定后只随低音轻颤；扩散收窄（0.004+0.008·bass）。镜面倒影用平面镜像（`SCENES.MIRROR`）：同一组实例 sy = −1 + 暗一档的材质，渲染器的 Geometry 不含地面——屏幕空间反射分辨不出几毫米的沙粒，只能得到竖向拉丝（实例化几何体也还不进光追，§12）。介绍视频 v4：剪辑点全部落在 120 bpm 的小节线上，音乐（`tools/video` 外的 music3）按实测的画面事件写 |
 | 2026-11-12 | 0.7.3 | 雾里的太阳阴影改用和表面相同的 PCSS（`FOG.SHADOW`）：8 个遮挡搜索 + 12 个 PCF 采样，每格每帧随机旋转，半影随到遮挡物的距离变大；Fog Shadow Blur 改为“相对表面阴影的半影倍数”（1 = 一致，0 = 单点硬阴影）。原因：0.7.2 的固定 3×3 小核让百叶后的每层光片几米外仍是硬边，从斜角看就是一道道斜条纹，而地面上同样的影子是软的（多机位 + CPU 参考图对比，见 §11 #47）。深度方向的抖动始终取满整片（Fog Jitter 只缩放屏幕方向，`FOG.JITTER`）：只抖半片时百叶光片和深度切片产生摩尔纹，表现为横穿光束、和光方向无关的斜带（§11 #49）。帧号取模 4096（`UNI.FRAMEWRAP`，§11 #48）。探针 GI：探针数按场景包围盒的形状分配，三个方向间距大致相同（约 2048 个，`EXT.RTGRIDDIMS`；以前固定 16×8×16，又宽又浅的场景深度方向只有 0.1 m 间距，相邻层探针的噪声在平面上变成彩色条纹）；查表时表面背后的探针权重接近 0、查表点沿法线偏移 0.3 倍间距（`GI.PROBE_SAMPLE`，以前背后的探针仍有 0.2 权重，漏光）。百叶窗场景 Fog Shadow Blur 2.5 → 1。High 下 `fog_scatter` 0.16 → 0.27 ms |
-| 2026-11-12 | 0.7.2 | 体积雾噪声控制（`FOG.QUALITY`、`BUILD.FOGQUALITY`、`BUILD.FOGRES`）：Fog 页新增 Fog Resolution（Auto / 128×72×48 … 320×180×128）、Fog Current Frame Weight（原来写死的 0.1）、Fog Jitter（格子内抖动和 `fog_apply` 切片抖动的幅度）、Fog Shadow Blur（雾的阴影查表改 3×3 PCF，间距 0.75 texel × 值，0 = 单点）；uniform 用空槽 `uDOF2.w`、`uGI.w`、`uAcc.w`。默认值下除阴影查表 2×2 → 3×3 外与 0.7.1 一致。百叶窗场景（细遮挡物）用 High / 0.04 / 0.5 / 2.5：块状噪点基本消失，光束更清楚，GPU 3.50 → 3.82 ms |
-| 2026-11-12 | 0.7.1 | 实例颜色（Instance Color）乘到基础色和自发光上（`GBUF.INSTCOLOR`），实例化的粒子可以各自发光。五个展示场景 `examples/make_scenes.py`（百叶窗室内、雨夜霓虹、落日巨石阵、音频驱动的 40 万 POP 粒子、材质陈列柜，`SCENES.*`）、录制工具 `tools/video_rig.py`、场景测速 `tools/scene_bench.py`、介绍片后期脚本 `tools/video/`。场景实测（1080p High，去掉 gbuf0 等待）：GPU 3.2–4.1 ms，粒子场景 10 ms；CPU 2.0–3.2 ms。新坑 §11 第 44–46 条 |
-| 2026-11-12 | 0.7.0 | M6c 光追折射（§9g）：Transparency 页 Refraction Method（Screen Space / Hybrid / Ray Traced）；玻璃进第二个光追场景 `out_t`，`rt_refr` 从前景透明层穿过玻璃代理（折射进出、全内反射、多块玻璃、按介质吸收），Hybrid 只在屏幕空间找不到背景处用光追。修 M4：光追代理减面有下限（`EXT.RTMINPOLY`），低模物体以前几乎不在光追场景里（示例网络画面因此变化：A/B 平均差 0.016，属于修正）。M6b 混合透明保留在源码、默认不构建（`BUILD.M6B`，用户决定）。回归 39 项、M6 测试（含 `TEST.M6C`）、验收全过。M6c 开销 CPU +0.25 ms、GPU +0.1 ms |
-| 2026-11-12 | 0.7.0-dev | M6b 混合透明（§9f，之后改为默认不构建）：Blended 槽（Alpha / Additive、受光、软粒子覆盖），PBR MAT 开 Blending + Alpha 贴图自动识别；前向材质 `forward.frag`（无方向光照、BTDR 阴影、软粒子、玻璃后压暗），每帧数据经 `ub_tex`（uniform 块的 CHOP to TOP）读入；`tblend` 支持 Sorted / Order Independent（深度剥离）；`blend_comp` 叠在折射之后、雾和 TAA 之前。没有混合类时全部旁路（A/B 与 0.6.0 平均差 0）。回归 39 项、M6a、M6b、验收全过。测试场景 CPU +0.45 ms、GPU +0.25 ms。新坑 §11 第 40、41 条 |
-| 2026-11-12 | 0.6.0 | M6a 透明与折射（`M6_TRANSPARENCY.md`，§9e）：Transparency 页的透明槽（把 Geometry COMP 拖进去，9 个预设）、从 PBR MAT 自动识别、Alpha 测试镂空；前景透明层 `tgbuffer` + 背面 `tback` 测厚度 + `refract`（两次折射、16 步深度步进找背景、按粗糙度取 mip 的磨砂、Beer-Lambert 吸收、菲涅尔、太阳高光）；合并深度给雾和 TAA。没有透明物体时全部旁路（A/B 与 0.5.1 平均差 0）。回归 39 项、M6 测试全过。透明场景 GPU +0.6 ms、CPU +0.85 ms |
-| 2026-11-12 | 0.5.1 | 开源：MIT 许可（`LICENSE` 只放标准 MIT 全文，GitHub 才能识别；HDRI 的 CC0 列在 `THIRD_PARTY_NOTICES.md`），README 去掉“私有仓库”、加上测试现状和许可；使用手册 §9、发布包 README 写明许可和源码地址；`make_showcase.py` 注释里的本机路径换成占位符 |
-| 2026-11-12 | 0.5.1 | 展示工程 `examples/make_showcase.py`：独立文件夹 BetterTDRender（BetterTDRender.toe + BTDR.tox + HDRI + 文档），一个程序化场景加凉棚，4 个预设可切换 / 自动轮播，体积雾预设用逆光（光束只在亮暗的雾交界、暗背景前才看得见）；预设逻辑放在 Text DAT 模块里（不往 storage 存函数，§11 第 37 条）。新坑：`connect(op)` 连到空闲输入时把 0 号输入顶掉了，要用 `inputConnectors[i]` 指定 |
-| 2026-11-12 | 0.5.1 | 全局性能审查（GitHub 私有仓库 `Maxwel-Lei/BetterTDRender` 的 v0.1.0 = 0.5.0）：`uniforms` 缓存 Par 对象（`UNI.PARCACHE`）、`rt_static` 键直接比较元组（`UNI.RTSTATICKEY`）；自动曝光关闭时测光链不计算（`BUILD.AEOFF`）；光照项在 composite 里现算（`COMP.INLINE`，新文件 `lighting_core.glsl`，`lighting` 只给 Debug View）；主光开着原生阴影时 Status 给出提示（`EXT.TIPS`）。demo 场景 CPU 2.13 → 1.94 ms，每帧计算的节点 58 → 50，画面不变（新工具 `tools/ab_compare.py`）。`cpu_profile.py` 只统计每帧都计算的节点。回归测试 39 项、验收 7 项全过。审查中测过但未采用的方案见 §10 |
-| 2026-11-12 | 0.5.0 | M5 发布：示例网络 `BTDR_Example.tox`（`examples/make_example.py`）、验收测试 `tests/m5_acceptance.py`（7 项全过，含 `TEST.COLDSTART`）、发布包 `release/BTDR_0.5.0.zip`（`tools/make_release.py`）。使用手册改成纯用户手册：五分钟上手、性能建议、素材建议；开发内容（演示场景、回归测试、构建）移到 §11c。修复：渲染器第一次被拉取时 SSR / SSGI 读到未初始化的 Feedback 历史，画面满是彩色亮点（`SS.HISTRESET`，§11 第 32 条）。Quality = Low 时 Bloom 少算两级（`BUILD.BLOOMLOW`）。旧管线 `ue5r/` 归档到工程目录 `archive/`，工程里的 `/project1/ue5r` 删除。回归测试 39 项全过 |
-| 2026-11-12 | 0.1.0–0.4.0 | 见 `CHANGELOG_EARLY.md`（M1 核心出图、阴影缓存、M2 镜头效果、M3 屏幕空间与体积雾、M4 硬件光追） |
+| 2026-11-12 | 0.1.0–0.7.2 | 见 `CHANGELOG_EARLY.md`（M1 核心出图 … M6 透明与折射、光追折射、实例颜色、雾的噪声控制） |

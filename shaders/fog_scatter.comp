@@ -31,14 +31,14 @@ float sunVisibility(vec3 p, float rnd)
     float depth = dot(uSunPos.xyz - p, uSunDir.xyz);
     float texel = 1.0 / uTD2DInfos[0].res.z;
     float wtex = uSunRight.w * texel;                       // world size of one shadow texel
-    float bias = 0.01 + wtex * 1.5;
+    float bias = UM(0.01) + wtex * 1.5;
     float soft = max(uSunColor.w, 0.0) * uDOF2.w;
     if (soft <= 0.0) {
         float d = textureLod(sTD2DInputs[0], suv, 0.0).r;
         return (d > 0.001 && d < depth - bias) ? 0.0 : 1.0;
     }
     float ang = rnd * 6.2831853;
-    float search = max(0.024 * soft, wtex * 2.0) / uSunRight.w;
+    float search = max(UM(0.024) * soft, wtex * 2.0) / uSunRight.w;
     float blockers = 0.0, bsum = 0.0;
     for (int i = 0; i < 8; i++) {
         float r = sqrt((float(i) + 0.5) / 8.0);
@@ -47,7 +47,7 @@ float sunVisibility(vec3 p, float rnd)
         if (d > 0.001 && d < depth - bias) { bsum += d; blockers += 1.0; }
     }
     if (blockers < 0.5) return 1.0;
-    float pen = clamp((depth - bsum / blockers) * 0.0376 * soft, wtex * 1.2, max(0.0273 * soft, wtex * 1.2)) / uSunRight.w;
+    float pen = clamp((depth - bsum / blockers) * 0.0376 * soft, wtex * 1.2, max(UM(0.0273) * soft, wtex * 1.2)) / uSunRight.w;
     float lit = 0.0;
     for (int i = 0; i < 12; i++) {
         float r = sqrt((float(i) + 0.5) / 12.0);
@@ -77,7 +77,7 @@ void main()
     vec3 p = uCamPos.xyz + ray * sliceDepth(clamp(uvw.z, 0.0, 1.0));   // ray has unit forward component
     // [BTDR:FOG.DENSITY] exponential height fog + optional animated noise
     float dens = uFog.x * exp(-uFog.y * max(p.y - uFog.z, 0.0));
-    float n = TDSimplexNoise(vec4(p * 1.3, uFrame.w * 0.05)) * 0.5 + 0.5;
+    float n = TDSimplexNoise(vec4(p * (1.3 * uUnit.y), uFrame.w * 0.05)) * 0.5 + 0.5;
     dens *= mix(1.0, 0.4 + 1.2 * n, uFog2.w);
     vec3 V = normalize(ray);
     vec3 sun = uSunColor.rgb * uSunDir.w * sunVisibility(p, rnd) * phaseHG(dot(V, normalize(uSunDir.xyz)), uFog.w);

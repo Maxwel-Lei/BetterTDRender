@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.8.2。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.8.3。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -99,10 +99,18 @@ Palette 的 BTDR 文件夹里还有带版本号的旧版本（如 `BTDR_0.7.6.to
 | Debug View | 查看中间结果：基础色、法线、粗糙度、金属度、材质 AO、自发光、深度、直接光、环境漫反射、环境镜面、屏幕空间 AO（白 = 不遮挡）、反弹光（SSGI）、反射（SSR）、Probe GI（探针算出的入射光，打在中灰表面上的样子）、Traced Reflections（光追反射比环境反射亮还是暗：灰 = 一样，黑 = 被挡住，彩色 = 映出了别的物体） |
 | sRGB Colors and Color Maps | 开：把颜色参数和颜色贴图当作 sRGB，内部转成线性再算光照（8 位贴图应保持开启）。关：当作线性 |
 | Normal Map Convention | 法线贴图约定，对所有材质生效：OpenGL（Y+，Blender、Tripo 默认）或 DirectX（Y−，虚幻引擎、Substance 默认）。用错了凸起会看成凹陷 |
+| Scene Unit | 场景里 1 个单位等于多少（0.8.3）：Meters（默认）/ Centimeters / Millimeters / Inches / Feet / Custom。模型是按厘米、英寸建的（从 Maya、3ds Max、C4D、CAD 导入的常见），选对应的单位，下面各页里写着“米”的参数就按真实尺寸生效，不用再一个个改。见下方说明 |
+| Unit Size (m) | Scene Unit = Custom 时：1 个单位等于多少米 |
 | Anti-Aliasing | TAA（默认）：时间性抗锯齿，每帧把相机错开不到一个像素，再和前几帧混合，边缘和细小高光不再闪烁。None：关闭，边缘有锯齿 |
 | TAA Current Frame Weight | 每帧新画面占的比例，默认 0.1。调小更平滑但运动时更"拖"，调大反应更快但会轻微闪烁 |
 
 TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面略软，属于正常现象；Debug View 看到的中间结果是没有抗锯齿的。
+
+**Scene Unit（场景比例，0.8.3）**：BTDR 的效果按真实世界的尺寸设计，比如 AO 半径 0.6 m、皮肤散射 1 cm、雾按每米的浓度算。以前默认“1 个单位 = 1 米”，模型按厘米建（一个人 170 个单位高）时，AO、反射、雾、次表面散射全都会差 100 倍，只能逐项去调。现在只要把 Scene Unit 设成实际的单位：
+- 写着“（米）”的参数按米理解，内部自动换算成场景单位：AO / Bounce Radius、Max Ray Distance、Object Thickness、Height-Field AO Radius、雾的 Density / Height Falloff / Base Height / Max Distance、散射半径和薄片厚度、吸收距离。
+- 着色器内部按米写的常数（阴影偏移、光线起点的偏移、软阴影的范围、雾的噪声大小、光追探针的边距等）也一起换算。
+- 写着“（场景单位）”的参数不变：Shadow Center / Range、Focus Distance，以及第 2、3 个输出口里的距离。景深的焦距、传感器宽度按毫米，不受影响。
+- 实测：同一场景按厘米建（所有尺寸 × 100）并选 Centimeters，画面和按米建的平均只差 0.13%。Meters 下和 0.8.2 完全一样。
 
 ### Light 页
 
@@ -153,15 +161,15 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 | AO Intensity | 遮蔽强度，1 = 物理正确，最大 2 |
 | Bounce Light (SSGI) | 反弹光（屏幕空间全局光照）：物体被照亮后把光反射到旁边的物体上，比如红木底座把地面映成暖色 |
 | Bounce Intensity | 反弹光强度 |
-| AO / Bounce Radius | 遮蔽和反弹光的作用范围（场景单位）。默认 0.6，物体越大可以设得越大 |
+| AO / Bounce Radius | 遮蔽和反弹光的作用范围（米，按 Scene Unit 换算）。默认 0.6，物体越大可以设得越大 |
 | Screen-Space Reflections | 屏幕空间反射：光滑表面映出画面里的其他物体（地面倒影）。没找到反射物的地方仍然显示环境反射 |
 | Reflection Intensity | 反射强度 |
-| Max Ray Distance | 反射光线最远找多远（场景单位） |
+| Max Ray Distance | 反射光线最远找多远（米） |
 | Max Roughness | 比这更粗糙的表面不做屏幕空间反射（太粗糙的反射本来就看不出物体），默认 0.6 |
-| Object Thickness | 判断"光线是否打到物体"时假设的物体厚度。反射里物体出现断裂就调大，出现不该有的拉丝就调小 |
+| Object Thickness | 判断"光线是否打到物体"时假设的物体厚度（米）。反射里物体出现断裂就调大，出现不该有的拉丝就调小 |
 | Height-Field AO | 地面接触遮蔽（默认关）：从正上方看场景，算出地面上每个点头顶和四周被物体挡住了多少天空，压暗那里的天光和天空反射。车底、桌子底下的地面会正确地变暗，物体"坐"在地上，背光、低机位时尤其明显。不受屏幕空间限制，相机从什么角度看都一样。只作用在地面这类"接收者"（朝上、且不是物体自己顶面的表面），物体本身不受影响 |
 | Height-Field AO Intensity | 强度，1 = 完全按计算结果 |
-| Height-Field AO Radius | 往外找遮挡物的距离（场景单位），默认 2。物体越大设得越大 |
+| Height-Field AO Radius | 往外找遮挡物的距离（米），默认 2。物体越大设得越大 |
 
 屏幕空间的固有限制：
 - 反射只能映出画面里看得到的东西：物体的背面、画面外的物体映不出来，反射在画面边缘会逐渐淡出；朝着相机方向的反射（比如正对镜头的金属牌）也会淡出，改用环境反射。
@@ -203,11 +211,11 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Volumetric Fog | 开关 |
 | Density | 雾的浓度（地面高度处每米的消光系数）。0.03 是淡淡的空气感，0.2 以上是浓雾 |
 | Height Falloff | 越往高处雾越淡的速度，0 = 上下一样浓 |
-| Base Height | 从哪个高度开始变淡 |
+| Base Height | 从哪个高度开始变淡（米） |
 | Anisotropy (Forward Scattering) | 各向异性：0 = 各方向一样亮；越接近 1，逆光看越亮、顺光看越暗（大气、晨雾一般 0.6–0.8） |
 | Ambient Light | 环境光照亮雾的程度（来自 Environment 页的环境）。调低后被挡住的地方更暗，光束更明显 |
 | Noise | 浓度的起伏，让雾不那么均匀 |
-| Max Distance | 体积雾计算到多远（场景单位），超过这个距离按这个距离的雾量算。场景越小设得越小，精度越高 |
+| Max Distance | 体积雾计算到多远（米），超过这个距离按这个距离的雾量算。场景越小设得越小，精度越高 |
 | Fog Color (Albedo) | 雾的颜色（反照率） |
 | Fog Resolution | 雾的格子数（0.7.2）：Auto 跟随 Quality（High 160×90×64，Low 128×72×48）；也可以单独选 Low / Medium / High 240×135×96 / Ultra 320×180×128。格子越多光束越细、颗粒越小，GPU 开销大致和格子数成正比（High 约 +0.3 ms） |
 | Fog Current Frame Weight | 时间累积里每帧新结果占的比例（0.7.2），默认 0.1。调小（0.03–0.05）画面更稳、颗粒和闪烁更少，代价是灯光、物体移动时光束跟得更慢（拖影） |
@@ -252,7 +260,7 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | · Roughness Override | -1 = 用材质的粗糙度；大于等于 0 时覆盖，磨砂玻璃一般 0.2–0.5 |
 | · Thin Walled | 薄壁：窗玻璃、肥皂泡、单面的平面、薄膜。不偏移、不按厚度吸收；有粗糙度时是“磨砂薄膜”：贴着它的东西清楚，离得越远越模糊（0.8.1） |
 | · Thin Transmission Lift | 只对薄壁有效（0.8.1）：透过薄膜看到的颜色往白色提亮多少。0 = 按 Base Color 染色（以前的效果）；薄膜、纸、皮肤这类很薄的东西透过来的光比表面颜色浅，一般 0.3–0.6 |
-| · Absorption Distance | 吸收距离（场景单位）：光在物体里走这么远后，颜色正好是材质的 Base Color。越小颜色越浓；越厚的地方越深 |
+| · Absorption Distance | 吸收距离（米）：光在物体里走这么远后，颜色正好是材质的 Base Color。越小颜色越浓；越厚的地方越深 |
 | · Cast Shadow | None（默认，玻璃不挡光）/ Opaque（按不透明物体投影） |
 | · In Ray Tracing | 是否进入光追代理（默认关：光直接穿过玻璃） |
 
@@ -295,7 +303,7 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Subsurface | 总开关 |
 | Subsurface Objects | 只读：当前按 SSS 渲染的物体数 |
 | Subsurface Quality | Auto（跟随 Render 页的 Quality）/ High（每个方向 15 个采样）/ Low（9 个） |
-| Scatter Scale | 所有槽的散射半径一起乘这个数。**模型比例不是“1 单位 = 1 米”时用它校正**：比如 10 个单位高的人头，设成约 30 |
+| Scatter Scale | 所有槽的散射半径一起乘这个数。模型的单位不是米时，先设 Render 页的 **Scene Unit**（0.8.3）；这里只用来整体加强或减弱散射（0.8.2 及以前要用它校正比例，比如 10 个单位高的人头设成约 30） |
 | Transmission | 透射总开关 |
 | Subsurface（列表） | SSS 槽，最多 8 条，每条一个“散射档案”，可以管一批物体 |
 | · Geometry | 拖入 Geometry COMP，或写路径 / 通配符 |
@@ -339,7 +347,7 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Target Grey | 把画面平均亮度调到多少，默认 0.18（中灰）。整体偏暗就调大 |
 | Adapt Speed To Brighter / Darker | 适应速度，数值越大越快。默认变亮快（3）、变暗慢（1），和人眼一样 |
 | Depth of Field | 景深：对焦距离以外的物体变虚 |
-| Focus Distance | 对焦距离（场景单位，按米理解），沿相机朝向量 |
+| Focus Distance | 对焦距离（场景单位），沿相机朝向量 |
 | F-Stop | 光圈值。越小越虚（f/1.4 很虚，f/8 几乎全清楚） |
 | Focal Length (mm) | 焦距。0 = 按相机的视角和下面的传感器宽度自动算（推荐） |
 | Sensor Width (mm) | 传感器宽度，默认 36（全画幅）。和焦距一起决定虚化程度 |
@@ -407,6 +415,14 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 
 和原生 PBR MAT 一样，数值和贴图相乘：只用贴图时把对应数值设成 1。
 
+**贴图坐标（0.8.3）**：PBR MAT 每张贴图的这些设置都会跟随，改了立即生效，不用 Refresh：
+- **Extend U / V**（贴图坐标超出 0–1 时怎么办）：Repeat 重复、Hold 拉伸边缘、Mirror 镜像重复、Zero 透明。
+- **Filter**（过滤方式）。各向异性过滤取材质的设置，最低 4×（斜着看的地面不会糊）。
+- **SOP Texture Coord**（用第几套 UV）：uv0 和另外一套（比如给 AO 贴图、光照贴图用的 uv1）。一个材质里除了 uv0 只能再用一套，用了两套以上时按编号最大的那套读，节点上有提示。
+- **Texture Sampling Mode**：Regular（按 UV）和 Screen Space（按屏幕位置贴，图案不随物体移动）。
+
+TD 里贴图的**平铺**（Repeat 次数）和**偏移**不在材质上，要在几何体的 UV 上改：用 Texture SOP（Scale / Offset），或 Transform SOP 只变换 UV。BTDR 读的就是改过的 UV，和原生 Render TOP 结果相同（测试里两者逐像素一致）。
+
 实例化（Instancing）时 Geometry COMP 的 Instance Color 会乘到基础色和自发光上（0.7.1），粒子可以各自有颜色和亮度。
 
 ### 警告在哪里看
@@ -426,7 +442,7 @@ RTX 5080 Laptop 上实测（1080p，测试场景：两件带 4K 贴图的模型�
 - POP 几何体的贴图 0.8.1 起正常显示（以前只读到一个角的颜色）。
 - 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。次表面散射的透射也只来自这盏灯。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
 - 只支持透视相机。
-- 不读取：贴图的平铺 / 偏移 / 采样方式、第二套 UV、高度图和视差、Specular Level、Rim。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影）。
+- 不读取：高度图和视差、Specular Level、Rim；Texture Sampling Mode 的 Triplanar（三平面投影，按 Regular 处理并在节点上提示：原生 PBR MAT 在 TD 2025.33230 里这个模式本身就不起作用，没有可对齐的效果）；POP 上自定义的 Texture Coord Attribute（只读 `Tex`）；一个材质里第三套及以后的 UV。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影）。
 - 不支持：骨骼变形、Material SOP 逐面材质。Geometry COMP 嵌套（子级里的 Geometry COMP）0.7.5 起支持；Geometry COMP 的 Render 标志关掉就不画（和原生一样）。线条（Line SOP 等）能画，但不参与光追。
 - 内部位置存成相对相机的 16 位浮点：离相机越远精度越低（5 m 处约 4 mm，50 m 处约 3 cm），几十米外的物体阴影可能出现瑕疵。阴影只覆盖 Shadow Range 以内。
 - 反射、AO、反弹光是屏幕空间算法，限制见 Indirect 页一节；光追部分的限制见 Ray Tracing 页一节。

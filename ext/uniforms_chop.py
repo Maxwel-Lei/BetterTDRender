@@ -40,6 +40,7 @@ def _camera(cam, aspect):
             (-v[8] / nz, -v[9] / nz, -v[10] / nz, _tan_half_fov(cam, aspect)))   # forward, tan(fov/2)
 
 _ZERO = (0.0, 0.0, 0.0, 0.0)
+UNIT_M = {'meters': 1.0, 'centimeters': 0.01, 'millimeters': 0.001, 'inches': 0.0254, 'feet': 0.3048, 'custom': None}
 
 # [BTDR:UNI.PARCACHE] Looking a parameter up by attribute (C.par.Bloom) costs ~0.65 us in TD, the eval itself ~0.12 us;
 # ~120 reads per frame. Cache the Par objects per component / operator (keyed by its id: a rebuilt or reloaded
@@ -61,6 +62,13 @@ def onCook(scriptOp):
     W, H = max(int(Q['Resolutionw'].eval()), 1), max(int(Q['Resolutionh'].eval()), 1)
     aspect = W / float(H)
     frame = absTime.frame          # cooking every frame comes from the Frame parameter ([BTDR:BUILD.UNICOOK])
+    # [BTDR:UNI.UNIT] (0.8.3) scene unit: K = scene units per metre. Distance parameters designed in metres are
+    # multiplied by K here; shaders use uUnit / UM() for their own metre constants. Meters (K = 1) = 0.8.2.
+    um = UNIT_M.get(Q['Sceneunit'].eval()) if 'Sceneunit' in Q else 1.0
+    if um is None:
+        um = max(Q['Unitsize'].eval(), 1e-6)
+    K = 1.0 / um
+    a[42] = (K, um, 0.0, 0.0)
 
     # [BTDR:UNI.CAMERA] current + previous camera
     cp = C.fetch('cam_path', '')
@@ -245,12 +253,12 @@ def onCook(scriptOp):
                 if (P + 'geo') not in Q:
                     break
             thin = bool(Q[P + 'thin'].eval())
-            r = Q[P + 'radius'].eval() * sc
+            r = Q[P + 'radius'].eval() * sc * K
             ts = Q[P + 'transstrength'].eval()
             a[44 + 3 * k] = (r * Q[P + 'scatterr'].eval(), r * Q[P + 'scatterg'].eval(), r * Q[P + 'scatterb'].eval(),
                              0.0 if thin else Q[P + 'strength'].eval())
             a[45 + 3 * k] = (ts * Q[P + 'transr'].eval(), ts * Q[P + 'transg'].eval(), ts * Q[P + 'transb'].eval(), 1.0 if thin else 0.0)
-            a[46 + 3 * k] = (Q[P + 'detail'].eval(), Q[P + 'thickness'].eval(), 0.0, 0.0)
+            a[46 + 3 * k] = (Q[P + 'detail'].eval(), Q[P + 'thickness'].eval() * K, 0.0, 0.0)
     a[17] = (2.0 ** Q['Exposure'].eval(), Q['Vignette'].eval(), Q['Grain'].eval(),
              1.0 if Q['Tonemap'].eval() == 'aces' else 0.0)
     a[18] = (float(Q['Debugview'].menuIndex), 1.0 if Q['Srgbcolors'].eval() else 0.0, Q['Fadestart'].eval(), Q['Fadeend'].eval())
@@ -266,26 +274,26 @@ def onCook(scriptOp):
     flen = Q['Focallength'].eval()
     if flen <= 0.0 and cam is not None:                       # from the camera's horizontal view angle
         flen = Q['Sensorwidth'].eval() / (2.0 * max(_tan_half_fov(cam, aspect), 1e-4))
-    a[24] = (max(flen, 1.0), Q['Fstop'].eval(), Q['Focusdistance'].eval(), Q['Dofmaxblur'].eval())
+    a[24] = (max(flen, 1.0), Q['Fstop'].eval(), Q['Focusdistance'].eval() * um, Q['Dofmaxblur'].eval())   # metres (dof.frag)
     a[25] = (Q['Sensorwidth'].eval(), 1.0 if Q['Dof'].eval() else 0.0, 1.25 if high else 2.0, Q['Fogshadowblur'].eval())
     a[26] = (Q['Shutter'].eval(), Q['Mbmaxblur'].eval(), 12.0 if high else 6.0, 1.0 if Q['Motionblur'].eval() else 0.0)
     # [BTDR:UNI.SS] M3 screen-space AO / GI / reflections (0 strength = off; the passes are bypassed by Switch TOPs)
     a[27] = (Q['Aointensity'].eval() if Q['Ambientocclusion'].eval() else 0.0,
              Q['Ssgiintensity'].eval() if Q['Ssgi'].eval() else 0.0,
              Q['Ssrintensity'].eval() if Q['Ssr'].eval() else 0.0, 0.0)
-    a[28] = (Q['Giradius'].eval(), 8.0 if high else 6.0, 2.0 if high else 1.0, Q['Fogjitter'].eval())
-    a[29] = (Q['Ssrmaxdistance'].eval(), 32.0 if high else 20.0, Q['Ssrmaxroughness'].eval(), Q['Ssrthickness'].eval())
+    a[28] = (Q['Giradius'].eval() * K, 8.0 if high else 6.0, 2.0 if high else 1.0, Q['Fogjitter'].eval())
+    a[29] = (Q['Ssrmaxdistance'].eval() * K, 32.0 if high else 20.0, Q['Ssrmaxroughness'].eval(), Q['Ssrthickness'].eval() * K)
     fz = a[9][2] if cam is not None else 1.0
     a[30] = (0.1, 1.0, fz, Q['Fogcurweight'].eval())
     # [BTDR:UNI.FOG] volumetric fog
-    a[31] = (Q['Fogdensity'].eval(), Q['Fogheightfalloff'].eval(), Q['Fogbaseheight'].eval(), Q['Foganisotropy'].eval())
-    a[32] = (0.1, max(Q['Fogdistance'].eval(), 0.2), Q['Fogambient'].eval(), Q['Fognoise'].eval())
+    a[31] = (Q['Fogdensity'].eval() / K, Q['Fogheightfalloff'].eval() / K, Q['Fogbaseheight'].eval() * K, Q['Foganisotropy'].eval())
+    a[32] = (0.1 * K, max(Q['Fogdistance'].eval(), 0.2) * K, Q['Fogambient'].eval(), Q['Fognoise'].eval())
     a[33] = (Q['Fogcolorr'].eval(), Q['Fogcolorg'].eval(), Q['Fogcolorb'].eval(), 1.0 if Q['Fog'].eval() else 0.0)
     # [BTDR:UNI.HFAO] height-field AO: top-down map centre x / z, width, camera height (= topcam); on, intensity,
     # radius, sample count (directions)
     rng = Q['Shadowrange'].eval()
     a[34] = (Q['Shadowcenterx'].eval(), Q['Shadowcenterz'].eval(), rng, Q['Shadowcentery'].eval() + rng)
-    a[35] = (1.0 if Q['Heightfieldao'].eval() else 0.0, Q['Hfaointensity'].eval(), Q['Hfaoradius'].eval(), 8.0 if high else 4.0)
+    a[35] = (1.0 if Q['Heightfieldao'].eval() else 0.0, Q['Hfaointensity'].eval(), Q['Hfaoradius'].eval() * K, 8.0 if high else 4.0)
     # [BTDR:UNI.RT] M4 hardware ray tracing
     rs = _STATE.setdefault(scriptOp.path + '#rt', {})
     rton = bool(Q['Raytracing'].eval()) and bool(Q['Rtavailable'].eval())

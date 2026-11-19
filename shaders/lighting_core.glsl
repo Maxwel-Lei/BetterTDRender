@@ -38,17 +38,17 @@ vec3 F_Schlick(vec3 F0, float VoH)
 float sunShadow(vec3 wp, vec3 n, float NoL)
 {
     if (uSunPos.w < 0.5) return 1.0;
-    vec3 p = wp + n * 0.012;
+    vec3 p = wp + n * UM(0.012);
     vec3 rel = p - uSunPos.xyz;
     vec2 suv = vec2(dot(rel, uSunRight.xyz), dot(rel, uSunUp.xyz)) / uSunRight.w + 0.5;
     float depth = dot(uSunPos.xyz - p, uSunDir.xyz);
     if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) return 1.0;
     float texel = 1.0 / float(textureSize(LC_SHADOW, 0).x);
     float wtex = uSunRight.w * texel;                       // world size of one shadow texel
-    float bias = 0.004 + 0.02 * (1.0 - NoL) + wtex * 1.5;
+    float bias = UM(0.004 + 0.02 * (1.0 - NoL)) + wtex * 1.5;
     float soft = max(uSunColor.w, 0.0);
     float ang = fract(hash12(gl_FragCoord.xy) + uFrame.x * 0.618034) * 6.2831853;
-    float search = max(0.024 * soft, wtex * 2.0) / uSunRight.w;
+    float search = max(UM(0.024) * soft, wtex * 2.0) / uSunRight.w;
     float blockers = 0.0, bsum = 0.0;
     for (int i = 0; i < 12; i++) {
         float r = sqrt((float(i) + 0.5) / 12.0);
@@ -57,7 +57,7 @@ float sunShadow(vec3 wp, vec3 n, float NoL)
         if (d > 0.001 && d < depth - bias) { bsum += d; blockers += 1.0; }
     }
     if (blockers < 0.5) return 1.0;
-    float pen = clamp((depth - bsum / blockers) * 0.0376 * soft, wtex * 1.2, max(0.0273 * soft, wtex * 1.2)) / uSunRight.w;
+    float pen = clamp((depth - bsum / blockers) * 0.0376 * soft, wtex * 1.2, max(UM(0.0273) * soft, wtex * 1.2)) / uSunRight.w;
     float lit = 0.0;
     for (int i = 0; i < 24; i++) {
         float r = sqrt((float(i) + 0.5) / 24.0);

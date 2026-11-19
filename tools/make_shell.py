@@ -38,10 +38,14 @@ try:
     # [BTDR:BUILD.BACKUP] versioned copy (release/versions/ and the Palette), never overwritten
     ver = S.fetch('version', '') or 'unknown'
     os.makedirs(BT + '/release/versions', exist_ok=True)
-    shutil.copyfile(BT + '/release/BTDR_Shell.tox', BT + '/release/versions/BTDR_Shell_%s.tox' % ver)
-    if os.path.isdir(pal):
-        shutil.copyfile(BT + '/release/BTDR_Shell.tox', os.path.join(pal, 'BTDR_Shell_%s.tox' % ver))
-    SLOG.append('versioned copies: BTDR_Shell_%s.tox' % ver)
+    _rel = BT + '/release/versions/RELEASED.txt'      # released versions are frozen (see build.py)
+    if ver in (open(_rel, encoding='utf-8').read().split() if os.path.exists(_rel) else []):
+        SLOG.append('WARNING: %s is already released, versioned copies kept' % ver)
+    else:
+        shutil.copyfile(BT + '/release/BTDR_Shell.tox', BT + '/release/versions/BTDR_Shell_%s.tox' % ver)
+        if os.path.isdir(pal):
+            shutil.copyfile(BT + '/release/BTDR_Shell.tox', os.path.join(pal, 'BTDR_Shell_%s.tox' % ver))
+        SLOG.append('versioned copies: BTDR_Shell_%s.tox' % ver)
     tmp.destroy()
     SLOG.insert(0, 'STATUS DONE')
 except Exception:

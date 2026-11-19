@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.8.2'
+VERSION = '0.8.3'
 BLOG = []
 
 def _read(rel):
@@ -139,6 +139,14 @@ def build_btdr(dest, name='renderBTDR'):
     # [BTDR:BUILD.NCONV] normal map convention of all materials (Blender / Tripo default OpenGL = Y+, Unreal / Substance default DirectX = Y-)
     menu(pg.appendMenu('Normalconvention', label='Normal Map Convention')[0], ['opengl', 'directx'],
          ['OpenGL (Y+)', 'DirectX (Y-)'], 'opengl')
+    # [BTDR:BUILD.SCENEUNIT] (0.8.3) what one scene unit is: every distance parameter designed in metres (AO / bounce /
+    # height-field radius, SSR distance and thickness, fog density / height / distance, scatter radius, absorption) and
+    # the metre-based constants in the shaders are converted with it ([BTDR:UNI.UNIT]); 1 unit = 1 m reproduces 0.8.2
+    menu(pg.appendMenu('Sceneunit', label='Scene Unit')[0],
+         ['meters', 'centimeters', 'millimeters', 'inches', 'feet', 'custom'],
+         ['Meters', 'Centimeters', 'Millimeters', 'Inches', 'Feet', 'Custom'], 'meters')
+    p = setup(pg.appendFloat('Unitsize', label='Unit Size (m)')[0], 1.0, 0.001, 10, True)
+    p.enableExpr = "me.par.Sceneunit == 'custom'"
 
     pg = C.appendCustomPage('Light')
     p = pg.appendStr('Mainlight', label='Main Light')[0]; p.readOnly = True
@@ -932,12 +940,19 @@ try:
         BLOG.append('copied to %s' % os.path.join(_pal, 'BTDR', 'BTDR.tox').replace('\\', '/'))
     # [BTDR:BUILD.BACKUP] (0.8.0, author's rule) every build also keeps a copy named with its version, never
     # overwritten by later versions: release/versions/ (committed to git) and the Palette folder
+    # (0.8.3) versions listed in release/versions/RELEASED.txt are frozen: a build that still carries a released
+    # version number (forgot to bump VERSION) must not overwrite that backup
     import shutil
     os.makedirs(BT + '/release/versions', exist_ok=True)
-    shutil.copyfile(BT + '/release/BTDR.tox', BT + '/release/versions/BTDR_%s.tox' % VERSION)
-    if os.path.isdir(os.path.join(_pal, 'BTDR')):
-        shutil.copyfile(BT + '/release/BTDR.tox', os.path.join(_pal, 'BTDR', 'BTDR_%s.tox' % VERSION))
-    BLOG.append('versioned copies: BTDR_%s.tox' % VERSION)
+    _rel = BT + '/release/versions/RELEASED.txt'
+    _released = open(_rel, encoding='utf-8').read().split() if os.path.exists(_rel) else []
+    if VERSION in _released:
+        BLOG.append('WARNING: %s is already released, versioned copies kept (bump VERSION)' % VERSION)
+    else:
+        shutil.copyfile(BT + '/release/BTDR.tox', BT + '/release/versions/BTDR_%s.tox' % VERSION)
+        if os.path.isdir(os.path.join(_pal, 'BTDR')):
+            shutil.copyfile(BT + '/release/BTDR.tox', os.path.join(_pal, 'BTDR', 'BTDR_%s.tox' % VERSION))
+        BLOG.append('versioned copies: BTDR_%s.tox' % VERSION)
     _tmp.destroy()
     BLOG.insert(0, 'STATUS DONE')
 except Exception:

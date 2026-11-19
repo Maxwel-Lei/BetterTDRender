@@ -226,14 +226,28 @@ class BTDRExt:
                     p.expr = ''
                     p.val = v
 
-    def _samplers(self, o, items):
+    def _samplers(self, o, items, state=None):
+        state = state or {}
         o.seq.sampler.numBlocks = len(items)
         for i, (name, expr) in enumerate(items):
             getattr(o.par, 'sampler%dname' % i).val = name
             getattr(o.par, 'sampler%dtop' % i).expr = expr
-            # [BTDR:EXT.ANISO] 4x anisotropic filtering: keeps textures sharp at grazing angles, near-free on GPU
+            # [BTDR:EXT.ANISO] at least 4x anisotropic filtering: keeps textures sharp at grazing angles, near-free on GPU
             a = getattr(o.par, 'sampler%danisotropy' % i, None)
-            if a is not None: a.val = '4x'
+            # [BTDR:EXT.SAMPLERSTATE] (0.8.3) Extend U / V and Filter follow the source material's map, by expression
+            # (static: the mirror material only re-cooks when the user changes them); anisotropy = the material's, min 4x
+            src = state.get(name)
+            for k in ('extendu', 'extendv', 'filter'):
+                q = getattr(o.par, 'sampler%d%s' % (i, k), None)
+                if q is None:
+                    continue
+                q.expr = '%s.par.%s%s' % (src[0], src[1], k) if src else ''
+            if a is not None:
+                if src:
+                    A = '%s.par.%sanisotropy' % src
+                    a.expr = "%s.eval() if %s.menuIndex >= 2 else '4x'" % (A, A)
+                else:
+                    a.expr = ''; a.val = '4x'
 
     # ------------------------------------------------------------------ materials
     def _bind_material(self, m, src, warn, tr=None, sss=None):
@@ -251,6 +265,7 @@ class BTDRExt:
         trans = (1, tr.get('ior', 'parent.BTDR.par.Defaultior'), tr.get('absorb', 'parent.BTDR.par.Absorbdist'),
                  tr.get('thin', 0))
         trans2 = (0, -1, tr.get('rough', -1), 0)
+        state, uv0, uv1 = {}, (0, 0, 0, 0), (0, 0, 0, 0)
         t = src.OPType if src is not None else None
         if t == 'pbrMAT':
             base = tuple('%s.par.basecolor%s' % (S, c) for c in 'rgb') + (1,)
@@ -263,12 +278,17 @@ class BTDRExt:
             trans = ('%s.par.alphafront' % S,) + trans[1:]
             trans2 = ('1 if %s.par.alphamap.eval() else 0' % S,
                       '(%s.par.alphathreshold.eval() if %s.par.alphatest.eval() else -1)' % (S, S)) + trans2[2:]
+            state, uv0, uv1 = self._uv_codes(src, S, warn)
         elif t == 'phongMAT':
+            if hasattr(src.par, 'colormapextendu'):
+                state = dict(sBaseColor=(S, 'colormap'))
             base = tuple('%s.par.diff%s' % (S, c) for c in 'rgb') + (1,)
             emit = tuple('%s.par.emit%s' % (S, c) for c in 'rgb') + (0,)
             maps['sBaseColor'] = tex('colormap')
             warn.append('%s is a Phong MAT: only its diffuse colour and colour map are used (roughness 0.5).' % src.path)
         elif t == 'constantMAT':
+            if hasattr(src.par, 'colormapextendu'):
+                state = dict(sBaseColor=(S, 'colormap'))
             base = tuple('%s.par.color%s' % (S, c) for c in 'rgb') + (1,)
             maps['sBaseColor'] = tex('colormap')
             trans2 = trans2[:3] + (1,)          # [BTDR:EXT.UNLIT] unlit like in TD: colour only, no lighting or reflections
@@ -276,9 +296,54 @@ class BTDRExt:
             warn.append('%s (%s) is not supported: rendered with the default grey material. Use a PBR MAT.' % (src.path, src.OPType))
         # [BTDR:EXT.SSSMAT] subsurface profile = Subsurface slot index (static); unlit materials never scatter
         k = -1 if (sss is None or t == 'constantMAT') else sss
+        scr = ('1.0 / max(1, parent.BTDR.par.Resolutionw.eval())', '1.0 / max(1, parent.BTDR.par.Resolutionh.eval())', 0, 0)
         self._vecs(m, [('uBase', base), ('uPBR', pbr), ('uEmit', emit), ('uChan', chan), ('uTrans', trans), ('uTrans2', trans2),
-                       ('uSSS', (k, 0, 0, 0))])
-        self._samplers(m, list(maps.items()))
+                       ('uSSS', (k, 0, 0, 0)), ('uUV0', uv0), ('uUV1', uv1), ('uScr', scr)])
+        self._samplers(m, list(maps.items()), state)
+
+    def UnitsPerMeter(self):
+        """[BTDR:UNI.UNIT] (0.8.3) scene units per metre from the Scene Unit menu (same table as uniforms_chop.py)."""
+        P = self.ownerComp.par
+        m = {'meters': 1.0, 'centimeters': 0.01, 'millimeters': 0.001, 'inches': 0.0254, 'feet': 0.3048}
+        try:
+            u = m.get(P.Sceneunit.eval())
+            if u is None:
+                u = max(float(P.Unitsize.eval()), 1e-6)
+        except Exception:
+            u = 1.0
+        return 1.0 / u
+
+    # [BTDR:EXT.UVSET] (0.8.3) PBR MAT map -> (sampler, parameter prefix, sampling-mode parameter)
+    UVMAPS = (('sBaseColor', 'basecolormap', 'texturesamplingmode'), ('sMetallic', 'metallicmap', 'metallicmapsamplingmode'),
+              ('sRoughness', 'roughnessmap', 'roughnessmapsamplingmode'), ('sAO', 'ambientocclusionmap', 'ambientocclusionmapsamplingmode'),
+              ('sNormal', 'normalmap', 'normalmapsamplingmode'), ('sEmit', 'emitmap', 'emitmapsamplingmode'),
+              ('sAlpha', 'alphamap', 'alphamapsamplingmode'))
+
+    def _uv_codes(self, src, S, warn):
+        """[BTDR:EXT.UVSET] per-map texture coordinates of a PBR MAT: code = UV set (0 = uv0, 1 = the one extra set the
+        material uses, uUV1.w) + 2 for Screen Space. Expressions, so changing the menus needs no refresh. The shader can
+        carry one extra UV set per material; Triplanar is not supported (in TD 2025.33230 the PBR MAT's own Triplanar
+        does nothing on SOPs and samples one texel on POPs, so there is nothing to match)."""
+        state, codes, extra = {}, [], []
+        for samp, pre, mode in self.UVMAPS:
+            state[samp] = (S, pre)
+            cp = getattr(src.par, pre + 'coord', None)
+            mp = getattr(src.par, mode, None)
+            c_set = "(0 if %s.par.%scoord.menuIndex == 0 else 1)" % (S, pre) if cp is not None else '0'
+            c_mode = "(2 if %s.par.%s.eval() == 'screenspace' else 0)" % (S, mode) if mp is not None else '0'
+            codes.append('%s + %s' % (c_set, c_mode))
+            if cp is not None:
+                extra.append('(%s.par.%scoord.menuIndex if %s.par.%s.eval() else 0)' % (S, pre, S, pre))
+            if getattr(src.par, pre).eval() and mp is not None and mp.eval() == 'triplanar':
+                warn.append('%s: Triplanar sampling (%s) is not supported, the map uses its UV coordinates.' % (src.path, pre))
+        used = sorted(set(getattr(src.par, pre + 'coord').menuIndex for _, pre, _ in self.UVMAPS
+                          if getattr(src.par, pre).eval() and hasattr(src.par, pre + 'coord')) - {0})
+        if len(used) > 1:
+            warn.append('%s: maps use UV sets %s; only one extra set besides uv0 is supported (uv%d is used for all of them).'
+                        % (src.path, ', '.join('uv%d' % u for u in used), used[-1]))
+        uv0 = tuple(codes[:4])
+        uv1 = tuple(codes[4:7]) + (('max(%s)' % ', '.join(extra)) if extra else 0,)
+        return state, uv0, uv1
 
     def _new_material(self, scene, name, src, warn, tr=None, sss=None):
         C = self.ownerComp
@@ -647,17 +712,18 @@ class BTDRExt:
         if fit is not None:
             lo, hi = fit
             span = hi - lo
-            m = np.maximum(span * 0.15, 0.2)
+            K = self.UnitsPerMeter()                     # [BTDR:UNI.UNIT] margins below are in metres
+            m = np.maximum(span * 0.15, 0.2 * K)
             lo2 = lo - m; hi2 = hi + m
-            lo2[1] = lo[1] + 0.03; hi2[1] = hi[1] + max(span[1] * 0.25, 0.2)
+            lo2[1] = lo[1] + 0.03 * K; hi2[1] = hi[1] + max(span[1] * 0.25, 0.2 * K)
             c = (lo2 + hi2) / 2.0; sz = hi2 - lo2
             g.par.tx, g.par.ty, g.par.tz = [float(v) for v in c]
-            g.par.sizex, g.par.sizey, g.par.sizez = [float(max(v, 0.1)) for v in sz]
+            g.par.sizex, g.par.sizey, g.par.sizez = [float(max(v, 0.1 * K)) for v in sz]
             # [BTDR:EXT.RTGRIDDIMS] (0.7.3) probe counts follow the shape of the bounds, so the spacing is about the
             # same on all three axes (budget 16x8x16 = 2048 probes on High, x0.75 per axis on Low). A fixed 16x8x16
             # over a wide, shallow scene gave 0.1 m spacing in depth and 0.7 m across: the per-probe noise of
             # neighbouring depth layers showed as coloured stripes on flat surfaces.
-            szc = np.maximum(sz, 0.1)
+            szc = np.maximum(sz, 0.1 * K)
             step = float((np.prod(szc) / 2048.0) ** (1.0 / 3.0))
             for par, v in zip((g.par.cols, g.par.rows, g.par.slices), szc):
                 n = int(min(40, max(3, round(float(v) / step) + 1)))

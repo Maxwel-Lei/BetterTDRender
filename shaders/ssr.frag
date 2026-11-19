@@ -38,7 +38,7 @@ void main()
 
     int steps = int(uSSR.y);
     float jit = ign(gl_FragCoord.xy + 7.0, uFrame.x);
-    vec3 start = P + N * (0.004 + 0.002 * length(p0.xyz));
+    vec3 start = P + N * (UM(0.004) + 0.002 * length(p0.xyz));
     float tFront = 0.0, tHit = 0.0;                     // last sample where the ray was in front of the depth buffer
     bool hit = false, behind = false;
     // [BTDR:SSR.MARCH] quadratic step distribution: fine near the surface, coarse far away
@@ -49,7 +49,7 @@ void main()
     // The depth gap at the refined point changes smoothly with the ray, so edges come out smooth.
     for (int i = 1; i <= steps; i++) {
         float f = (float(i) - 1.0 + jit) / float(steps);
-        float t = uSSR.x * f * f + 0.01;
+        float t = uSSR.x * f * f + UM(0.01);
         vec3 Q = start + R * t;
         vec2 uv = curUV(Q);
         if (!inScreen(uv)) break;
