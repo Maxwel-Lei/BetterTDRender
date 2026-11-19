@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.8.1'
+VERSION = '0.8.2'
 BLOG = []
 
 def _read(rel):
@@ -914,7 +914,7 @@ try:
     _tmp = op('/project1').op('btdr_build') or op('/project1').create(baseCOMP, 'btdr_build')
     _tmp.nodeX, _tmp.nodeY = 900, -250
     _C = build_btdr(_tmp)
-    # [BTDR:BUILD.ANNOT] (0.8.1) TD 自带的注释：节点 Comment、分组框、总览面板（ext/annotations.py）。只加注释，不动节点
+    # [BTDR:BUILD.ANNOT] (0.8.1, 0.8.2 起含 layout) TD 自带的注释：先按功能重排节点位置，再加节点 Comment、分组框、总览面板（ext/annotations.py）。不增删节点、不改连线
     _ns = {}
     exec(open(BT + '/ext/annotations.py', encoding='utf-8').read(), _ns)
     _ns['annotate'](_C, VERSION, BLOG)

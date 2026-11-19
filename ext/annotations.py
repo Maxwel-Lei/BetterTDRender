@@ -1,9 +1,9 @@
-# [BTDR:FILE.ANNOT] annotations.py — 给 renderBTDR 内部网络加 TD 自带的注释（0.8.1）。
+# [BTDR:FILE.ANNOT] annotations.py — 给 renderBTDR 内部网络加 TD 自带的注释（0.8.2）。
 # build.py 构建完后执行 annotate(C)：
 #   1. 每个节点的 Comment（NOTES / 着色器 DAT 按 SHADER_NOTES 自动生成）；
-#   2. 按功能分组的 Network Box（GROUPS，框里混进别组的节点时自动跳过，记进构建日志）；
+#   2. 按功能重排节点位置（layout），再给每组画 Network Box（GROUPS）；
 #   3. 网络左侧的总览面板（OVERVIEW）。
-# 只加注释，不移动、不增删任何节点和连线。文字面向会用 TD 的人：说清楚做什么、输入从哪来、受哪些参数控制、
+# 0.8.2 起 layout() 会按功能重排节点位置（只改 nodeX/nodeY），不增删任何节点、不改连线和参数。文字面向会用 TD 的人：说清楚做什么、输入从哪来、受哪些参数控制、
 # 对应文档里的哪个锚点（[BTDR:...]，在 docs/IMPLEMENTATION*.md 里搜）。
 
 NOTES = {
@@ -146,28 +146,33 @@ SHADER_NOTES = {
 }
 
 # 分组框：标题、成员、颜色
+# 分组按一帧的数据流排序；layout() 按这个顺序把每组节点排成网格、再把各组像书架一样从左到右、从上到下摆放。
+# 每项：(标题, 成员, 底色, 每行几个)。成员 None = 所有着色器 DAT（*_frag / *_comp / *_vert）。
 GROUPS = [
-    ('脚本与控制：扩展、参数回调、场景监视', ['BTDRExt', 'parexec', 'execute', 'scene_watch', 'cover_warm', 'uniforms_callbacks', 'status'], (0.35, 0.35, 0.45)),
-    ('场景镜像与相机：Refresh 时重建，不要手动改', ['scene', 'cam_jit', 'uniforms', 'white'], (0.3, 0.4, 0.3)),
-    ('G-Buffer：延迟渲染第一步，4 个缓冲', ['gbuffer', 'gbuf0', 'gbuf1', 'gbuf2', 'gbuf3'], (0.25, 0.35, 0.5)),
-    ('主光阴影：只在变化时重画', ['suncam', 'shadow', 'shadow_cache', 'shadow_src', 'mat_shadow'], (0.4, 0.35, 0.25)),
-    ('Height-Field AO：顶视高度图', ['topcam', 'hf_render', 'hf_cache', 'hf_src', 'hf_off'], (0.4, 0.35, 0.25)),
-    ('环境光：摄影棚 / HDRI / 环境灯，预过滤', ['env_studio', 'env_user', 'env_src', 'env_atlas'], (0.25, 0.4, 0.45)),
-    ('透明层：前景 G-Buffer + 背面测厚度', ['tgbuffer', 'tgbuf0', 'tgbuf1', 'tgbuf2', 'tgbuf3', 'tgbuf4', 'tback', 'tback1', 'tback2'], (0.3, 0.3, 0.5)),
-    ('折射合成与透明开关', ['refract', 'refract1', 'refract2', 'trans_src', 'tpos_src', 'tnrm_src'], (0.3, 0.3, 0.5)),
-    ('屏幕空间反射 SSR', ['ssr', 'ssr_acc', 'ssr_hist', 'ssr_off', 'ssr_src'], (0.4, 0.3, 0.4)),
-    ('屏幕空间 AO + 反弹光', ['ssgi', 'ssgi_acc', 'ssgi_hist', 'ssgi_off', 'ssgi_src'], (0.4, 0.3, 0.4)),
-    ('体积雾：散射 → 累积 → 积分 → 叠加', ['fog_hist', 'fog_accum', 'fog_scatter', 'fog_integrate', 'fog_apply'], (0.35, 0.35, 0.35)),
-    ('硬件光追：代理、探针 GI、反射、折射', ['rt_scene', 'rt_scene_t', 'rt_mat_chop', 'rt_static_chop', 'rt_probe_grid', 'rt_probes',
-        'probe_sh0', 'probe_sh1', 'probe_sh2', 'probe_sh3', 'probe_src0', 'probe_src1', 'probe_src2', 'probe_src3', 'rt_off',
-        'rt_refl_grid', 'rt_refl', 'rt_refl_top', 'rt_probe_off', 'rt_acc', 'rt_src', 'rt_hist', 'rt_refr_off',
-        'rt_refr', 'rt_refr_top', 'rt_refr_acc', 'rtr_src', 'rt_refr_hist'], (0.45, 0.3, 0.25)),
-    ('自动曝光', ['ae_hist', 'ae_lum', 'ae_avg', 'ae_exposure', 'ae_src', 'ae_off'], (0.4, 0.4, 0.25)),
-    ('Bloom：6 级下采样 + 上采样', ['bloom_pre', 'bloom_d1', 'bloom_d2', 'bloom_d3', 'bloom_d4', 'bloom_d5', 'bloom_d6',
-        'bloom_u0', 'bloom_u1', 'bloom_u2', 'bloom_u3', 'bloom_u4', 'bloom_u5', 'bloom_lvl', 'bloom_off', 'bloom_src'], (0.4, 0.4, 0.25)),
-    ('主链：合成 → TAA → 调色 → 输出', ['composite', 'taa', 'grade', 'view', 'out1', 'out2', 'out3', 'depth', 'debug', 'taa_hist',
-        'lighting', 'lit1', 'lit2', 'lit3', 'fog_src', 'dbg_sss1', 'dbg_sss2'], (0.5, 0.45, 0.2)),
-    ('着色器源码（由 build.py 生成，改 btdr/shaders/ 里的源文件）', None, (0.3, 0.3, 0.3)),   # None = 所有 *_frag / *_comp / *_vert
+    ('脚本与控制：扩展、参数回调、场景监视', ['BTDRExt', 'parexec', 'execute', 'scene_watch', 'uniforms_callbacks', 'status'], (0.35, 0.35, 0.45), 3),
+    ('场景镜像与相机：Refresh 时重建，不要手动改', ['uniforms', 'uniforms_callbacks1', 'scene', 'cam_jit', 'white'], (0.3, 0.4, 0.3), 3),
+    ('G-Buffer：延迟渲染第一步，4 个缓冲', ['gbuffer', 'gbuf0', 'gbuf1', 'gbuf2', 'gbuf3'], (0.25, 0.35, 0.5), 5),
+    ('主光阴影：只在变化时重画', ['mat_shadow', 'suncam', 'shadow', 'shadow_cache', 'shadow_src'], (0.4, 0.35, 0.25), 3),
+    ('Height-Field AO：顶视高度图', ['topcam', 'hf_render', 'hf_cache', 'hf_off', 'hf_src'], (0.4, 0.35, 0.25), 3),
+    ('环境光：摄影棚 / HDRI / 环境灯，预过滤', ['env_studio', 'env_user', 'env_src', 'env_atlas'], (0.25, 0.4, 0.45), 2),
+    ('屏幕空间反射 SSR', ['ssr', 'ssr_acc', 'ssr_hist', 'ssr_off', 'ssr_src'], (0.4, 0.3, 0.4), 3),
+    ('屏幕空间 AO + 反弹光', ['ssgi', 'ssgi_acc', 'ssgi_hist', 'ssgi_off', 'ssgi_src'], (0.4, 0.3, 0.4), 3),
+    ('硬件光追：代理、探针 GI、反射、折射', ['rtscene', 'rt_mat', 'rt_static', 'rt_scene', 'rt_scene_t', 'rt_mat_chop', 'rt_static_chop',
+        'rt_probe_grid', 'rt_probes', 'probe_sh0', 'probe_sh1', 'probe_sh2', 'probe_sh3', 'probe_src0', 'probe_src1', 'probe_src2', 'probe_src3',
+        'rt_probe_off', 'rt_off', 'rt_refl_grid', 'rt_refl', 'rt_refl_top', 'rt_acc', 'rt_hist', 'rt_src',
+        'rt_refr', 'rt_refr_top', 'rt_refr_acc', 'rt_refr_hist', 'rt_refr_off', 'rtr_src'], (0.45, 0.3, 0.25), 7),
+    ('光照合成：composite 把所有结果合成 HDR 画面', ['lighting', 'lit1', 'lit2', 'lit3', 'depth', 'fog_src', 'composite'], (0.5, 0.45, 0.2), 4),
+    ('次表面散射：水平 → 垂直两次模糊', ['sss_irr', 'sss_h', 'sss_blur', 'sss_v', 'sss_src', 'dbg_sss1', 'dbg_sss2'], (0.45, 0.3, 0.35), 4),
+    ('透明层：前景 G-Buffer + 背面测厚度', ['tgbuffer', 'tgbuf0', 'tgbuf1', 'tgbuf2', 'tgbuf3', 'tgbuf4', 'tback', 'tback1', 'tback2'], (0.3, 0.3, 0.5), 5),
+    ('折射合成与透明开关', ['tpos_src', 'tnrm_src', 'refract', 'refract1', 'refract2', 'trans_src'], (0.3, 0.3, 0.5), 3),
+    ('体积雾：散射 → 累积 → 积分 → 叠加', ['fog_hist', 'fog_scatter', 'fog_accum', 'fog_integrate', 'fog_apply'], (0.35, 0.35, 0.35), 5),
+    ('抗锯齿、景深、运动模糊（第 2 个输出口 HDR 在这里）', ['taa_hist', 'taa', 'dof', 'post_dof', 'mblur', 'post_mb'], (0.5, 0.45, 0.2), 6),
+    ('自动曝光', ['ae_hist', 'ae_lum', 'ae_avg', 'ae_exposure', 'ae_off', 'ae_src'], (0.4, 0.4, 0.25), 3),
+    ('Bloom：6 级下采样（上行）+ 上采样（下行）', ['bloom_pre', 'bloom_d1', 'bloom_d2', 'bloom_d3', 'bloom_d4', 'bloom_d5', 'bloom_d6',
+        'bloom_lvl', 'bloom_u5', 'bloom_u4', 'bloom_u3', 'bloom_u2', 'bloom_u1', 'bloom_u0', 'bloom_off', 'bloom_src'], (0.4, 0.4, 0.25), 7),
+    ('输出：调色 → Debug View → 封面切换 → 输出口', ['grade', 'debug', 'view', 'out_src', 'out1', 'out2', 'out3'], (0.5, 0.45, 0.2), 4),
+    ('封面：没有场景时显示的说明画面', ['cover', 'cover_state', 'cover_title', 'cover_credit', 'cover_status', 'cover_ov0', 'cover_ov1', 'cover_ov2', 'cover_warm'], (0.3, 0.3, 0.35), 5),
+    ('着色器源码（由 build.py 生成，改 btdr/shaders/ 里的源文件）', None, (0.3, 0.3, 0.3), 10),
 ]
 
 OVERVIEW_TITLE = 'BetterTDRender 内部结构总览（%s）'
@@ -197,9 +202,55 @@ OVERVIEW = """这是 renderBTDR 的内部网络。正常使用不需要进来：
 - 这个网络由 btdr/build.py 生成；改着色器请改 btdr/shaders/ 里的源文件，再运行 build.py。"""
 
 
+SHADER_TYPES = ('_frag', '_comp', '_vert')
+CW, CH = 190, 160          # 网格单元：节点 130×90（COMP 160×130）+ 间距
+GAP_X, GAP_Y = 160, 200    # 组与组之间的间距（GAP_Y 包含框标题栏）
+SHELF_W = 4400             # 一排最宽多少，超出就换到下一排
+
+
+def _members(C, kids, names):
+    if names is None:
+        return sorted([c for c in kids if c.family == 'DAT' and c.name.endswith(SHADER_TYPES)], key=lambda c: c.name)
+    return [C.op(n) for n in names if C.op(n) is not None]
+
+
+def _title_w(t):
+    """标题大约多宽（网络单位）：中文字 ≈ 20，其他字符 ≈ 11。"""
+    return sum(20 if ord(ch) > 0x2e80 else 11 for ch in t) + 40
+
+
+def layout(C, log):
+    """[BTDR:ANNOT.LAYOUT] 只改节点的 nodeX / nodeY：按 GROUPS 把同组节点排在一起。不增删节点、不改连线和参数。"""
+    kids = [c for c in C.children if c.OPType != 'annotateCOMP']
+    groups, seen = [], set()
+    for title, names, col, ncol in GROUPS:
+        mem = [c for c in _members(C, kids, names) if c.id not in seen]
+        seen |= set(c.id for c in mem)
+        if mem:
+            groups.append((title, mem, col, ncol))
+    rest = [c for c in kids if c.id not in seen]
+    if rest:                                   # 新加的节点还没写进 GROUPS：先放进“其他”，构建日志里提示
+        groups.append(('其他（新节点，还没归组）', sorted(rest, key=lambda c: c.name), (0.3, 0.3, 0.3), 6))
+        log.append('annotations: ungrouped nodes: ' + ', '.join(c.name for c in rest))
+    x, y, shelf_h = 0, 0, 0
+    placed = []
+    for title, mem, col, ncol in groups:
+        ncol = min(ncol, len(mem))
+        nrow = (len(mem) + ncol - 1) // ncol
+        w, h = max(ncol * CW, _title_w(title)), nrow * CH
+        if x > 0 and x + w > SHELF_W:          # 换排（TD 网络里 Y 向上为正，所以往下排是减）
+            x, y, shelf_h = 0, y - shelf_h - GAP_Y, 0
+        for i, c in enumerate(mem):
+            c.nodeX = x + (i % ncol) * CW
+            c.nodeY = y - (i // ncol) * CH
+        placed.append((title, mem, col, x + w - 2 * 30))
+        x += w + GAP_X
+        shelf_h = max(shelf_h, h)
+    return placed
+
+
 def annotate(C, version, log):
-    """在组件 C 里加注释。只加 annotateCOMP 和节点 Comment，不改节点位置和连线。"""
-    shader_types = ('_frag', '_comp', '_vert')
+    """在组件 C 里加注释：先 layout() 按功能重排节点位置，再加节点 Comment、分组框和总览面板。"""
     n_notes = 0
     for c in C.children:
         txt = NOTES.get(c.name)
@@ -216,20 +267,16 @@ def annotate(C, version, log):
                 n_notes += 1
             except Exception:
                 pass
-    # 分组框：成员的外接框加边距；框里混进别组节点就跳过（不移动节点）
+    for a in [c for c in C.children if c.OPType == 'annotateCOMP']:
+        a.destroy()
+    placed = layout(C, log)
     kids = [c for c in C.children if c.OPType != 'annotateCOMP']
     boxes, skipped = 0, []
-    M = 50
-    for title, names, col in GROUPS:
-        if names is None:
-            mem = [c for c in kids if c.family == 'DAT' and c.name.endswith(shader_types)]
-        else:
-            mem = [C.op(n) for n in names if C.op(n) is not None]
-        if not mem:
-            continue
+    M = 30
+    for title, mem, col, xr in placed:
         x0 = min(c.nodeX for c in mem) - M
         y0 = min(c.nodeY for c in mem) - M
-        x1 = max(c.nodeX + c.nodeWidth for c in mem) + M
+        x1 = max(max(c.nodeX + c.nodeWidth for c in mem), xr) + M
         y1 = max(c.nodeY + c.nodeHeight for c in mem) + M + 40          # 40：标题栏
         ids = set(c.id for c in mem)
         intruders = [c.name for c in kids if c.id not in ids

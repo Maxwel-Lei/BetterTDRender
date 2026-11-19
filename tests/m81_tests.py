@@ -91,7 +91,9 @@ try:
     R.par.Raytracing = False; R.par.Bloom = 0; R.par.Ssr = False; R.par.Ssgi = False
 
     def s1():
-        check('version 0.8.1', R.par.Version.eval() == '0.8.1', R.par.Version.eval())
+        import re as _re
+        _v = _re.search(r"^VERSION = '([^']+)'", open(BT + '/build.py', encoding='utf-8').read(), _re.M).group(1)
+        check('version (same as build.py)', R.par.Version.eval() == _v, '%s / %s' % (R.par.Version.eval(), _v))
         g0 = arr(R.op('gbuf0'))
         H, W = g0.shape[:2]
         row = g0[H // 2, W // 4: 3 * W // 4, 0]
