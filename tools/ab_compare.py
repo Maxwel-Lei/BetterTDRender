@@ -40,7 +40,8 @@ try:
     for X in (A, B):
         R = X.op('renderBTDR1')
         for k, v in PARS.items():
-            setattr(R.par, k, v)
+            if hasattr(R.par, k):          # a parameter the older build does not have yet is skipped (0.8.4)
+                setattr(R.par, k, v)
     keep = N.create(executeDAT, 'keep')
     keep.text = ("def onFrameStart(frame):\n"
                  "    for x in ('A', 'B'):\n"

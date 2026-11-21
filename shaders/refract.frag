@@ -8,6 +8,7 @@
 //            8 back faces of the transparent objects (tback): camera-relative position, 9 their normals,
 //            10 shadow map (shadow_src), 11 sharp environment,
 //            12 ray-traced transmission (rtr_src, M6c: radiance | valid, reduced resolution; [BTDR:REFR.RT])
+//            13 (0.8.4) transparent layer RT5: absorption colour | refraction scale ([BTDR:GBUF.TRANS2])
 // 3D inputs: 0 pre-filtered environment atlas
 // outputs: 0 image, 1 combined camera-relative position (front layer where it is in front), 2 combined normal | roughness
 //   (fog_apply, TAA, depth of field and motion blur read 1 / 2, so glass edges get the glass depth)
@@ -58,6 +59,9 @@ void main()
     float absd = max(UM(t4.y), 1e-6);          // [BTDR:UNI.UNIT] absorption distance is in metres
     bool thin = t4.z > 0.5;
     float rough = clamp(tn.w, 0.02, 1.0);
+    vec4 t5 = fetchAt(sTD2DInputs[13], uv);
+    vec3 absorbC = clamp(t5.rgb, 0.0, 1.0);          // [BTDR:REFR.ABSORBCOLOR] (0.8.4, G5)
+    float rscale = max(t5.a, 0.0);                    // [BTDR:REFR.SCALE] (0.8.4, G3) 1 = physical
 
     vec3 P = tp.xyz + uCamPos.xyz;
     vec3 V = normalize(-tp.xyz);
@@ -86,6 +90,8 @@ void main()
     if (!thin) {
         vec3 T1 = refract(I, N, 1.0 / ior);
         if (dot(T1, T1) < 1e-6) T1 = I;
+        // [BTDR:REFR.SCALE] the bend is scaled around the straight ray (0 = no refraction, > 1 = stronger than glass)
+        T1 = normalize(I + (T1 - I) * rscale);
         vec3 Pb = P + T1 * thick;
         vec2 ub = curUV(Pb);
         vec3 Nb = normalize(bn.xyz);
@@ -102,7 +108,15 @@ void main()
         }
         if (dot(Nb, T1) > 0.0) Nb = -Nb;
         vec3 T2 = refract(T1, Nb, ior);
-        T = (dot(T2, T2) > 1e-6 && -dot(T1, Nb) > 0.3) ? normalize(T2) : I;
+        // [BTDR:REFR.RIMBLEND] (0.8.4) near the critical angle (total internal reflection from cos = sqrt(1 - 1/IOR^2),
+        // 0.745 for glass) the exit direction fades to the view direction over 0.15 instead of switching: a solid
+        // ball showed a sharp circle where the switch happened ("a ball inside the ball"). A real ball lens has a
+        // reflective / dark rim there; this keeps it soft without tracing the internal bounce.
+        float ex = -dot(T1, Nb);
+        float cc = sqrt(max(1.0 - 1.0 / (ior * ior), 0.0));
+        float wE = dot(T2, T2) > 1e-6 ? smoothstep(cc, min(cc + 0.15, 1.0), ex) : 0.0;
+        T = wE > 0.0 ? normalize(mix(I, normalize(T2), wE)) : I;
+        T = normalize(I + (T - I) * rscale);
     }
 
     // [BTDR:REFR.SAMPLE] march the transmitted ray against the opaque depth (exponential steps, ~2 cm .. 20 m) and read
@@ -171,7 +185,7 @@ void main()
     // [BTDR:REFR.ABSORB] Beer-Lambert: the base colour is the transmittance after `absorption distance` of material
     // [BTDR:REFR.THINTINT] (0.8.1) a thin sheet transmits a lighter colour than its surface colour (light passes once
     // through a thin layer); the slot's Thin Transmission Lift mixes the tint toward white, 0 = the base colour as before
-    vec3 tint = thin ? mix(base, vec3(1.0), clamp(t4.w, 0.0, 1.0)) : exp(log(max(base, vec3(1e-3))) * (thick / absd));
+    vec3 tint = thin ? mix(absorbC, vec3(1.0), clamp(t4.w, 0.0, 1.0)) : exp(log(max(absorbC, vec3(1e-3))) * (thick / absd));
     vec3 transT = trans * tint;
     // [BTDR:REFR.RT] M6c (uRT4.w: 1 Hybrid, 2 Ray Traced): the traced transmission already contains the bending and the
     // absorption of every glass segment it crossed. Hybrid keeps the sharper screen-space result where it found the

@@ -13,11 +13,16 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 - **texture coordinates and scene unit** (0.8.3): every map follows its PBR MAT's Extend, Filter, UV set (uv0 + one
   more) and Screen Space mode, pixel for pixel like the native Render TOP; Scene Unit (Meters / Centimeters / Inches …)
   keeps AO, reflections, fog and scattering at real-world size in centimetre or inch scenes.
+- **energy compensation and glass controls** (0.8.4): rough metals keep the light that bounces between microfacets
+  (multiple-scattering compensation); Refraction Scale and a separate Absorption Color per refractive slot; hashed
+  alpha test for thin foliage; traced reflections are upsampled per surface (no blocks at object edges).
 
 ![refraction test scene: glass ball, frosted panel, tinted cube, water block](docs/images/m6_refraction.jpg)
 ![ray-traced refraction: the same scene with Refraction Method = Ray Traced](docs/images/m6c_raytraced.jpg)
 ![subsurface scattering off / on: jade Buddha, back-lit white-jade plaque](docs/images/sss_compare.jpg)
 ![texture coordinates: BTDR's G-Buffer and the native Render TOP with a second UV set](docs/images/uv_compare.jpg)
+![energy compensation off / on: rough gold, smooth gold, rough plastic](docs/images/energy_compare.jpg)
+![Refraction Scale 0 / 1 / 2 and a red Absorption Color](docs/images/refract_scale_compare.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
@@ -25,7 +30,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.8.3** (texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.8.4** (energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 

@@ -12,6 +12,30 @@ void main()
     vec4 cur = texture(sTD2DInputs[0], vUV.st);
     if (uAcc.z > 0.5 || any(notEqual(uTD2DInfos[1].res.zw, uTD2DInfos[0].res.zw))) { fragColor = cur; return; }
     vec4 m1 = vec4(0.0), m2 = vec4(0.0);
+    vec4 p = fetchRel(vUV.st);
+#ifdef RT_ACC
+    // [BTDR:ACCUM.RTEDGE] (0.8.4) the neighbourhood only counts texels on the same surface (normal, plane distance):
+    // a plain 3x3 here is a 12x12-pixel block at full resolution and mixed the box top into its face
+    vec3 nC = texture(sTD2DInputs[3], vUV.st).xyz;
+    bool okC = dot(nC, nC) > 0.25;
+    nC = okC ? normalize(nC) : vec3(0.0, 1.0, 0.0);
+    float tolC = UM(0.02) + 0.02 * length(p.xyz);
+    float wsum = 0.0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++) {
+            vec2 q = vUV.st + vec2(x, y) * px;
+            vec4 s = texture(sTD2DInputs[0], q);
+            float wq = 1.0;
+            if (okC && (x != 0 || y != 0)) {
+                vec3 nq = texture(sTD2DInputs[3], q).xyz;
+                vec3 pq = fetchRel(q).xyz;
+                wq = dot(nq, nq) > 0.25 ? pow(max(dot(nC, normalize(nq)), 0.0), 16.0) * exp(-abs(dot(pq - p.xyz, nC)) / tolC) : 0.0;
+            }
+            m1 += s * wq; m2 += s * s * wq; wsum += wq;
+        }
+    vec4 mu = m1 / wsum;
+    vec4 sig = sqrt(max(m2 / wsum - mu * mu, 0.0));
+#else
     for (int y = -1; y <= 1; y++)
         for (int x = -1; x <= 1; x++) {
             vec4 s = texture(sTD2DInputs[0], vUV.st + vec2(x, y) * px);
@@ -19,7 +43,7 @@ void main()
         }
     vec4 mu = m1 / 9.0;
     vec4 sig = sqrt(max(m2 / 9.0 - mu * mu, 0.0));
-    vec4 p = fetchRel(vUV.st);
+#endif
     vec3 wp = p.xyz + uCamPos.xyz;
     vec2 vel = isGeoRel(p) ? (curUV(wp) - prevUV(wp)) : vec2(0.0);   // jitter-free screen motion
     vec2 puv = vUV.st - vel;

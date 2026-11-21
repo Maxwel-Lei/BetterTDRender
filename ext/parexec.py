@@ -22,7 +22,7 @@ def onValueChange(par, prev):
             parent().ApplyPreset(i)
         elif n.endswith(('geo', 'shadow', 'inrt')):
             parent().Refresh()
-        elif n.endswith(('ior', 'absorb', 'thin')) and parent().par.Refrmethod.eval() != 'screen':
+        elif n.endswith(('ior', 'absorb', 'thin', 'scale', 'absorbsrc', 'absorbcolorr', 'absorbcolorg', 'absorbcolorb')) and parent().par.Refrmethod.eval() != 'screen':
             parent().Refresh()           # the traced glass reads IOR / absorption from rt_mat ([BTDR:EXT.RTREFR])
     elif n == 'Quality':
         parent().ApplyQuality()

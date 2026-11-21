@@ -76,9 +76,20 @@ def step4():
     except Exception:
         check('step4 exception', False, traceback.format_exc()[-400:]); finish()
 
-def step5():
+def step5(tries=0):
     # [BTDR:TEST.M6C] ray-traced refraction: glass in the second proxy scene, traced pixels where the glass is, not black
+    # (0.8.4) the first read after switching to Ray Traced can still see the warm-up of a freshly rebuilt rt_refr
+    # (the Refresh rebuilds the proxy scene; its first frames are garbage, which `refract` already ignores): read again
+    # up to 4 times, 30 frames apart, and log how many frames it took ([BTDR:TEST.M6CWARM])
     try:
+        a = px(R.op('rt_refr_top'))
+        v = a[..., 3] > 0.5
+        m = a[v][:, :3].mean() if v.any() else 0.0
+        ok = 0.05 < v.mean() < 0.9 and bool(np.isfinite(a).all()) and 0.05 < m < 50.0
+        if not ok and tries < 4:
+            LOG.append('INFO M6c warm-up read %d: valid %.3f mean %.3f' % (tries, v.mean(), m))
+            run('args[0](args[1])', step5, tries + 1, delayFrames=30)
+            return
         errs = [o.path for o in R.findChildren() if o.errors()]
         check('M6c: no errors', not errs, ' '.join(errs[:5]))
         check('M6c: switch on', R.op('rtr_src').par.index.eval() == 1 and R.op('uniforms')[3][39] > 1.5)

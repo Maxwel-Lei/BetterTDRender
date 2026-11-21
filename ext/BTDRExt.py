@@ -265,6 +265,10 @@ class BTDRExt:
         trans = (1, tr.get('ior', 'parent.BTDR.par.Defaultior'), tr.get('absorb', 'parent.BTDR.par.Absorbdist'),
                  tr.get('thin', 0))
         trans2 = (0, -1, tr.get('rough', -1), 0)
+        # [BTDR:EXT.TRANS3] (0.8.4) absorption colour (r < 0: the base colour) | refraction scale (G3, G5);
+        # uOpt x: hashed alpha test (G4)
+        trans3 = tr.get('trans3', (-1, 1, 1, 1))
+        opt = ("1 if parent.BTDR.par.Alphatestmode == 'hashed' else 0", 0, 0, 0)
         state, uv0, uv1 = {}, (0, 0, 0, 0), (0, 0, 0, 0)
         t = src.OPType if src is not None else None
         if t == 'pbrMAT':
@@ -298,7 +302,7 @@ class BTDRExt:
         k = -1 if (sss is None or t == 'constantMAT') else sss
         scr = ('1.0 / max(1, parent.BTDR.par.Resolutionw.eval())', '1.0 / max(1, parent.BTDR.par.Resolutionh.eval())', 0, 0)
         self._vecs(m, [('uBase', base), ('uPBR', pbr), ('uEmit', emit), ('uChan', chan), ('uTrans', trans), ('uTrans2', trans2),
-                       ('uSSS', (k, 0, 0, 0)), ('uUV0', uv0), ('uUV1', uv1), ('uScr', scr)])
+                       ('uTrans3', trans3), ('uOpt', opt), ('uSSS', (k, 0, 0, 0)), ('uUV0', uv0), ('uUV1', uv1), ('uScr', scr)])
         self._samplers(m, list(maps.items()), state)
 
     def UnitsPerMeter(self):
@@ -438,7 +442,10 @@ class BTDRExt:
         if slot is None:
             return None
         P = 'parent.BTDR.par.Refr%d' % slot
-        return dict(ior=P + 'ior', absorb=P + 'absorb', thin='(1 + %sthinlift) if %sthin else 0' % (P, P), rough=P + 'rough')
+        cust = "%sabsorbsrc == 'custom'" % P
+        trans3 = tuple('(%sabsorbcolor%s if %s else -1)' % (P, c, cust) for c in 'rgb') + (P + 'scale',)
+        return dict(ior=P + 'ior', absorb=P + 'absorb', thin='(1 + %sthinlift) if %sthin else 0' % (P, P), rough=P + 'rough',
+                    trans3=trans3)
 
     def _classify(self, geos, warn):
         """[BTDR:EXT.TRANSCLASS] per Geometry COMP: kind (opaque / refr), slot, cast shadow, in ray tracing.
@@ -696,7 +703,14 @@ class BTDRExt:
                 ior = float(getattr(P, 'Refr%dior' % sl).eval()) if sl is not None else float(P.Defaultior.eval())
                 ab = float(getattr(P, 'Refr%dabsorb' % sl).eval()) if sl is not None else float(P.Absorbdist.eval())
                 thin = bool(getattr(P, 'Refr%dthin' % sl).eval()) if sl is not None else False
-                rr = [(rr[0][0], rr[0][1], rr[0][2], max(ab, 1e-3)), (0.0, 0.0, 0.0, -ior if thin else ior)]
+                # [BTDR:EXT.RTREFRMAT] (0.8.4) absorption colour (custom or the averaged base colour), refraction scale
+                ac = (rr[0][0], rr[0][1], rr[0][2])
+                scl = 1.0
+                if sl is not None:
+                    if getattr(P, 'Refr%dabsorbsrc' % sl).eval() == 'custom':
+                        ac = tuple(float(getattr(P, 'Refr%dabsorbcolor%s' % (sl, c)).eval()) for c in 'rgb')
+                    scl = float(getattr(P, 'Refr%dscale' % sl).eval())
+                rr = [(ac[0], ac[1], ac[2], max(ab, 1e-3)), (scl, 0.0, 0.0, -ior if thin else ior)]
             rows += rr
         if inst:
             warn.append('Instanced geometry is not in the ray-tracing scene yet: %s' % ', '.join(inst))

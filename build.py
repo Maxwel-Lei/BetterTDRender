@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.8.3'
+VERSION = '0.8.4'
 BLOG = []
 
 def _read(rel):
@@ -151,6 +151,8 @@ def build_btdr(dest, name='renderBTDR'):
     pg = C.appendCustomPage('Light')
     p = pg.appendStr('Mainlight', label='Main Light')[0]; p.readOnly = True
     setup(pg.appendFloat('Lightmult', label='Intensity Multiplier')[0], 1.0, 0, 4, True)
+    # [BTDR:BUILD.ENERGY] (0.8.4) multiple-scattering energy compensation for rough metals ([BTDR:LIGHT.ENERGY])
+    setup(pg.appendToggle('Energycomp', label='Energy Compensation')[0], True)
     setup(pg.appendToggle('Shadows', label='Shadows')[0], True)
     setup(pg.appendFloat('Shadowsoftness', label='Shadow Softness')[0], 1.0, 0, 4, True)
     setup(pg.appendToggle('Shadowfit', label='Auto Fit Shadow Range')[0], True)
@@ -272,6 +274,9 @@ def build_btdr(dest, name='renderBTDR'):
     p = setup(pg.appendInt('Transcount', label='Transparent Objects')[0], 0); p.readOnly = True
     setup(pg.appendFloat('Defaultior', label='Default IOR')[0], 1.5, 1.0, 3.0, True)
     setup(pg.appendFloat('Absorbdist', label='Absorption Distance')[0], 1.0, 0.01, 10, True)
+    # [BTDR:BUILD.ALPHAHASH] (0.8.4, G4) how PBR MATs with Alpha Test cut out: their threshold, or hashed
+    # (Wyman & McGuire 2017): thin leaves and wire fences thin out with distance instead of vanishing
+    menu(pg.appendMenu('Alphatestmode', label='Alpha Test Mode')[0], ['threshold', 'hashed'], ['Threshold', 'Hashed'], 'threshold')
     # M6b blended transparency globals ([BTDR:FWD.*]); custom parameters appended after a sequence join its block,
     # so every plain parameter of the page comes before the two sequences
     # [BTDR:BUILD.REFRMETHOD] M6c: how refractive objects find what is behind them ([BTDR:REFR.RT])
@@ -296,8 +301,15 @@ def build_btdr(dest, name='renderBTDR'):
     setup(pg.appendFloat('Absorb', label='Absorption Distance')[0], 1.0, 0.01, 10, True)
     menu(pg.appendMenu('Shadow', label='Cast Shadow')[0], ['none', 'opaque'], ['None', 'Opaque'], 'none')
     setup(pg.appendToggle('Inrt', label='In Ray Tracing')[0], False)
+    # [BTDR:BUILD.REFRSCALE] (0.8.4, G3) refraction offset multiplier, 1 = physically correct
+    setup(pg.appendFloat('Scale', label='Refraction Scale')[0], 1.0, 0.0, 4.0, True)
+    # [BTDR:BUILD.ABSORBCOLOR] (0.8.4, G5) absorption colour: the base colour (as before) or its own colour, so a
+    # tinted coat can sit on a clear medium
+    menu(pg.appendMenu('Absorbsrc', label='Absorption Color Source')[0], ['base', 'custom'], ['Base Color', 'Custom'], 'base')
+    for p_, v in zip(pg.appendRGB('Absorbcolor', label='Absorption Color'), (1.0, 1.0, 1.0)):
+        setup(p_, v)
     try:
-        C.seq.Refr.blockSize = 9       # a sequence keeps at least one block: an empty slot is ignored
+        C.seq.Refr.blockSize = 14       # a sequence keeps at least one block: an empty slot is ignored
     except Exception as e:
         BLOG.append('refr seq %r' % e)
     # M6b blended transparency: Blended slots + how they are layered ([BTDR:FWD.*], built only with M6B)
@@ -659,7 +671,7 @@ def build_btdr(dest, name='renderBTDR'):
     TON = '1 if (parent.BTDR.par.Transparency and parent.BTDR.par.Transcount > 0) else 0'
     tg = place(C.create(renderTOP, 'tgbuffer'), -600, -400)
     tg.par.camera = 'cam_jit'; tg.par.geometry = 'scene/t*'; tg.par.lights = ''
-    tg.par.numcolorbufs = 5
+    tg.par.numcolorbufs = 6     # 0.8.4: RT5 absorption colour | refraction scale ([BTDR:GBUF.TRANS2])
     res(tg, RW, RH, ['rgba16float'])
     _menu(tg.par.antialias, ['aa1', '1x', '1'])
     tg.par.bgcolorr = tg.par.bgcolorg = tg.par.bgcolorb = tg.par.bgcolora = 0
@@ -668,6 +680,8 @@ def build_btdr(dest, name='renderBTDR'):
         r = place(C.create(renderselectTOP, 'tgbuf%d' % i), -400, -300 - i * 80)
         r.par.top = tg; r.par.bufferindex = i
         tgs.append(r)
+    tg5 = place(C.create(renderselectTOP, 'tgbuf5'), -400, -300 - 5 * 80)
+    tg5.par.top = tg; tg5.par.bufferindex = 5
     tb = place(C.create(renderTOP, 'tback'), -600, -800)
     tb.par.camera = 'cam_jit'; tb.par.geometry = 'scene/t*'; tb.par.lights = ''
     tb.par.numcolorbufs = 3
@@ -686,7 +700,7 @@ def build_btdr(dest, name='renderBTDR'):
     RTRON = ("1 if (parent.BTDR.par.Transparency and parent.BTDR.par.Transcount > 0 and parent.BTDR.par.Raytracing "
              "and parent.BTDR.par.Rtavailable and parent.BTDR.par.Refrmethod != 'screen') else 0")
     rrr = rtpop('rt_refr', 'rt_refr.comp', rgd, ['Refr'], C.op('uniforms'),
-                [('sTNrm', 'tgbuf1'), ('sTPos', 'tgbuf2'), ('sTIor', 'tgbuf4'), ('sTBase', 'tgbuf0'), ('sPos', 'gbuf2'), ('sEnv', 'env_src'),
+                [('sTNrm', 'tgbuf1'), ('sTPos', 'tgbuf2'), ('sTIor', 'tgbuf4'), ('sTBase', 'tgbuf5'), ('sPos', 'gbuf2'), ('sEnv', 'env_src'),
                  ('sEnvAtlas', 'env_atlas')] + [('sProbe%d' % i, 'probe_src%d' % i) for i in range(4)],
                 RX + 400, RY - 1200, 'fastbuild', scene=scnt)
     for i in range(rrr.seq.sampler.numBlocks):        # positions must not be blended between texels
@@ -703,7 +717,7 @@ def build_btdr(dest, name='renderBTDR'):
     rrs = place(C.create(switchTOP, 'rtr_src'), RX + 1000, RY - 1200)
     rroff.outputConnectors[0].connect(rrs); rra.outputConnectors[0].connect(rrs)
     rrs.par.index.expr = RTRON
-    refr = glsl('refract', D['refract.frag'], [ssrc, rs[2], rs[1]] + tgs + [tbs[1], tbs[0], shs, esw, rrs, eat],
+    refr = glsl('refract', D['refract.frag'], [ssrc, rs[2], rs[1]] + tgs + [tbs[1], tbs[0], shs, esw, rrs, eat, tg5],
                 RW, RH, ['rgba16float'], 400, -300)
     refr.par.numcolorbufs = 3
     try: _menu(refr.par.inputfiltertype, ['mipmap'])

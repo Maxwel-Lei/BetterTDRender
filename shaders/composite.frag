@@ -32,6 +32,34 @@ vec4 texHold(sampler2D t, vec2 uv)
     vec2 r = vec2(textureSize(t, 0));
     return texture(t, clamp(uv, 0.5 / r, 1.0 - 0.5 / r));
 }
+// [BTDR:COMP.RTUP] (0.8.4) joint bilateral upsampling of the reduced-resolution traced reflections: of the four
+// nearest low-resolution texels, keep the ones that sat on the same surface (normal and plane distance of the
+// G-Buffer at the texel centre, which is where rt_refl traced from). Plain bilinear blended the ratio of a box top
+// into its front face and of the floor into the shadow under a ball: the 4x4-pixel dark blocks of 0.8.3.
+vec4 rtUpsample(vec2 uv, vec3 N, vec3 rp)
+{
+    vec2 r = vec2(textureSize(IN_RT, 0));
+    vec2 f = uv * r - 0.5;
+    vec2 i0 = floor(f);
+    vec2 fr = f - i0;
+    float tol = UM(0.02) + 0.02 * length(rp);
+    vec4 acc = vec4(0.0), accB = vec4(0.0);
+    float ws = 0.0, wsB = 0.0;
+    for (int j = 0; j < 2; j++)
+        for (int i = 0; i < 2; i++) {
+            vec2 tc = clamp((i0 + vec2(i, j) + 0.5) / r, 0.5 / r, 1.0 - 0.5 / r);
+            vec4 s = textureLod(IN_RT, tc, 0.0);
+            float wb = (i == 1 ? fr.x : 1.0 - fr.x) * (j == 1 ? fr.y : 1.0 - fr.y);
+            vec4 nq = textureLod(LC_NRM, tc, 0.0);
+            vec3 pq = textureLod(LC_POS, tc, 0.0).xyz;
+            float wn = dot(nq.xyz, nq.xyz) > 0.25 ? pow(max(dot(N, normalize(nq.xyz)), 0.0), 16.0) : 0.0;
+            float wd = exp(-abs(dot(pq - rp, N)) / tol);
+            float w = wb * wn * wd;
+            acc += s * w; ws += w;
+            accB += s * wb; wsB += wb;
+        }
+    return ws > 1e-3 ? acc / ws : accB / max(wsB, 1e-6);
+}
 layout(location = 0) out vec4 fragColor;
 // [BTDR:COMP.SSSOUT] second colour buffer, only allocated while a Subsurface slot holds an object (written always:
 // a write without a buffer is dropped). Not #if TD_NUM_COLOR_BUFFERS: TD does not recompile when the count changes.
@@ -160,7 +188,11 @@ void main()
     vec3 bounce = diffuseColor * gi.rgb * w * giScale;
     vec3 diff = (ambD + diffuseColor * uAmb.rgb * w) * aoD + bounce;   // [BTDR:COMP.AMBIENT] Ambient Light COMPs
     // [BTDR:COMP.RTSPEC] M4: traced reflections scale the environment specular by traced / environment
-    vec4 rt = texHold(IN_RT, uv);
+    vec4 rt = vec4(1.0, 1.0, 1.0, 0.0);
+    if (uRT.y > 0.5 && w > 1e-4) {
+        vec4 g1r = texture(LC_NRM, uv);
+        rt = rtUpsample(uv, normalize(g1r.xyz), texture(LC_POS, uv).xyz);
+    }
     float rtw = clamp(rt.a * uRT.y * uRT4.z, 0.0, 1.0);
     vec3 envS = mix(ambS, ambS * rt.rgb, rtw);
     // [BTDR:COMP.SPEC] SSR replaces the environment reflection where it found a hit

@@ -6,6 +6,7 @@
 //        layer: 2 + subsurface profile k for objects in a Subsurface slot (the opaque layer never reads its opacity)
 //   RT4: x IOR, y absorption distance, z thin walled (only the transparent front layer `tgbuffer` has a 5th buffer;
 //        the opaque G-Buffer has 4 and drops it)
+//   RT5: (0.8.4, [BTDR:GBUF.TRANS2]) absorption colour (linear) | refraction scale, transparent layer only
 // [BTDR:GBUF.MATERIAL] every uniform below is bound by expression to the source material (ext/BTDRExt.py, _bind_material)
 uniform sampler2D sBaseColor;
 uniform sampler2D sMetallic;
@@ -20,6 +21,8 @@ uniform vec4 uEmit;    // rgb emissive colour, w 1 = an emissive map is assigned
 uniform vec4 uChan;    // xyz channel source of the metallic, roughness, AO maps (PBR MAT menu index), w 1 = colours are sRGB
 uniform vec4 uTrans;   // [BTDR:GBUF.TRANS] x opacity, y IOR, z absorption distance, w thin walled: 0 = solid, 1 + lift = thin
 uniform vec4 uTrans2;  // x 1 = alpha map, y alpha-test threshold (< 0 = off), z roughness override (< 0 = material), w 1 = unlit
+uniform vec4 uTrans3;  // (0.8.4) rgb absorption colour (r < 0 = the base colour), w refraction scale ([BTDR:EXT.TRANS3])
+uniform vec4 uOpt;     // (0.8.4) x 1 = hashed alpha test ([BTDR:GBUF.HASHALPHA])
 uniform vec4 uSSS;     // x subsurface profile (Subsurface slot index), < 0 = none ([BTDR:GBUF.SSSID])
 // [BTDR:GBUF.UVSET] (0.8.3) per-map texture coordinates, following the PBR MAT's SOP Texture Coord and Texture
 // Sampling Mode: code = UV set (0 = uv0, 1 = the extra set uUV1.w) + 2 for Screen Space.
@@ -41,6 +44,7 @@ layout(location = 1) out vec4 oNormal;
 layout(location = 2) out vec4 oPosition;
 layout(location = 3) out vec4 oEmissive;
 layout(location = 4) out vec4 oTrans;
+layout(location = 5) out vec4 oTrans2;
 
 // PBR MAT "Channel Source" menu: luminance, red, green, blue, alpha, rgbaverage, average
 float pick(vec4 t, float mode)
@@ -59,6 +63,28 @@ vec2 uvOf(float code)
     if (c >= 2) return gl_FragCoord.xy * uScr.xy;     // Screen Space, like the PBR MAT: pixel / resolution
     return c == 1 ? iVert.texCoord1 : iVert.texCoord;
 }
+// [BTDR:GBUF.HASHALPHA] (0.8.4, G4) hashed alpha testing (Wyman & McGuire 2017): the threshold is a hash of the
+// world position, quantised at the pixel footprint (two neighbouring scales blended, so it does not pop), so a thin
+// leaf at 30 % coverage keeps 30 % of its pixels at any distance; TAA's sub-pixel jitter averages the pattern.
+// World position, not object position: a moving object's pattern swims slightly (written into the limits).
+float hash3(vec3 p)
+{
+    return fract(1.0e4 * sin(17.0 * p.x + 0.1 * p.y) * (0.1 + abs(sin(13.0 * p.y + p.z))));
+}
+float hashedThreshold(vec3 p)
+{
+    float md = max(length(dFdx(p)), length(dFdy(p)));
+    float ps = 1.0 / max(md, 1e-8);
+    float lp = log2(ps);
+    vec2 sc = vec2(exp2(floor(lp)), exp2(ceil(lp)));
+    vec2 al = vec2(hash3(floor(sc.x * p)), hash3(floor(sc.y * p)));
+    float lf = fract(lp);
+    float x = (1.0 - lf) * al.x + lf * al.y;
+    float a = min(lf, 1.0 - lf);
+    vec3 cases = vec3(x * x / (2.0 * a * (1.0 - a)), (x - 0.5 * a) / (1.0 - a), 1.0 - (1.0 - x) * (1.0 - x) / (2.0 * a * (1.0 - a)));
+    float t = x < 1.0 - a ? (x < a ? cases.x : cases.y) : cases.z;
+    return clamp(t, 1e-6, 1.0);
+}
 vec3 toLinear(vec3 c)
 {
     return uChan.w > 0.5 ? pow(max(c, 0.0), vec3(2.2)) : c;
@@ -74,7 +100,10 @@ void main()
     // [BTDR:GBUF.ALPHA] opacity; alpha test = cut-out (leaves, fences). An RGB alpha map reads its red channel.
     float alpha = uTrans.x;
     if (uTrans2.x > 0.5) { vec4 am = texture(sAlpha, uvOf(uUV1.z)); alpha *= am.a < 0.999 ? am.a : am.r; }
-    if (uTrans2.y >= 0.0 && alpha <= uTrans2.y) discard;
+    if (uTrans2.y >= 0.0) {
+        if (uOpt.x > 0.5) { if (alpha < hashedThreshold(iVert.worldPos)) discard; }
+        else if (alpha <= uTrans2.y) discard;
+    }
     if (uTrans2.z >= 0.0) rough = uTrans2.z;
     vec3 emit = toLinear(uEmit.rgb);
     if (uEmit.w > 0.5) emit *= toLinear(texture(sEmit, uvOf(uUV1.y)).rgb);
@@ -113,4 +142,5 @@ void main()
     oPosition = vec4(iVert.worldPos - iVert.camPos, ao);
     oEmissive = vec4(emit, uSSS.x >= 0.0 ? 2.0 + uSSS.x : clamp(alpha, 0.0, 1.0));
     oTrans = vec4(uTrans.y, uTrans.z, uTrans.w > 0.5 ? 1.0 : 0.0, max(uTrans.w - 1.0, 0.0));   // w: thin transmission lift
+    oTrans2 = vec4(uTrans3.r < 0.0 ? base : toLinear(uTrans3.rgb), uTrans3.w);
 }

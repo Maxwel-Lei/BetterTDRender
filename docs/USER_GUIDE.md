@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.8.3。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.8.4。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -118,6 +118,7 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 |---|---|
 | Main Light | 只读，显示当前用的是哪盏灯 |
 | Intensity Multiplier | 在灯光 Dimmer 基础上再乘的倍数 |
+| Energy Compensation | 默认开（0.8.4）：粗糙金属的能量补偿。普通的 GGX 高光只算光在表面反射一次，粗糙度高时，在微观凹凸之间来回反射的那部分光丢了，粗糙金属会偏暗（粗糙度 0.8 时最多丢掉约四成）。开着时把这部分补回来，粗糙金属更亮、颜色更饱和；光滑表面和非金属几乎不变。关掉 = 0.8.3 的效果 |
 | Shadows | 阴影开关 |
 | Shadow Softness | 半影宽度的倍数。0 接近硬阴影 |
 | Auto Fit Shadow Range | 开：刷新场景时按几何体包围盒自动设置下面两项（地面这类扁平物体不参与计算） |
@@ -189,7 +190,7 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Ray Tracing Available | 只读。显卡不支持光线查询、或光追节点出错时自动变成关，节点上会出现提示，其余功能不受影响 |
 | Probe GI | 探针全局光照：在物体周围摆一个三维网格的光照探针（约 2000 个，High 按场景的长宽高比例分配，例如又宽又浅的场景 40×9×7；Low 每个方向少四分之一），每个探针向四周发 64 / 32 条光线，记下各方向来的光。物体表面的环境漫反射改用探针的结果，所以车底、桌下、墙角这类天光照不到的地方会变暗，被太阳照亮的物体会把颜色"染"到旁边（颜色渗透，color bleeding）。场景和灯不动时只算一次，不占每帧开销 |
 | GI Intensity | 探针光照的强度 |
-| Ray-Traced Reflections | 光追反射：每 4 个像素（Low：6 个）发一条反射光线，算出"实际看到的"和"环境贴图"的亮度比，乘到环境反射上。光滑地面里不会再映出被车挡住的天空，画面外的物体也能映出来。屏幕空间反射（SSR）找得到的地方仍然叠在最上面（它更清晰） |
+| Ray-Traced Reflections | 光追反射：每 4 个像素（Low：6 个）发一条反射光线，算出"实际看到的"和"环境贴图"的亮度比，乘到环境反射上。光滑地面里不会再映出被车挡住的天空，画面外的物体也能映出来。屏幕空间反射（SSR）找得到的地方仍然叠在最上面（它更清晰）。0.8.4 起放大到全分辨率时只混合同一个表面上的结果（按法线和深度判断），物体边缘不再出现 4×4 像素的方块 |
 | Reflection Intensity | 光追反射的混合程度，0 = 只用环境反射 |
 | Reflection Max Roughness | 比这更粗糙的表面不发反射光线 |
 | Proxy Detail (%) | 光追代理保留原模型多少面（默认 15%）。越高越准，但每帧重建加速结构更慢；面数显示在下面的 Proxy |
@@ -252,6 +253,7 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Transparent Objects | 只读：当前按折射类渲染的物体数 |
 | Default IOR | 自动识别出来的透明物体用的折射率 |
 | Absorption Distance | 自动识别出来的物体的吸收距离（见下） |
+| Alpha Test Mode | （0.8.4）PBR MAT 打开 Alpha Test（镂空）时怎么切。**Threshold**（默认，和原生一样）：Alpha 小于 Alpha Threshold 的地方整片切掉。**Hashed**（哈希镂空）：按 Alpha 值随机保留对应比例的像素，例如 Alpha 0.3 留 30%，远处的细草叶、铁丝网不会整片消失；配合 TAA 平均后看起来是半透明。代价：近看能看到细小的噪点 |
 | Refraction Method | 怎么找到玻璃后面的东西（见下）。**Screen Space**（默认）：屏幕空间，最快最清晰，但只能看到画面里有的东西。**Hybrid**：屏幕空间找得到的地方用屏幕空间，找不到的地方（画面外、玻璃后面的玻璃）用光追补。**Ray Traced**：全部用光追 |
 | Refractive（列表） | 透明槽，每条一组物体 |
 | · Geometry | 拖入 Geometry COMP，或写路径 / 通配符 |
@@ -263,9 +265,11 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | · Absorption Distance | 吸收距离（米）：光在物体里走这么远后，颜色正好是材质的 Base Color。越小颜色越浓；越厚的地方越深 |
 | · Cast Shadow | None（默认，玻璃不挡光）/ Opaque（按不透明物体投影） |
 | · In Ray Tracing | 是否进入光追代理（默认关：光直接穿过玻璃） |
+| · Refraction Scale | （0.8.4）折射弯曲的倍数。1 = 物理正确（默认）；0 = 完全不弯，直接看穿；大于 1 弯得比真实的更厉害（构图需要放大效果、又不想把 IOR 调到不真实时用）。屏幕空间和光追折射都生效 |
+| · Absorption Color Source / Absorption Color | （0.8.4）吸收颜色从哪来。**Base Color**（默认，和以前一样）：内部颜色就是材质的 Base Color。**Custom**：用这里的 Absorption Color，表面颜色仍然是 Base Color。例如粉色的表面涂层包着无色的介质：Base Color 设粉色，Absorption Color 设白色 |
 
 材质参数怎么用：
-- **Base Color**：透明体内部的颜色。清玻璃用接近白色，有色玻璃、水用浅色，配合 Absorption Distance 控制浓淡。
+- **Base Color**：透明体内部的颜色（槽的 Absorption Color Source = Custom 时，内部颜色改用槽里的 Absorption Color）。清玻璃用接近白色，有色玻璃、水用浅色，配合 Absorption Distance 控制浓淡。
 - **Alpha Front**：0 = 完全透明；中间值 = 表面带一层雾面的漫反射涂层（有色塑料、脏玻璃）。
 - **Roughness**：同时控制反射和透射的模糊，磨砂玻璃就是调它（或用槽的 Roughness Override）。
 - **Normal Map**：扰动折射，水面波纹、压花玻璃都靠它。
@@ -442,7 +446,7 @@ TD 里贴图的**平铺**（Repeat 次数）和**偏移**不在材质上，要�
 - POP 几何体的贴图 0.8.1 起正常显示（以前只读到一个角的颜色）。
 - 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。次表面散射的透射也只来自这盏灯。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
 - 只支持透视相机。
-- 不读取：高度图和视差、Specular Level、Rim；Texture Sampling Mode 的 Triplanar（三平面投影，按 Regular 处理并在节点上提示：原生 PBR MAT 在 TD 2025.33230 里这个模式本身就不起作用，没有可对齐的效果）；POP 上自定义的 Texture Coord Attribute（只读 `Tex`）；一个材质里第三套及以后的 UV。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影）。
+- 不读取：高度图和视差、Specular Level、Rim；Texture Sampling Mode 的 Triplanar（三平面投影，按 Regular 处理并在节点上提示：原生 PBR MAT 在 TD 2025.33230 里这个模式本身就不起作用，没有可对齐的效果）；POP 上自定义的 Texture Coord Attribute（只读 `Tex`）；一个材质里第三套及以后的 UV。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影；Hashed 镂空的噪点图案按世界坐标生成，运动的物体上图案会轻微“游动”）。
 - 不支持：骨骼变形、Material SOP 逐面材质。Geometry COMP 嵌套（子级里的 Geometry COMP）0.7.5 起支持；Geometry COMP 的 Render 标志关掉就不画（和原生一样）。线条（Line SOP 等）能画，但不参与光追。
 - 内部位置存成相对相机的 16 位浮点：离相机越远精度越低（5 m 处约 4 mm，50 m 处约 3 cm），几十米外的物体阴影可能出现瑕疵。阴影只覆盖 Shadow Range 以内。
 - 反射、AO、反弹光是屏幕空间算法，限制见 Indirect 页一节；光追部分的限制见 Ray Tracing 页一节。

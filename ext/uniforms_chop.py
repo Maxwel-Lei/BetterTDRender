@@ -69,6 +69,8 @@ def onCook(scriptOp):
         um = max(Q['Unitsize'].eval(), 1e-6)
     K = 1.0 / um
     a[42] = (K, um, 0.0, 0.0)
+    # [BTDR:UNI.MISC] (0.8.4) x energy compensation ([BTDR:LIGHT.ENERGY])
+    a[43] = (1.0 if ('Energycomp' not in Q or Q['Energycomp'].eval()) else 0.0, 0.0, 0.0, 0.0)
 
     # [BTDR:UNI.CAMERA] current + previous camera
     cp = C.fetch('cam_path', '')

@@ -47,7 +47,7 @@ void main()
     vec4 tp = textureLod(sTPos, uv, 0.0);                 // front layer camera-relative position
     vec4 op = textureLod(sPos, uv, 0.0);                  // opaque camera-relative position
     vec4 t4 = textureLod(sTIor, uv, 0.0);                 // IOR, absorption distance, thin
-    vec4 t0 = textureLod(sTBase, uv, 0.0);                // base colour | metallic
+    vec4 t0 = textureLod(sTBase, uv, 0.0);                // (0.8.4) absorption colour | refraction scale (tgbuf5)
     bool hasT = dot(tn.xyz, tn.xyz) > 0.25;
     float zt = dot(tp.xyz, uCamFwd.xyz);
     float zo = dot(op.xyz, op.xyz) > 1e-8 ? dot(op.xyz, uCamFwd.xyz) : 1e9;
@@ -70,6 +70,8 @@ void main()
     }
     bool tir;
     vec3 d = thin ? V : refractTIR(V, N, 1.0 / ior, tir);
+    // [BTDR:REFR.SCALE] (0.8.4, G3) the bend scaled around the straight ray; rtMat [2i+1].x carries it per object
+    if (!thin && !tir) d = normalize(V + (d - V) * max(t0.a, 0.0));
     bool inside = !thin;
     // the glass the ray is in: starts as the front layer's (its base colour / absorption distance), then whatever glass
     // it enters ([BTDR:RT.REFRMEDIUM]); absorption always uses the medium, not the surface that ends the segment
@@ -98,13 +100,17 @@ void main()
             thr *= m0.rgb;
             O = hp + d * eps; continue;
         }
+        vec3 d0 = d;
+        float sc = max(m1.x, 0.0);
         if (inside) {
             if (!h.backface) { O = hp + d * eps; continue; }          // proxy mismatch, still inside
             d = refractTIR(d, -h.n, eta, tir);                          // leave the glass (or reflect back inside)
+            if (!tir) d = normalize(d0 + (d - d0) * sc);
             inside = tir;
         } else {
             if (h.backface) { O = hp + d * eps; continue; }            // proxy mismatch, still outside
             d = refractTIR(d, h.n, 1.0 / eta, tir);                     // enter the next piece of glass
+            if (!tir) d = normalize(d0 + (d - d0) * sc);
             inside = !tir;
             if (inside) med = vec4(clamp(m0.rgb, 0.0, 1.0), max(UM(m0.w), 1e-6));
         }

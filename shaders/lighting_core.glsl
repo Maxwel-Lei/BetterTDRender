@@ -6,14 +6,55 @@
 // [BTDR:LIGHT.SPLIT] four terms so later passes (screen-space, ray traced) can replace the environment terms:
 //   direct light + emissive (+ background) | 1 = geometry; environment diffuse; environment specular;
 //   env BRDF * spec occlusion | surface weight
-vec3 envBRDFApprox(vec3 F0, float rough, float NoV)
+vec2 envBRDFApproxAB(float rough, float NoV)
 {
     const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
     const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
     vec4 r = rough * c0 + c1;
     float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
-    vec2 AB = vec2(-1.04, 1.04) * a004 + r.zw;
+    return vec2(-1.04, 1.04) * a004 + r.zw;
+}
+vec3 envBRDFApprox(vec3 F0, float rough, float NoV)
+{
+    vec2 AB = envBRDFApproxAB(rough, NoV);
     return F0 * AB.x + AB.y;
+}
+// [BTDR:LIGHT.ENERGY] (0.8.4) multiple-scattering energy compensation (Kulla & Conty 2017, Turquin 2019; Filament's
+// form): single-scattering GGX loses the light that bounces between microfacets, so rough metals render too dark.
+// E(roughness, NoV) = directional albedo of GGX + height-correlated Smith for F0 = 1, precomputed offline (Monte Carlo,
+// VNDF sampling, 200 000 samples per entry; rows = perceptual roughness 0..1, columns = NoV 0..1, 16 x 16; the NoV = 0 column repeats NoV = 1/15) and read
+// bilinearly. factor = 1 + F0 (1 / E - 1). The split-sum approximation's A + B is not used: it overestimates the loss
+// at low roughness (+5 percent on a roughness-0.1 metal). Applied to the direct and the environment specular.
+const float ESS[256] = float[256](
+    0.9999, 0.9999, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000,
+    0.9975, 0.9975, 0.9994, 0.9997, 0.9998, 0.9999, 0.9999, 0.9999, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000,
+    0.9604, 0.9604, 0.9892, 0.9952, 0.9974, 0.9983, 0.9988, 0.9991, 0.9992, 0.9994, 0.9994, 0.9995, 0.9996, 0.9996, 0.9996, 0.9996,
+    0.9010, 0.9010, 0.9513, 0.9752, 0.9855, 0.9904, 0.9932, 0.9948, 0.9958, 0.9966, 0.9972, 0.9975, 0.9978, 0.9980, 0.9982, 0.9983,
+    0.8888, 0.8888, 0.9048, 0.9355, 0.9567, 0.9697, 0.9776, 0.9828, 0.9861, 0.9885, 0.9902, 0.9915, 0.9924, 0.9932, 0.9937, 0.9942,
+    0.9004, 0.9004, 0.8810, 0.8956, 0.9165, 0.9345, 0.9482, 0.9583, 0.9657, 0.9711, 0.9751, 0.9782, 0.9806, 0.9825, 0.9840, 0.9853,
+    0.9118, 0.9118, 0.8753, 0.8699, 0.8794, 0.8937, 0.9082, 0.9211, 0.9319, 0.9407, 0.9478, 0.9536, 0.9583, 0.9621, 0.9652, 0.9678,
+    0.9172, 0.9172, 0.8739, 0.8546, 0.8509, 0.8559, 0.8653, 0.8762, 0.8871, 0.8974, 0.9066, 0.9147, 0.9217, 0.9277, 0.9329, 0.9374,
+    0.9165, 0.9165, 0.8695, 0.8418, 0.8276, 0.8228, 0.8241, 0.8293, 0.8366, 0.8448, 0.8534, 0.8618, 0.8699, 0.8773, 0.8842, 0.8904,
+    0.9107, 0.9107, 0.8599, 0.8262, 0.8042, 0.7909, 0.7842, 0.7821, 0.7834, 0.7870, 0.7921, 0.7982, 0.8047, 0.8115, 0.8183, 0.8250,
+    0.9008, 0.9008, 0.8449, 0.8056, 0.7774, 0.7572, 0.7434, 0.7343, 0.7290, 0.7266, 0.7264, 0.7279, 0.7308, 0.7345, 0.7390, 0.7438,
+    0.8878, 0.8878, 0.8250, 0.7800, 0.7460, 0.7198, 0.6996, 0.6841, 0.6724, 0.6638, 0.6577, 0.6537, 0.6513, 0.6504, 0.6505, 0.6517,
+    0.8723, 0.8723, 0.8014, 0.7500, 0.7100, 0.6782, 0.6524, 0.6313, 0.6140, 0.5998, 0.5882, 0.5787, 0.5710, 0.5649, 0.5600, 0.5563,
+    0.8549, 0.8549, 0.7748, 0.7163, 0.6705, 0.6334, 0.6027, 0.5768, 0.5548, 0.5359, 0.5196, 0.5054, 0.4930, 0.4822, 0.4728, 0.4643,
+    0.8358, 0.8358, 0.7460, 0.6803, 0.6287, 0.5867, 0.5516, 0.5216, 0.4956, 0.4731, 0.4531, 0.4354, 0.4195, 0.4053, 0.3925, 0.3808,
+    0.8157, 0.8157, 0.7157, 0.6428, 0.5858, 0.5393, 0.5003, 0.4671, 0.4382, 0.4129, 0.3905, 0.3705, 0.3526, 0.3364, 0.3216, 0.3083);
+float essLookup(float rough, float NoV)
+{
+    vec2 c = clamp(vec2(rough, NoV), 0.0, 1.0) * 15.0;
+    ivec2 i = min(ivec2(c), ivec2(14));
+    vec2 f = c - vec2(i);
+    float e00 = ESS[i.x * 16 + i.y], e01 = ESS[i.x * 16 + i.y + 1];
+    float e10 = ESS[(i.x + 1) * 16 + i.y], e11 = ESS[(i.x + 1) * 16 + i.y + 1];
+    return mix(mix(e00, e01, f.y), mix(e10, e11, f.y), f.x);
+}
+vec3 energyComp(vec3 F0, float rough, float NoV)
+{
+    if (uMisc.x < 0.5) return vec3(1.0);
+    return 1.0 + F0 * (1.0 / max(essLookup(rough, NoV), 0.05) - 1.0);
 }
 float D_GGX(float a2, float NoH)
 {
@@ -115,7 +156,7 @@ void lightingTerms(vec2 uv, out vec4 oDirect, out vec4 oAmbDiff, out vec4 oAmbSp
     vec3 direct = vec3(0.0);
     if (NoL > 0.0 && uSunDir.w > 0.0) {
         float sh = sunShadow(wp, N, NoL);
-        vec3 spec = D_GGX(a2, NoH) * V_SmithJointApprox(a, NoV, NoL) * F_Schlick(F0, VoH);
+        vec3 spec = D_GGX(a2, NoH) * V_SmithJointApprox(a, NoV, NoL) * F_Schlick(F0, VoH) * energyComp(F0, rough, NoV);
         direct = (diffuseColor / PI + spec) * uSunColor.rgb * uSunDir.w * NoL * sh;
         gSunIrr = uSunColor.rgb * uSunDir.w * NoL * sh / PI;
     }
@@ -128,7 +169,7 @@ void lightingTerms(vec2 uv, out vec4 oDirect, out vec4 oAmbDiff, out vec4 oAmbSp
     vec3 prefiltered = envRadiance(R, rough);
     float specOcc = clamp(pow(NoV + ao, exp2(-16.0 * rough - 1.0)) - 1.0 + ao, 0.0, 1.0);
     float horizon = clamp(1.0 + dot(R, N), 0.0, 1.0);
-    vec3 brdf = envBRDFApprox(F0, rough, NoV) * specOcc * horizon * horizon;
+    vec3 brdf = envBRDFApprox(F0, rough, NoV) * energyComp(F0, rough, NoV) * specOcc * horizon * horizon;
 
     // [BTDR:LIGHT.FADE] optional distance fade into the background (seamless floors)
     float fade = uView.w > uView.z ? smoothstep(uView.z, uView.w, length(g2.xyz)) : 0.0;
