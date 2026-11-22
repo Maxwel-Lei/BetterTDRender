@@ -182,12 +182,28 @@ void main()
     }
     float aoD = min(ao, hf);                            // the two overlap at contacts: take the stronger, not both
     float giScale = uSS.y;
+    float specOcc = 1.0;
     // [BTDR:COMP.PROBES] M4: the probe grid (traced, knows about occlusion off screen) replaces the environment diffuse
     if (uRT.x > 0.5 && w > 1e-4) {
-        vec3 N = normalize(texture(LC_NRM, uv).xyz);
+        vec4 g1 = texture(LC_NRM, uv);
+        vec3 N = normalize(g1.xyz);
         vec4 g2 = texture(LC_POS, uv);
-        ambD = diffuseColor * probeIrradiance(g2.xyz + uCamPos.xyz, N) * g2.a * uRT.w;
+        vec3 pI = probeIrradiance(g2.xyz + uCamPos.xyz, N);
+        ambD = diffuseColor * pI * g2.a * uRT.w;
         giScale *= 0.5;                                 // the probes already carry the large-scale bounce
+        // [BTDR:COMP.SPECOCC] (0.9.8) specular occlusion: the probes darken the diffuse sky indoors, the environment
+        // reflection must follow, or rough surfaces indoors keep the whole open sky in their specular and turn white
+        // (Sponza curtains). Visibility = probe irradiance / unoccluded environment irradiance (bounce light can push
+        // it over 1: clamped), turned into a specular occlusion with Lagarde & de Rousiers 2014 (Frostbite): rough
+        // surfaces take the full term, smooth ones seen head-on less. Where the reflection is traced, the traced
+        // ratio below replaces it (occlusion already included). uAmb.w = strength (Ray Tracing page).
+        if (uAmb.w > 0.0) {
+            const vec3 LW = vec3(0.2126, 0.7152, 0.0722);
+            float vis = clamp(dot(pI, LW) / max(dot(gEnvIrr, LW), 1e-5), 0.0, 1.0);
+            float NoV = clamp(dot(N, normalize(-g2.xyz)), 0.0, 1.0);
+            float so = clamp(pow(NoV + vis, exp2(-16.0 * g1.a - 1.0)) - 1.0 + vis, 0.0, 1.0);
+            specOcc = mix(1.0, so, uAmb.w);
+        }
     }
     vec3 bounce = diffuseColor * gi.rgb * w * giScale;
     vec3 diff = (ambD + diffuseColor * uAmb.rgb * w) * aoD + bounce;   // [BTDR:COMP.AMBIENT] Ambient Light COMPs
@@ -198,7 +214,7 @@ void main()
         rt = rtUpsample(uv, normalize(g1r.xyz), texture(LC_POS, uv).xyz);
     }
     float rtw = clamp(rt.a * uRT.y * uRT4.z, 0.0, 1.0);
-    vec3 envS = mix(ambS, ambS * rt.rgb, rtw);
+    vec3 envS = mix(ambS * specOcc, ambS * rt.rgb, rtw);
     // [BTDR:COMP.SPEC] SSR replaces the environment reflection where it found a hit
     float c = clamp(ssr.a * uSS.z, 0.0, 1.0) * step(1e-4, w);
     // the environment reflection is occluded by the large-scale term in full (sky seen in a floor under a car);

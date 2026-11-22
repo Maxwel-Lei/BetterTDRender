@@ -373,7 +373,7 @@ def onCook(scriptOp):
             q = _pars(al)
             d = q['dimmer'].eval()
             ar += q['cr'].eval() * d; ag += q['cg'].eval() * d; ab += q['cb'].eval() * d
-    a[40] = (ar, ag, ab, 0.0)
+    a[40] = (ar, ag, ab, Q['Specocclusion'].eval() if 'Specocclusion' in Q else 0.0)   # w: [BTDR:COMP.SPECOCC] (0.9.8)
     # [BTDR:UNI.SSS] 0.8.0 subsurface: globals + one profile per Subsurface slot (first 8), read every frame so slot
     # edits apply at once (only the slots that exist are read)
     if 'Subsurface' in Q:

@@ -5,7 +5,7 @@
 # Result: btdr/out/regression.txt — one line per test: its first result line (STATUS PASS / FAIL (...)).
 import os, time
 BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
-_REG = list(globals().get('REG_TESTS', ['m1_tests', 'm81_tests', 'm8_tests', 'm7_tests', 'm6_tests', 'm5_acceptance', 'm83_tests', 'm84_tests', 'm85_tests', 'm90_tests', 'm91_tests', 'm92_tests', 'm93_tests', 'm94_tests', 'm95_tests', 'm96_tests']))
+_REG = list(globals().get('REG_TESTS', ['m1_tests', 'm81_tests', 'm8_tests', 'm7_tests', 'm6_tests', 'm5_acceptance', 'm83_tests', 'm84_tests', 'm85_tests', 'm90_tests', 'm91_tests', 'm92_tests', 'm93_tests', 'm94_tests', 'm95_tests', 'm96_tests', 'm98_tests']))
 _OUT = BT + '/out/regression.txt'
 open(_OUT, 'w', encoding='utf-8').write('RUNNING\n')
 

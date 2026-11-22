@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = globals().get('BTDR_SRC', project.folder.replace('\\', '/') + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
-VERSION = '0.9.7'
+VERSION = '0.9.8'
 BLOG = []
 
 def _read(rel):
@@ -209,6 +209,8 @@ def build_btdr(dest, name='renderBTDR'):
     p = pg.appendToggle('Rtavailable', label='Ray Tracing Available')[0]; p.default = True; p.val = True; p.readOnly = True
     p = setup(pg.appendToggle('Rtgi', label='Probe GI')[0], True); p.enableExpr = 'me.par.Raytracing'
     p = setup(pg.appendFloat('Rtgiintensity', label='GI Intensity')[0], 1.0, 0, 4, True); p.enableExpr = 'me.par.Raytracing and me.par.Rtgi'
+    # [BTDR:BUILD.SPECOCC] (0.9.8) specular occlusion from the probes (COMP.SPECOCC): 0 = 0.9.7
+    p = setup(pg.appendFloat('Specocclusion', label='Specular Occlusion')[0], 1.0, 0, 1, True, True); p.enableExpr = 'me.par.Raytracing and me.par.Rtgi'
     p = setup(pg.appendToggle('Rtreflections', label='Ray-Traced Reflections')[0], True); p.enableExpr = 'me.par.Raytracing'
     p = setup(pg.appendFloat('Rtreflintensity', label='Reflection Intensity')[0], 1.0, 0, 1, True, True); p.enableExpr = 'me.par.Raytracing and me.par.Rtreflections'
     p = setup(pg.appendFloat('Rtreflmaxrough', label='Reflection Max Roughness')[0], 0.7, 0.05, 1, True, True); p.enableExpr = 'me.par.Raytracing and me.par.Rtreflections'

@@ -42,7 +42,7 @@ uniform vec4 uB[124];
 #define uRT2       uB[37]   // xyz probe grid minimum, w rays per probe
 #define uRT3       uB[38]   // xyz probe spacing, w radiance clamp
 #define uRT4       uB[39]   // x / y traced-reflection grid width / height, z reflection intensity
-#define uAmb       uB[40]   // 0.7.5: rgb Ambient Light COMPs (colour x dimmer, summed)
+#define uAmb       uB[40]   // 0.7.5: rgb Ambient Light COMPs (colour x dimmer, summed); 0.9.8: w specular occlusion strength ([BTDR:COMP.SPECOCC])
 #define uSSSG      uB[41]   // 0.8.0 subsurface: x on, y Scatter Scale, z taps per side, w transmission on
 #define uUnit      uB[42]   // 0.8.3 [BTDR:UNI.UNIT] x scene units per metre, y metres per scene unit
 #define uMisc      uB[43]   // 0.8.4: x energy compensation on ([BTDR:LIGHT.ENERGY]); 0.9.0: y local light count; 0.9.1: z fog multiple scattering; 0.9.2: w object motion vectors present ([BTDR:UNI.VELOCITY])
