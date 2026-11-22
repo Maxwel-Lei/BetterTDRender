@@ -981,7 +981,9 @@ class BTDRExt:
         cj.par.parentobject = cam.path if cam is not None else ''
         for p in ('tx', 'ty', 'tz', 'rx', 'ry', 'rz'):
             getattr(cj.par, p).val = 0
-        for p in ('projection', 'viewanglemethod', 'fov', 'focal', 'aperture', 'near', 'far', 'winsize', 'winroll', 'winrollpivot'):
+        # [BTDR:CAM.ORTHO] (0.9.4) + Ortho Width / Ortho Origin (0.9.3 and earlier left cam_jit at the default width)
+        for p in ('projection', 'viewanglemethod', 'fov', 'focal', 'aperture', 'near', 'far', 'winsize', 'winroll', 'winrollpivot',
+                  'orthowidth', 'orthoorigin', 'winsizex', 'winsizey', 'winrollx', 'winrolly'):
             par = getattr(cj.par, p, None)
             if par is None:
                 continue

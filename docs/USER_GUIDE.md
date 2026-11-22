@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.9.3。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.9.4。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -89,9 +89,10 @@ Palette 的 BTDR 文件夹里还有带版本号的旧版本（如 `BTDR_0.7.6.to
 
 | 参数 | 作用 |
 |---|---|
-| Camera | 相机。只支持透视相机 |
+| Camera | 相机。透视（Perspective）和正交（Orthographic，0.9.4）；Perspective Ortho Blend、Custom Matrix 不支持 |
 | Geometry | 几何体，通配符匹配 Geometry COMP |
-| Lights | 灯光。当前只用一盏：优先取第一盏 Distant 类型的 |
+| Lights | 灯光。第一盏平行光是主光，其余是局部灯（见 Light 页） |
+| Point Sprite Size | （0.9.4）只有点的几何体（POP 的点图元，或没有面的 SOP）画成多大的小球，场景单位的直径，默认 0.05；POP 有 `PointScale` 属性时再乘上它 |
 | Refresh Scene | 重新解析上面三个参数并重建内部镜像 |
 | Status | 只读。正常时显示 `OK: N geometry`；有问题时显示警告条数和第一条内容 |
 | Resolution | 输出分辨率，默认 1920×1080 |
@@ -458,8 +459,9 @@ TD 里贴图的**平铺**（Repeat 次数）和**偏移**不在材质上，要�
 ## 6. 当前限制
 
 - POP 几何体的贴图 0.8.1 起正常显示（以前只读到一个角的颜色）。
-- 主光是一盏平行光，另外最多 8 盏局部灯（点光、聚光、平行光），局部灯没有阴影、不进雾和光追（0.9.1 补）。次表面散射的透射只来自主光。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
-- 只支持透视相机。
+- 主光是一盏平行光，另外最多 8 盏局部灯（点光、聚光、平行光）；前 4 盏聚光可以有阴影，点光没有阴影（0.9.1）。次表面散射的透射只来自主光。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
+- 正交相机（0.9.4）：所有效果都能用，景深自动关闭（节点上提示）；背景按相机朝向取一个方向，是一片纯色（正交相机没有“视角”）；体积雾的格子沿深度仍按透视时的分布。
+- 点精灵（0.9.4）：只有点的几何体画成朝向相机的小球（球体冒充，sphere impostor），有正确的法线，能受光、进 SSR / SSGI，大小按 Point Sprite Size 和距离变化。小球不投影（阴影图里只是一个像素，所以不画进阴影）、不进光追；深度按点的中心算，小球穿进别的物体时交线不准；运动矢量只有中心一个像素。
 - 不读取：高度图和视差、Specular Level、Rim；Texture Sampling Mode 的 Triplanar（三平面投影，按 Regular 处理并在节点上提示：原生 PBR MAT 在 TD 2025.33230 里这个模式本身就不起作用，没有可对齐的效果）；POP 上自定义的 Texture Coord Attribute（只读 `Tex`）；一个材质里第三套及以后的 UV。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影；Hashed 镂空的噪点图案按世界坐标生成，运动的物体上图案会轻微“游动”）。
 - 不支持：骨骼变形、Material SOP 逐面材质。Geometry COMP 嵌套（子级里的 Geometry COMP）0.7.5 起支持；Geometry COMP 的 Render 标志关掉就不画（和原生一样）。线条（Line SOP 等）能画，但不参与光追。
 - 内部位置存成相对相机的 16 位浮点：离相机越远精度越低（5 m 处约 4 mm，50 m 处约 3 cm），几十米外的物体阴影可能出现瑕疵。阴影只覆盖 Shadow Range 以内。

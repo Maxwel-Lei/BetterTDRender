@@ -118,6 +118,7 @@
 68. Josef Pelz 的 Pathtracer 作参考时的坑：它只导入 Geometry COMP 里打了渲染标志的 **POP**（SOP 不认，画面只有天空）；默认按 `Panel` 的大小出图（/project1 的 1280×720），要关 `Panelresolution`；累积的样本数在 `state/out` 的 `n` × Samples，`Samplecount` 参数在 TD 的 `except Exception` 里抓不到它的报错。
 69. **新建的 Camera COMP 默认在 z = 5**：聚光阴影的相机 `llcam0–3` 用 Parent Object 挂到灯上，如果不把它自己的 Translate / Rotate 清零，它会在灯后面 5 个单位、阴影图从错的位置画，看上去“阴影完全不起作用”（m91 第一次失败：遮挡处 0.551 vs 开放处 0.577）。`build.py` 建 llcam 时把 t / r 都设成 0（`BUILD.LLSHADOW`）。另外 Render TOP 分辨率参数里用 `parent.BTDR.par.X` 要加 `.eval()` 再 `int()`，否则表达式报错时分辨率退回 1×1。
 70. **POP 上没有的属性不读 0**：GLSL MAT 的 Attributes 页声明了 `PartVel` / `v`，几何体是 Box POP（没有这两个属性）时 `TDAttrib_v()` 读出非零值，速度缓冲里多出约 0.36 / 帧的假位移（m92 第一次失败：期望 0.04，得到 0.40）；SOP 上没有的属性读 0。所以速度属性只在几何体真的带它时才声明，用两个着色器变体 `velocity_pv_vert` / `velocity_v_vert`（`VEL.ATTRIB`）。另外：测试相机 rx = −90（正上方往下看）时画面不对，测试改用 −65 的斜俯视。
+71. **正交相机和点精灵的几个 TD 细节（0.9.4 实测）**：`cam_jit` 原来只复制透视相关的参数，正交时停在默认的 Ortho Width（2），G-Buffer 的范围和 BTDR 自己的投影对不上；现在也复制 Ortho Width / Origin、Window Size / Roll 的分量。GLSL MAT 的像素着色器里没有 `TDCameraIndex()`（编译失败），相机轴要从顶点着色器传下去。`gl_PointCoord` 的 y 已经朝上，再翻一次精灵就上下颠倒（m94 里精灵像素的投影误差达到整个直径）。`uTDGeneral.viewport` 不是当前 Render TOP 的分辨率（320 × 180 的渲染里读到 1/1280、1/720），所以精灵的像素大小用材质 uniform 里的 Resolution h。`gl_PointSize` 在 GLSL MAT 里默认可写（S5）。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -216,6 +217,10 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 镜面地面 + 6 根实例化柱子（Script CHOP：tx 等距、tz −1、ry 0/15/…/75、sy 1–2）+ 4 个实例化小方块（表格 DAT：tx ty tz）。光追代理里有两个 Copy POP；柱子的点数是 6 的倍数，物体空间 x 范围 5.445（最后一根转了 75°）、顶 1.2（sy 2）；小方块中心 z 1.2；Debug View = Ray-Traced Reflections 时，地面上柱子倒影处的“红 − 绿” 0.214 vs Max Instances 0 时 0.050；Max Instances 0 时没有 Copy POP；3 时两个实例源都是 3 个；表格多一行后实例源从 4 变 5（不用 Refresh）。共 8 项。
 
+## 11b-13. 0.9.4 测试（`tests/m94_tests.py`）
+
+正交相机（Ortho Width 8，斜俯视 35°）+ 地面、方块、球 + 10 × 10 个 POP 点（Point Sprite Size 0.2）。`uClip.w` = 1、`uCamFwd.w` = 4；G-Buffer 位置按正交公式投回像素，误差 p95 0.51 px、最大 0.68 px（TAA 抖动 ±0.5 px；修 `cam_jit` 不复制 Ortho Width 之前是 241 px）；画面有限、背景是一片纯色；点网格用的是精灵材质，不在阴影和光追里；精灵像素数和 100 个直径 0.2 的圆盘相符（18792 / 20106）；法线从正对相机（1.00）到边缘（0.03）；球面明暗（亮度标准差 0.52）；开雾、景深、运动模糊时画面有限；切回透视后标志关闭、无报错。共 12 项。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -228,6 +233,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 0.8.1 专项 | `tests/m81_tests.py` | 8 项：POP 贴图、薄壁按距离模糊、圆盘旋转逐帧变化、边缘无暗带、薄壁透射提亮 |
 | 0.8.3 专项 | `tests/m83_tests.py` | 18 项，§11b-6：贴图坐标和原生逐像素对比、场景比例 |
 | 0.8.4 专项 | `tests/m84_tests.py` | 15 项，§11b-7：能量补偿、光追反射的方块结构对比 0.8.3、Refraction Scale、吸收颜色、哈希镂空 |
+| 0.9.4 专项 | `tests/m94_tests.py` | 12 项，§11b-13：正交相机、点精灵 |
 | 0.9.3 专项 | `tests/m93_tests.py` | 8 项，§11b-12：实例化进光追代理 |
 | 0.9.2 专项 | `tests/m92_tests.py` | 8 项，§11b-11：物体运动矢量、TAA、运动模糊 |
 | 0.9.1 专项 | `tests/m91_tests.py` | 7 项，§11b-10：聚光阴影、雾里的局部灯、多次散射、探针 GI 里的局部灯 |
@@ -263,16 +269,18 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - 0.8.3 遗留：三平面投影（原生本身不起作用，§11 第 58 条；需要时可以自己实现）、POP 的自定义贴图坐标属性、一个材质里第三套 UV、实例纹理坐标（Instance Texture）。（M6c 首帧失败、方格暗斑在 0.8.4 处理，见 §11 第 64 条和 `TEST.M6CWARM`。）
 - 0.8.5 参考图里剩下的差异（§11b-8）：粗糙金属偏暗约 24 %（光追反射比值或镜面遮蔽）、彩色墙面的颜色渗透弱（探针只有一次反弹）、方块背光面偏暗约 10 %。
 - 0.8.4 遗留：阴影图不做 Alpha Test（镂空的叶子按整片投影，哈希镂空同样）；哈希镂空按世界坐标取噪声，运动物体上图案会游动（要物体空间坐标，0.9.2 没做：G-Buffer 材质要多传一个物体空间坐标）；能量补偿只用于不透明物体（玻璃的 F0 很小，影响可以忽略）；透明层的表层质感（G2）。
+- 0.9.4 遗留（`CAM.ORTHO` / `GBUF.SPRITE`）：雾的深度切片在正交时仍是透视的分布；Perspective Ortho Blend、Custom Matrix；精灵的深度（`gl_FragDepth` 会关掉提前深度测试，没写）、精灵投影、精灵进光追（加速结构只收三角形）、精灵的运动矢量只有中心像素；SOP 的点（Particle 图元）检测没有实测，只测了 POP。
 - 0.9.3 遗留（`EXT.RTINST`）：实例来源是 TOP / SOP / POP 时不进光追（Script CHOP 只读 CHOP 通道和表格列）；Pivot、Rotate to Vector、Instance Order = World then Instance、Instance Count Mode 不读；Instance Color 不进光追（同一 ObjId，一个平均色）；探针网格和阴影范围的自动适配只按原型的包围盒，不按实例的分布。
 - 0.9.2 遗留（`VEL.LIMITS`）：实例的各自运动（要 Cache CHOP 存上一帧的实例变换，S2）；SOP 变形（无速度属性时）；Particle POP 的 `PartVel` 路径编译通过但没有实测粒子（G-Buffer 画点要等 0.9.4 的点精灵）；运动模糊的瓦片最大速度 + 重建滤波（McGuire 2012）；SSGI / SSR / 光追 / 雾的时间累积仍只按相机重投影；J4 折射区域的运动矢量（玻璃后面的物体按玻璃表面算）；透明、混合物体不写速度。
 - 0.9.1 遗留：点光的阴影（立方体阴影图）；聚光阴影图不随 Shadow Update 的“运动中半分辨率”降级；分块裁剪（64 盏以上，现在 8 盏直接循环，够用就先不做）；雾里局部灯的等角采样（J3：雾按格子逐个算、不沿视线取样，用不上；只有以后改成沿视线积分时才需要）、光追 GI 按功率随机选一盏灯；双瓣相位函数（J5 的后一半）；SSS 透射只算主光。
-- 之后：正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
+嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
 
 ## 13. 变更记录
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-22 | 0.9.4 | 正交相机和点精灵（`ROADMAP_0.9.md` §5，S5）。**正交相机**（`CAM.ORTHO`）：`common.glsl` 加 `ORTHO`（`uClip.w`）和 `camPoint` / `camDir` / `viewDirRel` / `camProject` / `pxPerUnit`，正交时 `uCamFwd.w` / `uPrevFwd.w` 存半个 Ortho Width；TAA、运动模糊、SSR / SSGI / 累积（`ss_common`）、SSS 核大小、雾的散射和重投影、光照的视线和背景、折射、光追反射 / 折射都改用它们（透视时算术不变，A/B 差 0）；景深在正交时关闭（`uDOF2.y`，提示）；`cam_jit` 补复制 Ortho Width 等（§11 第 71 条）；Projection 是 Blend / Custom 时提示。**点精灵**（`GBUF.SPRITE` / `EXT.SPRITE` / `BUILD.SPRITE`）：只有点的几何体（POP 只有点图元，SOP 没有面）用 G-Buffer 材质的精灵变体（`gbuffer_sprite_vert` / `gbuffer_spritescale_vert` / `gbuffer_sprite_frag`，`#define SPRITE`）：顶点里 `gl_PointSize` = 直径 × proj[1][1] × 高 / 2 / w（透视、正交通用），像素里按 `gl_PointCoord` 切成圆、球面法线和位置；有 `PointScale` 的 POP 用 `SPRITE_SCALE` 变体。精灵不投影（不进 `shadow_casters`）、不进光追代理。Render 页新增 Point Sprite Size。新测试 `tests/m94_tests.py` 12 项 |
 | 2026-11-22 | 0.9.3 | 实例化进光追代理（`ROADMAP_0.9.md` §4，S4）。**`EXT.RTINST`**：实例化的 Geometry COMP 不再跳过；`rtscene/inst<i>`（Script CHOP，回调 `rt_inst_callbacks` = `ext/rt_inst_chop.py`）按 Instance 页的 OP 和通道 / 列名读出 tx..sz（CHOP 或表格 DAT，每个实例一个采样，最多 Max Instances in Proxy 个；读源数据建立依赖，实例变了自动重算）→ `tp<i>`（CHOP to POP：P = 平移，`InstR` = 旋转（度），`InstS` = 缩放）→ 每个子 SOP / POP 的代理链在 Transform POP 之前插一个 Copy POP（模板平移 / 旋转 / 缩放，默认 SRT、XYZ，和 Geometry COMP 的实例一致，原型验证过）。实例化物体的减面下限改成“每份至少 12 个三角形、总共至少 800”。Ray Tracing 页新增 Max Instances in Proxy（默认 1024，改了自动 Refresh）；不支持的实例来源提示 `Instanced geometry left out of the ray-tracing scene`。对比图 `docs/images/rt_instances.jpg`。新测试 `tests/m93_tests.py` 8 项；回归 m1 ~ m92 全过，和 0.9.2 的示例场景 A/B 差 0 |
 | 2026-11-22 | 0.9.2 | 物体运动矢量（`ROADMAP_0.9.md` §2，G1 的一半）。**速度缓冲**（`BUILD.VELOCITY` / `EXT.VELMIRROR` / `VEL.OBJECT` / `UNI.VELOCITY`）：每个不透明物体多一个镜像 `scene/v<i>`，各自一个材质 `vm<i>`（`velocity.vert/frag`，不读 common），上一帧的世界矩阵是 4 个 vec4 uniform；`uniforms` 每帧比较各物体的 worldTransform，动了的放进 `velocity` 的 Geometry 列表、写上一帧矩阵；`velocity` 的一个参数表达式读 `uniforms`，所以总在它之后渲染（位移和当前帧对齐，实测 0.0400 / 0.04）。输出 rgb = 世界位移、a = 到相机距离（没有静态物体挡在前面的深度测试，用距离和 G-Buffer 比对）；没有物体在动时 `vel_src` 切 1×1 常量，`velocity` 不 cook。`uMisc.w` = 有运动矢量。**TAA**（`TAA.VELDILATE` / `TAA.RESPONSIVE`）：3×3 里取最近的表面的点和位移重投影（Karis 2014）；历史帧的稳定深度和这个点上一帧的深度对不上时（物体移开露出的背景），当前帧权重至少 0.5。**运动模糊**（`MB.OBJECT`）：位移加进投影差，轮廓内沿物体运动糊。**速度属性**（`VEL.ATTRIB`，G1）：几何体带 `PartVel`（POP）或 `v`（SOP）时用变体 `velocity_pv_vert` / `_v`，按每秒换算到每帧（§11 第 70 条）。Post 页新增 Object Motion Vectors（默认开）、Moving Objects（只读）。没做的见 §12。对比图 `docs/images/object_motion.jpg`。新测试 `tests/m92_tests.py` 8 项；回归 m1 39、m81 8、m8 18、m7 13、m6、m5 7、m83 18、m84 15、m85 5、m90 12、m91 7 全过（m1、m7 改成不数 `scene/v*`）；和 0.9.1 的示例场景 A/B 差 0 |
 | 2026-11-22 | 0.9.1 | 多光源第二阶段（`ROADMAP_0.9.md` §8.2）。**聚光阴影**（`LIGHT.LLSHADOW` / `BUILD.LLSHADOW` / `EXT.LLSHADOW` / `UNI.LLSHADOW`）：前 Max Shadowed Spot Lights（默认 2，最多 4）盏聚光各有一张透视阴影图（`llcam0–3` 挂在灯上，fov = 外锥 + 余量，far = 衰减终点 × 1.05；`llsh0–3` 用主光阴影的几何体和 `mat_shadow`；`llsw0–3` 切到 `llsh_off` 时不占开销），composite / lighting 读输入 10–13 / 6–9；`uB` 扩到 124 槽，108–123 每盏 4 行（世界 → 灯相机矩阵 3 行 + tan 半角 / near / 偏移），灯槽 l4.y = 阴影号 + 1；3×3 PCF，偏移按距离加大。共用的 `llAtten()` 放进 `common.glsl`。**雾里的局部灯**（`FOG.LOCAL`）：`fog_scatter` 逐格子循环局部灯（衰减 + HG 相位，无阴影）。**多次散射**（J5，`FOG.MULTI` / `BUILD.FOGMULTI`）：Fog 页 Multiple Scattering（默认 0.5），`uMisc.z`；倍频近似再加两级（相位 g × 0.5 / × 0.25、亮度 0.5 / 0.25，再乘 ms），环境光 × (1 + 0.5 ms)。**光追命中点的局部灯**（`RT.LOCAL`）：`shadeHit` 加局部灯，遮挡用 `occluded()` 阴影射线，探针 GI、光追反射、光追折射都受益。改 Local Lights / Max Shadowed Spot Lights 自动 Refresh（`parexec`）。分块裁剪、等角采样没做（§12）。对比图 `docs/images/spot_shadows.jpg`。新测试 `tests/m91_tests.py` 7 项；回归 m1 39、m81 8、m8 18、m7 13、m6、m5 7、m83 18、m84 15、m85 5、m90 12 全过；Fog Multiple Scattering 0、Max Shadowed Spot Lights 0 时和 0.9.0 的最终画面 A/B 差 0 |

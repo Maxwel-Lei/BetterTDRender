@@ -8,6 +8,9 @@ out Vertex {
     vec2 texCoord1; // [BTDR:GBUF.UVSET] (0.8.3) the second UV set a map asks for (SOP Texture Coord uv1..uv7)
 #ifdef SPRITE
     float spriteR;  // [BTDR:GBUF.SPRITE] (0.9.4) sphere radius of this point (scene units)
+    vec3 camX;      // camera right / up / back: TDCameraIndex() only exists in the vertex stage
+    vec3 camY;
+    vec3 camZ;
 #endif
 } oVert;
 #ifdef SPRITE
@@ -38,5 +41,7 @@ void main()
 #endif
     gl_PointSize = max(diam * uTDMats[TDCameraIndex()].proj[1][1] * 0.5 * uSprite.y / max(gl_Position.w, 1e-6), 1.0);
     oVert.spriteR = 0.5 * diam;
+    mat4 CI = uTDMats[TDCameraIndex()].camInverse;
+    oVert.camX = normalize(CI[0].xyz); oVert.camY = normalize(CI[1].xyz); oVert.camZ = normalize(CI[2].xyz);
 #endif
 }

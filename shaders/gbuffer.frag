@@ -39,6 +39,9 @@ in Vertex {
     vec2 texCoord1;
 #ifdef SPRITE
     float spriteR;
+    vec3 camX;
+    vec3 camY;
+    vec3 camZ;
 #endif
 } iVert;
 
@@ -100,12 +103,10 @@ void main()
 #ifdef SPRITE
     // [BTDR:GBUF.SPRITE] (0.9.4) sphere impostor: round cut-out, normal and position on the sphere facing the camera.
     // Depth stays the point's (no gl_FragDepth: it would turn off early depth testing).
-    vec2 sc = gl_PointCoord * 2.0 - 1.0;
-    sc.y = -sc.y;
+    vec2 sc = gl_PointCoord * 2.0 - 1.0;   // y already points up in TD (measured: flipping it mirrored the spheres)
     float r2 = dot(sc, sc);
     if (r2 > 1.0) discard;
-    mat4 CI = uTDMats[TDCameraIndex()].camInverse;
-    WN = normalize(sc.x * CI[0].xyz + sc.y * CI[1].xyz + sqrt(1.0 - r2) * CI[2].xyz);
+    WN = normalize(sc.x * iVert.camX + sc.y * iVert.camY + sqrt(1.0 - r2) * iVert.camZ);
     WP += WN * iVert.spriteR;
 #endif
     vec3 base = toLinear(uBase.rgb) * toLinear(texture(sBaseColor, uvOf(uUV0.x)).rgb);

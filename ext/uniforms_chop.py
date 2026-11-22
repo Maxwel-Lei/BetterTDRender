@@ -393,7 +393,8 @@ def onCook(scriptOp):
     if flen <= 0.0 and cam is not None:                       # from the camera's horizontal view angle
         flen = Q['Sensorwidth'].eval() / (2.0 * max(_tan_half_fov(cam, aspect), 1e-4))
     a[24] = (max(flen, 1.0), Q['Fstop'].eval(), Q['Focusdistance'].eval() * um, Q['Dofmaxblur'].eval())   # metres (dof.frag)
-    a[25] = (Q['Sensorwidth'].eval(), 1.0 if Q['Dof'].eval() and a[19][3] < 0.5 else 0.0,     # no depth of field with an orthographic camera 1.25 if high else 2.0, Q['Fogshadowblur'].eval())
+    # [BTDR:CAM.ORTHO] no depth of field with an orthographic camera
+    a[25] = (Q['Sensorwidth'].eval(), 1.0 if Q['Dof'].eval() and a[19][3] < 0.5 else 0.0, 1.25 if high else 2.0, Q['Fogshadowblur'].eval())
     a[26] = (Q['Shutter'].eval(), Q['Mbmaxblur'].eval(), 12.0 if high else 6.0, 1.0 if Q['Motionblur'].eval() else 0.0)
     # [BTDR:UNI.SS] M3 screen-space AO / GI / reflections (0 strength = off; the passes are bypassed by Switch TOPs)
     a[27] = (Q['Aointensity'].eval() if Q['Ambientocclusion'].eval() else 0.0,
