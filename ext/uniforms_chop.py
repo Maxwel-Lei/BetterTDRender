@@ -108,6 +108,59 @@ def _local_lights(C, Q, a):
         n += 1
     return n
 
+def _velocity(C, Q, key, frame):
+    """[BTDR:UNI.VELOCITY] (0.9.2) object motion vectors. Every frame: compare each opaque object's world matrix with
+    the last frame's; the moving ones (plus objects with a velocity attribute, [BTDR:VEL.ATTRIB]) go into the
+    `velocity` geometry list, their material gets last frame's matrix. `velocity` reads this CHOP in a parameter
+    expression, so it renders after this cook (this frame's list and matrices). Returns 1 while anything moves."""
+    st = _STATE.setdefault(key + '#vel', {})
+    again = st.get('frame') == frame
+    objs = C.fetch('vel_objs', [])
+    on = Q['Objectmotion'].eval() if 'Objectmotion' in Q else False
+    if again:
+        return st.get('on', 0.0)
+    prevs = st.get('w', {})
+    cur = {}
+    moving = []
+    for vpath, spath, mpath, attr in objs:
+        s = op(spath)
+        if s is None:
+            continue
+        M = s.worldTransform
+        vals = M.vals
+        cur[spath] = (vals, M)
+        old = prevs.get(spath)
+        if not on or old is None:
+            continue
+        if attr or old[0] != vals:
+            moving.append(vpath)
+            m = op(mpath)
+            if m is not None:
+                P = old[1]
+                mp = _pars(m)
+                for c in range(4):
+                    for r, ch in enumerate('xyzw'):
+                        q = mp['vec%dvalue%s' % (c, ch)]
+                        if q.eval() != P[r, c]:
+                            q.val = P[r, c]
+    st['w'] = cur
+    st['frame'] = frame
+    vel, sw = C.op('velocity'), C.op('vel_src')
+    geo = ' '.join(p.split('/')[-2] + '/' + p.split('/')[-1] for p in moving)
+    if vel is not None and _pars(vel)['geometry'].eval() != geo:
+        _pars(vel)['geometry'].val = geo
+    if sw is not None:
+        idx = 1 if moving else 0
+        if int(_pars(sw)['index'].eval()) != idx:
+            _pars(sw)['index'].val = idx
+    if 'Movingcount' in Q:
+        txt = '%d of %d' % (len(moving), len(objs)) if on else 'off'
+        if Q['Movingcount'].eval() != txt:
+            Q['Movingcount'].val = txt
+    st['on'] = 1.0 if moving else 0.0
+    return st['on']
+
+
 def onCook(scriptOp):
     C = scriptOp.parent()
     Q = _pars(C)
@@ -125,7 +178,8 @@ def onCook(scriptOp):
     # [BTDR:UNI.MISC] (0.8.4) x energy compensation ([BTDR:LIGHT.ENERGY]); (0.9.0) y local light count
     nll = _local_lights(C, Q, a)
     a[43] = (1.0 if ('Energycomp' not in Q or Q['Energycomp'].eval()) else 0.0, float(nll),
-             Q['Fogmultiple'].eval() if 'Fogmultiple' in Q else 0.0, 0.0)          # z (0.9.1) fog multiple scattering
+             Q['Fogmultiple'].eval() if 'Fogmultiple' in Q else 0.0,           # z (0.9.1) fog multiple scattering
+             _velocity(C, Q, scriptOp.path, frame))                            # w (0.9.2) object motion vectors present
 
     # [BTDR:UNI.CAMERA] current + previous camera
     cp = C.fetch('cam_path', '')

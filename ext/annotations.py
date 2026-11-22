@@ -61,6 +61,7 @@ NOTES = {
     'dbg_sss1': '挡板开关：没有 SSS 物体时给 Debug View 白图，避免拉取不存在的缓冲。',
     'dbg_sss2': '挡板开关：只有 Debug View 选 Subsurface Irradiance 时才拉取 sss_blur。',
     # ---------------- 透明与折射 ----------------
+    'velocity': '物体运动矢量（0.9.2）：只画这一帧动过的物体（scene/v*），每个物体自己的材质带上一帧的世界矩阵，输出世界位移 + 到相机的距离。没有物体在动时 vel_src 切到 1×1 常量，它不计算。[BTDR:BUILD.VELOCITY]',
     'llsh_off': '没开阴影的聚光槽读这个 1×1 常量，对应的 Render TOP 就不计算。[BTDR:BUILD.LLSHADOW]',
     'tgbuffer': '前景透明层的 G-Buffer：只画透明镜像（scene/t*），6 个缓冲，第 5 个是 IOR / 吸收距离 / 薄壁，第 6 个是吸收颜色 / 折射倍数（0.8.4）。有透明物体时才计算。[BTDR:M6A.*]',
     'tgbuf0': '透明层缓冲 0：底色 | 金属度。', 'tgbuf1': '透明层缓冲 1：法线 | 粗糙度。', 'tgbuf2': '透明层缓冲 2：位置 | AO。',
@@ -165,6 +166,7 @@ GROUPS = [
         'rt_refr', 'rt_refr_top', 'rt_refr_acc', 'rt_refr_hist', 'rt_refr_off', 'rtr_src'], (0.45, 0.3, 0.25), 7),
     ('光照合成：composite 把所有结果合成 HDR 画面', ['lighting', 'lit1', 'lit2', 'lit3', 'depth', 'fog_src', 'composite'], (0.5, 0.45, 0.2), 4),
     ('次表面散射：水平 → 垂直两次模糊', ['sss_irr', 'sss_h', 'sss_blur', 'sss_v', 'sss_src', 'dbg_sss1', 'dbg_sss2'], (0.45, 0.3, 0.35), 4),
+    ('物体运动矢量（0.9.2）', ['velocity', 'vel_off', 'vel_src'], (0.35, 0.25, 0.4), 3),
     ('局部灯阴影（0.9.1）：聚光的透视阴影图', ['llcam0', 'llcam1', 'llcam2', 'llcam3', 'llsh0', 'llsh1', 'llsh2', 'llsh3', 'llsw0', 'llsw1', 'llsw2', 'llsw3', 'llsh_off'], (0.25, 0.3, 0.45), 4),
     ('透明层：前景 G-Buffer + 背面测厚度', ['tgbuffer', 'tgbuf0', 'tgbuf1', 'tgbuf2', 'tgbuf3', 'tgbuf4', 'tgbuf5', 'tback', 'tback1', 'tback2'], (0.3, 0.3, 0.5), 5),
     ('折射合成与透明开关', ['tpos_src', 'tnrm_src', 'refract', 'refract1', 'refract2', 'trans_src'], (0.3, 0.3, 0.5), 3),

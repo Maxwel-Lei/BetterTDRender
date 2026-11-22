@@ -45,7 +45,7 @@ uniform vec4 uB[124];
 #define uAmb       uB[40]   // 0.7.5: rgb Ambient Light COMPs (colour x dimmer, summed)
 #define uSSSG      uB[41]   // 0.8.0 subsurface: x on, y Scatter Scale, z taps per side, w transmission on
 #define uUnit      uB[42]   // 0.8.3 [BTDR:UNI.UNIT] x scene units per metre, y metres per scene unit
-#define uMisc      uB[43]   // 0.8.4: x energy compensation on ([BTDR:LIGHT.ENERGY]); 0.9.0: y local light count; 0.9.1: z fog multiple scattering; w free
+#define uMisc      uB[43]   // 0.8.4: x energy compensation on ([BTDR:LIGHT.ENERGY]); 0.9.0: y local light count; 0.9.1: z fog multiple scattering; 0.9.2: w object motion vectors present ([BTDR:UNI.VELOCITY])
 #define UM(m_)     ((m_) * uUnit.x)  // a length designed in metres, in scene units (parameter not named x: .x would expand)
 // [BTDR:UNI.SSS] subsurface profile k (0..7) = Subsurface slot k: three slots each, 44 + 3k ..
 #define SSS_A(k)   uB[44 + 3 * (k)]   // rgb scatter distance per channel (m, x Scatter Scale), w scatter strength (0 = thin)

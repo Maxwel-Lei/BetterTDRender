@@ -6,13 +6,13 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.9.1'
+VERSION = '0.9.2'
 BLOG = []
 
 def _read(rel):
     return open(BT + '/' + rel, encoding='utf-8').read()
 
-MAT_SHADERS = ('gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag')
+MAT_SHADERS = ('gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag', 'velocity.vert', 'velocity.frag')
 
 # shaders that render into a 3D texture read the uniforms from a texture buffer ([BTDR:BUILD.TBUF])
 TBUF_SHADERS = ['fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp']
@@ -233,6 +233,9 @@ def build_btdr(dest, name='renderBTDR'):
     for nm, lab, d, lo, hi in (('Shutter', 'Shutter (fraction of a frame)', 0.5, 0, 1),
                                ('Mbmaxblur', 'Max Blur Length (px)', 32.0, 1, 128)):
         p = setup(pg.appendFloat(nm, label=lab)[0], d, lo, hi, True); p.enableExpr = 'me.par.Motionblur'
+    # [BTDR:BUILD.OBJMOTION] (0.9.2) object motion vectors for TAA and motion blur
+    setup(pg.appendToggle('Objectmotion', label='Object Motion Vectors')[0], True)
+    p = pg.appendStr('Movingcount', label='Moving Objects')[0]; p.readOnly = True
 
     # [BTDR:BUILD.SSPARS] M3 screen-space indirect lighting
     pg = C.appendCustomPage('Indirect')
@@ -385,7 +388,7 @@ def build_btdr(dest, name='renderBTDR'):
 
     # ---------------------------------------------------------------- code + shaders
     X0 = -1400
-    names = ['gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag', 'env_studio.frag', 'env_prefilter.frag',
+    names = ['gbuffer.vert', 'gbuffer.frag', 'shadow.vert', 'shadow.frag', 'velocity.vert', 'velocity.frag', 'env_studio.frag', 'env_prefilter.frag',
              'lighting.frag', 'composite.frag', 'taa.frag', 'grade.frag', 'debug.frag', 'depth.frag',
              'dof.frag', 'mblur.frag', 'bloom_pre.frag', 'bloom_down.frag', 'bloom_up.frag', 'lum.frag', 'exposure.frag',
              'ssgi.frag', 'ssr.frag', 'ss_accum.frag', 'rt_probes.comp', 'rt_refl.comp', 'fog_scatter.comp', 'fog_accum.comp', 'fog_integrate.comp', 'fog_apply.frag', 'refract.frag', 'rt_refr.comp', 'sss.frag'] + (['forward.frag', 'blend_comp.frag'] if M6B else [])
@@ -438,6 +441,23 @@ def build_btdr(dest, name='renderBTDR'):
         r = place(C.create(renderselectTOP, 'gbuf%d' % i), -400, 500 - i * 100)
         r.par.top = gb; r.par.bufferindex = i
         rs.append(r)
+
+    # [BTDR:BUILD.VELOCITY] (0.9.2) object motion vectors: `velocity` draws only the objects that moved this frame
+    # (scene/v<i>, one material each, [BTDR:EXT.VELMIRROR]); `uniforms` sets its geometry list and the switch
+    # ([BTDR:UNI.VELOCITY]). Nothing moving: `vel_src` shows a 1 x 1 zero constant and `velocity` does not cook.
+    vel = place(C.create(renderTOP, 'velocity'), -600, 250)
+    vel.par.camera.expr = "op('gbuffer').par.camera.eval()"
+    vel.par.geometry = ''; vel.par.lights = ''
+    res(vel, RW, RH, ['rgba16float'])
+    _menu(vel.par.antialias, ['aa1', '1x', '1'])
+    vel.par.bgcolorr = vel.par.bgcolorg = vel.par.bgcolorb = 0
+    vel.par.bgcolora.expr = "op('uniforms')[0][0] * 0"     # pulls `uniforms` first: this frame's matrices are set
+    vof = place(C.create(constantTOP, 'vel_off'), -600, 180)
+    vof.par.colorr = vof.par.colorg = vof.par.colorb = 0; vof.par.alpha = 0
+    res(vof, 1, 1, ['rgba16float'])
+    vsw = place(C.create(switchTOP, 'vel_src'), -400, 250)
+    vof.outputConnectors[0].connect(vsw); vel.outputConnectors[0].connect(vsw)
+    vsw.par.index = 0
 
     # [BTDR:BUILD.SHADOW] shadow map: orthographic camera parented to the main light, depth-only override material
     sun = place(C.create(cameraCOMP, 'suncam'), -800, 0)
@@ -830,7 +850,7 @@ def build_btdr(dest, name='renderBTDR'):
     fsw = place(C.create(switchTOP, 'fog_src'), 250, 300)
     bsrc.outputConnectors[0].connect(fsw); fap.outputConnectors[0].connect(fsw)
     fsw.par.index.expr = '1 if parent.BTDR.par.Fog else 0'
-    taa = glsl('taa', D['taa.frag'], [fsw, fbk, tpos, tnrm], RW, RH, ['rgba16float'], 300, 400)
+    taa = glsl('taa', D['taa.frag'], [fsw, fbk, tpos, tnrm, vsw], RW, RH, ['rgba16float'], 300, 400)
     fbk.par.top = taa
     # [BTDR:BUILD.POST] depth of field -> motion blur (each bypassed by a Switch TOP when off), bloom, auto exposure
     def sw(nm, a, b, expr, x, y):
@@ -840,7 +860,7 @@ def build_btdr(dest, name='renderBTDR'):
         return s
     dof = glsl('dof', D['dof.frag'], [taa], RW, RH, ['rgba16float'], 300, 700)
     sdof = sw('post_dof', taa, dof, '1 if parent.BTDR.par.Dof else 0', 500, 700)
-    mbl = glsl('mblur', D['mblur.frag'], [sdof], RW, RH, ['rgba16float'], 700, 700)
+    mbl = glsl('mblur', D['mblur.frag'], [sdof, vsw], RW, RH, ['rgba16float'], 700, 700)
     smb = sw('post_mb', sdof, mbl, '1 if parent.BTDR.par.Motionblur else 0', 900, 700)
     HW, HH = 'max(int(parent.BTDR.par.Resolutionw) // 2, 1)', 'max(int(parent.BTDR.par.Resolutionh) // 2, 1)'
     bpre = glsl('bloom_pre', D['bloom_pre.frag'], [smb], HW, HH, ['rgba16float'], 1100, 850)   # + ae_exposure below

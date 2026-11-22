@@ -1,6 +1,7 @@
 // [BTDR:FILE.TAA] taa.frag — temporal anti-aliasing (ported from ue5r/shaders/taa.frag)
 // inputs: 0 current HDR (rendered with sub-pixel jitter), 1 history (Feedback TOP of this node),
-//         2 G-Buffer camera-relative position | ao, 3 G-Buffer normal | roughness (geometry mask)
+//         2 G-Buffer camera-relative position | ao, 3 G-Buffer normal | roughness (geometry mask),
+//         4 (0.9.2) object velocity: world displacement since the last frame | camera distance (0 = none)
 // output: rgb resolved HDR colour, a temporally stable view depth (scene units, background = camera far)
 // uTAA: x current-frame weight, y 1 = TAA on, z variance clip gamma
 out vec4 fragColor;
@@ -28,6 +29,17 @@ vec2 project(vec3 wp, vec4 P, vec4 R, vec4 U, vec4 F)
     return vec2(dot(v, R.xyz) / (z * F.w), dot(v, U.xyz) / (z * F.w / uClip.z)) * 0.5 + 0.5;
 }
 float viewDepth(vec3 wp) { return dot(wp - uCamPos.xyz, uCamFwd.xyz); }
+
+// [BTDR:TAA.VELOCITY] (0.9.2) the object displacement of a surface point, if the velocity buffer holds this surface
+// (the velocity pass draws moving objects without the static ones in front: compare distances to the camera)
+vec3 objectDisp(vec2 uv, vec3 wp)
+{
+    ivec2 sz = textureSize(sTD2DInputs[4], 0);
+    if (sz.x < 2) return vec3(0.0);
+    vec4 v = texelFetch(sTD2DInputs[4], clamp(ivec2(uv * vec2(sz)), ivec2(0), sz - 1), 0);
+    float d = length(wp - uCamPos.xyz);
+    return (v.a > 0.0 && abs(v.a - d) < 0.02 * d + UM(0.01)) ? v.rgb : vec3(0.0);
+}
 
 vec3 RGB2YCoCg(vec3 c) { return vec3(dot(c, vec3(0.25, 0.5, 0.25)), dot(c, vec3(0.5, 0.0, -0.5)), dot(c, vec3(-0.25, 0.5, -0.25))); }
 vec3 YCoCg2RGB(vec3 c) { return vec3(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
@@ -96,13 +108,38 @@ void main()
     // [BTDR:TAA.REPROJECT] screen motion = difference of the two UN-jittered projections of this surface
     // point. Using the point's previous projection directly would leak the G-Buffer jitter into the history
     // lookup and make the whole image wobble (ue5r bug).
-    vec2 puv = vUV.st - (project(wp, uCamPos, uCamRight, uCamUp, uCamFwd) - project(wp, uPrevPos, uPrevRight, uPrevUp, uPrevFwd));
+    // [BTDR:TAA.VELDILATE] (0.9.2) with moving objects: take the point and object motion of the closest surface in
+    // the 3 x 3 neighbourhood (Karis 2014), so silhouettes reproject with the object, not with the background.
+    vec3 rp = wp, disp = vec3(0.0);
+    bool moved = false;
+    if (uMisc.w > 0.5 && geo) {
+        float best = 1e30;
+        vec3 bq = wp, bd = vec3(0.0);
+        for (int y = -1; y <= 1; y++)
+            for (int x = -1; x <= 1; x++) {
+                bool g; vec3 q = pixelWorldPos(vUV.st + vec2(x, y) * px, g);
+                if (!g) continue;
+                vec3 d = objectDisp(vUV.st + vec2(x, y) * px, q);
+                moved = moved || dot(d, d) > 0.0;
+                float z = viewDepth(q);
+                if (z < best) { best = z; bq = q; bd = d; }
+            }
+        if (moved) { rp = bq; disp = bd; }
+    }
+    vec2 puv = vUV.st - (project(rp, uCamPos, uCamRight, uCamUp, uCamFwd) - project(rp - disp, uPrevPos, uPrevRight, uPrevUp, uPrevFwd));
     bool offscreen = any(lessThan(puv, vec2(0.0))) || any(greaterThan(puv, vec2(1.0)));
 
     vec3 hc = sampleHistoryCR(puv);
     if (any(isnan(hc)) || any(isinf(hc))) hc = cur;                 // a poisoned history heals itself
     vec3 hist = clipAABB(bmin, bmax, RGB2YCoCg(toneW(hc)));
     float w = offscreen ? 0.4 : uTAA.x;
+    // [BTDR:TAA.RESPONSIVE] (0.9.2, G1) near moving objects: where the history held a different surface (its stable
+    // depth does not match where this point was last frame) it is a disocclusion; take more of the current frame
+    if (moved) {
+        float pz = dot(rp - disp - uPrevPos.xyz, uPrevFwd.xyz);
+        float hz = texture(sTD2DInputs[1], puv).a;
+        if (abs(hz - pz) > 0.05 * pz + UM(0.02)) w = max(w, 0.5);
+    }
     vec3 res = mix(hist, RGB2YCoCg(toneW(cur)), w);
 
     // [BTDR:TAA.DEPTH] alpha: temporally stable view depth for depth of field / motion blur (the jittered

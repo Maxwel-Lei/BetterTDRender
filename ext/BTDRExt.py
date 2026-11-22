@@ -564,6 +564,8 @@ class BTDRExt:
                 c.destroy()
         mats = {}
         count = 0
+        vel = []
+        C = self.ownerComp
         info = info or [dict(kind='opaque', slot=None)] * len(geos)
         for i, src in enumerate(geos):
             # [BTDR:EXT.TRANSSPLIT] refractive objects become scene/t<i>: not drawn by `gbuffer` (scene/g*), drawn by
@@ -612,8 +614,56 @@ class BTDRExt:
                     if q is not None:
                         ref = "op('%s').par.%s" % (src.path, p.name)
                         q.expr = (ref + ".eval() or ''") if p.isOP else ref     # empty OP references stay empty
+            if info[i]['kind'] == 'opaque':
+                self._vel_mirror(scene, i, src, g, vel)
             count += 1
+        C.store('vel_objs', vel)
         return count
+
+    def _vel_mirror(self, scene, i, src, g, vel):
+        """[BTDR:EXT.VELMIRROR] (0.9.2) scene/v<i>: the same SOPs / POPs as scene/g<i>, with its own velocity material
+        (its previous world matrix is a uniform, set every frame by `uniforms` only while the object moves). Not
+        rendered by `gbuffer` / `shadow` (scene/g*); `velocity` draws it only while it is in the moving list."""
+        C = self.ownerComp
+        v = scene.create(geometryCOMP, 'v%d' % i)
+        for c in list(v.children):
+            c.destroy()
+        v.nodeX, v.nodeY = 400, -i * 120
+        attr = False
+        for c in g.children:
+            t = v.create(type(c), c.name)
+            if c.family == 'SOP':
+                t.par.sops = c.par.sops.eval()
+                o = t.par.sops.eval()
+                o = op(o) if isinstance(o, str) else o
+                attr = attr or (o is not None and any(a.name == 'v' for a in getattr(o, 'pointAttribs', [])))
+            else:
+                t.par.pop = c.par.pop.eval()
+                o = t.par.pop.eval()
+                o = op(o) if isinstance(o, str) else o
+                attr = attr or (o is not None and any(a.name == 'PartVel' for a in getattr(o, 'pointAttributes', [])))
+            t.render = True; t.display = True
+        v.par.parentxformsrc = 'specify'
+        v.par.parentobject = src.path
+        v.par.render.expr = "op('%s').par.render" % src.path
+        for p in g.pars():
+            if p.page is not None and p.page.name.startswith('Instance') and p.expr:
+                q = getattr(v.par, p.name, None)
+                if q is not None:
+                    q.expr = p.expr
+        m = scene.create(glslMAT, 'vm%d' % i)
+        m.nodeX, m.nodeY = 600, -i * 120
+        m.par.vdat = C.op('velocity_vert')
+        m.par.pdat = C.op('velocity_frag')
+        m.seq.attr.numBlocks = 2
+        m.par.attr0name = 'PartVel'; m.par.attr0type = 'float3'
+        m.par.attr1name = 'v'; m.par.attr1type = 'float3'
+        for d in list(m.docked):
+            d.destroy()
+        M = src.worldTransform
+        self._vecs(m, [('uPW%d' % c, [M[r, c] for r in range(4)]) for c in range(4)] + [('uVelOpt', [1.0 / max(project.cookRate, 1.0), 0, 0, 0])])
+        v.par.material = m
+        vel.append((v.path, src.path, m.path, attr))
 
     # ------------------------------------------------------------------ ray tracing (M4)
     def _rt_build(self, geos, warn, info=None):
