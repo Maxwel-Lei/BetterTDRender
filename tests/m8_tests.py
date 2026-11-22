@@ -77,7 +77,7 @@ try:
         import re as _re
         _v = _re.search(r"^VERSION = '([^']+)'", open(BT + '/build.py', encoding='utf-8').read(), _re.M).group(1)
         check('version (same as build.py)', R.par.Version.eval() == _v, '%s / %s' % (R.par.Version.eval(), _v))
-        check('uniform block 4 x 108 (0.9.0)', R.op('uniforms').numSamples == 108, str(R.op('uniforms').numSamples))
+        check('uniform block 4 x 124 (0.9.1)', R.op('uniforms').numSamples == 124, str(R.op('uniforms').numSamples))
         check('no subsurface object: bypassed (1 colour buffer, sss_src on composite, no errors)',
               R.par.Ssscount.eval() == 0 and int(R.op('composite').par.numcolorbufs.eval()) == 1
               and R.op('sss_src').par.index.eval() == 0 and not errs(R),

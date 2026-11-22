@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.9.0。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.9.1。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -123,6 +123,8 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 | Light Count | 只读：例如 `1 main, 2 point, 1 cone, 0 distant` |
 | Local Intensity | 所有局部灯的亮度倍数 |
 | Local Falloff | 局部灯的衰减。**Light COMP Attenuation**（默认）：按灯自己的 Attenuated / Attenuation Start / End / Exp，Attenuated 关时不衰减（和 TD 的灯一样）。**Physical**：平方反比，在 1 米处达到 Dimmer 的亮度 |
+| Max Shadowed Spot Lights | （0.9.1）最多几盏聚光灯有阴影，默认 2，最多 4，0 = 局部灯都不投影。按 Lights 匹配的顺序取前几盏聚光（cone）。每盏多画一张阴影图（约 +0.3 ms，阴影图只在灯或物体变化时重画，和主光一样跟 Shadow Update 走） |
+| Spot Shadow Resolution | （0.9.1）聚光阴影图的分辨率，默认 1024 |
 | Shadows | 阴影开关 |
 | Shadow Softness | 半影宽度的倍数。0 接近硬阴影 |
 | Auto Fit Shadow Range | 开：刷新场景时按几何体包围盒自动设置下面两项（地面不参与计算；0.8.5 起墙、天花板这类薄板参与计算，室内场景的阳光不会再从天花板漏进来） |
@@ -136,7 +138,7 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 
 灯光的方向、颜色、强度直接读 Light COMP。**主光**是 Lights 匹配到的第一盏平行光（distant）：方向取它的朝向，位置不影响结果，它有软阴影、雾里的光束、次表面透射和探针 GI。
 
-**局部灯（0.9.0）**：其余的 Light COMP——点光（point）、聚光（cone）、第二盏以后的平行光——最多 8 盏，读颜色、Dimmer、位置和朝向（每帧更新，移动灯不用刷新），聚光读 Cone Angle / Cone Delta / Cone Roll。局部灯这一版**没有阴影**，也还不进雾、探针 GI 和光追反射（0.9.1）。只匹配到点光、聚光时就没有主光（以前会把点光当平行光用）。
+**局部灯（0.9.0）**：其余的 Light COMP——点光（point）、聚光（cone）、第二盏以后的平行光——最多 8 盏，读颜色、Dimmer、位置和朝向（每帧更新，移动灯不用刷新），聚光读 Cone Angle / Cone Delta / Cone Roll。0.9.1 起：前几盏聚光有阴影（Max Shadowed Spot Lights，3×3 PCF 软边，比主光的阴影硬一些）；所有局部灯都会照亮体积雾（灯周围的光晕、聚光的光锥），也进探针 GI 和光追反射（命中点用光追阴影射线判断遮挡）。点光、多出来的平行光还没有阴影；次表面透射只算主光。只匹配到点光、聚光时就没有主光（以前会把点光当平行光用）。
 
 **亮度约定（和原生不同，有意为之）**：BTDR 把灯的 Dimmer × π 当作照度，颜色参数和颜色贴图按 sRGB 解码（Render 页 sRGB Colors and Color Maps）。所以同一盏灯、同一个材质，BTDR 比原生 Render TOP 亮（中灰约 1.4 倍，浅色更多），画面更接近 UE5 的默认观感。想和原生亮度接近，把 Intensity Multiplier 调到 0.3–0.5 左右，或关掉 sRGB Colors。
 `Lights` 没匹配到任何灯时用内置的一盏主光，节点上会有提示。
@@ -230,6 +232,7 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Fog Current Frame Weight | 时间累积里每帧新结果占的比例（0.7.2），默认 0.1。调小（0.03–0.05）画面更稳、颗粒和闪烁更少，代价是灯光、物体移动时光束跟得更慢（拖影） |
 | Fog Jitter | 每帧在格子内随机取样的幅度（0.7.2），默认 1。调小颗粒更少，但光束边缘会出现台阶感。0.7.3 起只影响画面方向，深度方向始终取满整格：只取半格时，百叶这类比格子还薄的光片会和格子“打架”，出现不顺着光的斜带（摩尔纹） |
 | Fog Shadow Blur | 雾里光束边缘的软硬（0.7.3），默认 1 = 和地面、墙上的阴影一样软：离遮挡物越远越软（接触硬化软阴影，跟 Shadow Softness 走）。调大更柔、噪点更少；0 = 硬边单点（最锐利也最噪）。注意 0.7.2 里这个参数的意思是“模糊几个像素”，旧工程里调到 2–3 的，升级后建议改回 1 |
+| Multiple Scattering | （0.9.1）多次散射，默认 0.5。浓雾里光在雾滴之间来回散射，整体更亮、更“白”，光束周围也有一圈柔光；0 = 只算一次散射（0.9.0 的效果）。用倍频近似（Wrenninge 2013），几乎不增加开销 |
 
 **光束是"雾里的影子"**：被照亮的雾和被挡住的雾挨在一起才看得出一道一道的光。想要明显的光束：
 - 要有大的遮挡物和缝隙：窗户、百叶、柱廊、树冠。几十厘米的小物体只能在大片亮雾里留下很细的暗影，基本看不出来。

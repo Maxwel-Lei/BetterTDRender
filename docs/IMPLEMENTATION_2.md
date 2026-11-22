@@ -116,6 +116,7 @@
 66. 实心玻璃球的“球里有个球”：出射方向在全内反射的临界角（玻璃 cos = 0.745）处从折射方向一下子切到视线方向，切换处是一个硬圆。0.8.4 改成在临界角往上 0.15 的范围里渐变（`REFR.RIMBLEND`）。真实的玻璃球（球透镜）在这一圈本来就是反光或发暗的，中间是放大、上下颠倒的背景，所以“中间一个大色块、外面一圈”本身是对的，只是边界不该是硬的。
 67. **BTDR 的亮度约定和原生不同（有意保留，2026-11-22 决定）**：原生 PBR MAT 在 Dimmer 1 的平行光下显示 albedo ÷ π（0.5 灰实测 0.154），颜色参数按线性处理；BTDR 照度 = Dimmer × π（`UNI.SUN`），颜色参数和贴图按 sRGB 解码（0.5 → 0.218，显示 0.218）。0.1 版的说明“这样和原生一致”是错的，实际 BTDR 中灰亮 1.4 倍、浅色更多。作者选择保留 BTDR 自己的观感（UE5 风格），不向原生对齐；多光源（0.9.0）也用同一约定。和路径追踪比较时要按原生约定换算（`PTREF.MATCH`）。
 68. Josef Pelz 的 Pathtracer 作参考时的坑：它只导入 Geometry COMP 里打了渲染标志的 **POP**（SOP 不认，画面只有天空）；默认按 `Panel` 的大小出图（/project1 的 1280×720），要关 `Panelresolution`；累积的样本数在 `state/out` 的 `n` × Samples，`Samplecount` 参数在 TD 的 `except Exception` 里抓不到它的报错。
+69. **新建的 Camera COMP 默认在 z = 5**：聚光阴影的相机 `llcam0–3` 用 Parent Object 挂到灯上，如果不把它自己的 Translate / Rotate 清零，它会在灯后面 5 个单位、阴影图从错的位置画，看上去“阴影完全不起作用”（m91 第一次失败：遮挡处 0.551 vs 开放处 0.577）。`build.py` 建 llcam 时把 t / r 都设成 0（`BUILD.LLSHADOW`）。另外 Render TOP 分辨率参数里用 `parent.BTDR.par.X` 要加 `.eval()` 再 `int()`，否则表达式报错时分辨率退回 1×1。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -202,6 +203,10 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 地面 + 主光 + 一盏点光（Attenuated，Start 0.5 / End 3）+ 一盏朝下的聚光（30° + 5°）。地面上的点按 G-Buffer 的世界坐标取（半径 0.3 m），在 `composite`（TAA 之前）上比较：点光下方变亮、Attenuation End 外不变、聚光锥内亮锥外不变、移动点光后亮斑跟着走（不刷新）、Local Lights 关 = 只有主光（平均差 < 0.002，SSAO 每帧有噪声所以不比最大值）、Physical 衰减随距离下降、只匹配局部灯时没有主光、读数和无报错。
 
+## 11b-10. 0.9.1 测试（`tests/m91_tests.py`）
+
+地面 + 主光（Dimmer 很低）+ 一盏朝下的聚光（(0,3,0)，Cone 80°）+ 聚光下方旁边一个方块 + 一盏点光，开雾。比较方块投影位置 (1.62, 0, 0) 和对称的开放位置 (1.62, 0, 1.0)：有阴影时 0.089 vs 0.577；Max Shadowed Spot Lights = 0 时两处一样（0.551 / 0.577，差别来自主光和 GI）。雾的两项读最终输出 `out2`（雾在 `refract` 之后才合成）：点光附近的雾比关掉局部灯时亮 0.15；Multiple Scattering 0 → 1 平均亮 0.011。RT.LOCAL：点光旁边的探针 GI 0.33 vs 关局部灯 0.04。共 7 项。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -214,6 +219,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 0.8.1 专项 | `tests/m81_tests.py` | 8 项：POP 贴图、薄壁按距离模糊、圆盘旋转逐帧变化、边缘无暗带、薄壁透射提亮 |
 | 0.8.3 专项 | `tests/m83_tests.py` | 18 项，§11b-6：贴图坐标和原生逐像素对比、场景比例 |
 | 0.8.4 专项 | `tests/m84_tests.py` | 15 项，§11b-7：能量补偿、光追反射的方块结构对比 0.8.3、Refraction Scale、吸收颜色、哈希镂空 |
+| 0.9.1 专项 | `tests/m91_tests.py` | 7 项，§11b-10：聚光阴影、雾里的局部灯、多次散射、探针 GI 里的局部灯 |
 | 0.9.0 专项 | `tests/m90_tests.py` | 12 项，§11b-9：局部灯 |
 | 0.8.5 专项 | `tests/m85_tests.py` | 5 项，§11b-8：阴影范围、探针网格包含墙和天花板 |
 | 路径追踪参考图 | `tools/pt_reference.py`（要本机有 Josef Pelz 的 `PT_FAM.tox`，`PTREF_TOX` 指路径；`PTREF_SPP`、`PTREF_PARS`、`PTREF_KEEP`） | `out/pt_ref_<tag>.txt` 逐区域比值，`out/pt_ref_<tag>.jpg` 并排图 + 热力图 |
@@ -239,20 +245,22 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 - M5 遗留：示例网络的 4060 / 2060 实测；Palette 安装说明以外的安装方式（TD 的 Package / 组件库）。
 - M4 遗留：实例化几何体进光追代理；命中点用逐纹素的贴图颜色（现在是每物体平均色）和高光；探针可见性（DDGI 的深度矩，防薄墙漏光）；光追阴影；探针多次反弹；不支持光追的机器上实测降级路径。
-- M3 遗留：High 档 SSGI 半分辨率 + 深度感知上采样；雾里的局部光源；屏幕空间光束（太阳在画面里时的径向光芒，便宜的补充）。
+- M3 遗留：High 档 SSGI 半分辨率 + 深度感知上采样；屏幕空间光束（太阳在画面里时的径向光芒，便宜的补充）。
 - M2 遗留：物体运动矢量（物体自身运动的运动模糊、TAA 更少拖影）、景深的散景形状（目前是圆盘）、镜头切换的自动检测（现在只在换相机节点时重置历史）。
 - M6 遗留：M6a 剩余项见 §9e 末尾；M6b 混合透明默认不构建（§9f 写了要改进的地方）；M6c：命中点用贴图颜色、色散、光追玻璃投彩色阴影（焦散）。
 - 0.8 遗留（次表面散射，`docs/SUBSURFACE.md`）：可选的厚度贴图（Thickness Map）、多光源的透射、光追反射 / 探针里的 SSS 物体不散射、半分辨率的 Low 档。
 - 0.8.3 遗留：三平面投影（原生本身不起作用，§11 第 58 条；需要时可以自己实现）、POP 的自定义贴图坐标属性、一个材质里第三套 UV、实例纹理坐标（Instance Texture）。（M6c 首帧失败、方格暗斑在 0.8.4 处理，见 §11 第 64 条和 `TEST.M6CWARM`。）
 - 0.8.5 参考图里剩下的差异（§11b-8）：粗糙金属偏暗约 24 %（光追反射比值或镜面遮蔽）、彩色墙面的颜色渗透弱（探针只有一次反弹）、方块背光面偏暗约 10 %。
 - 0.8.4 遗留：阴影图不做 Alpha Test（镂空的叶子按整片投影，哈希镂空同样）；哈希镂空按世界坐标取噪声，运动物体上图案会游动（要物体空间坐标，等 0.9.2 的运动矢量一起做）；能量补偿只用于不透明物体（玻璃的 F0 很小，影响可以忽略）；透明层的表层质感（G2）。
-- 之后：多盏灯、点光 / 聚光、正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
+- 0.9.1 遗留：点光的阴影（立方体阴影图）；聚光阴影图不随 Shadow Update 的“运动中半分辨率”降级；分块裁剪（64 盏以上，现在 8 盏直接循环，够用就先不做）；雾里局部灯的等角采样（J3：雾按格子逐个算、不沿视线取样，用不上；只有以后改成沿视线积分时才需要）、光追 GI 按功率随机选一盏灯；双瓣相位函数（J5 的后一半）；SSS 透射只算主光。
+- 之后：正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
 
 ## 13. 变更记录
 
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-22 | 0.9.1 | 多光源第二阶段（`ROADMAP_0.9.md` §8.2）。**聚光阴影**（`LIGHT.LLSHADOW` / `BUILD.LLSHADOW` / `EXT.LLSHADOW` / `UNI.LLSHADOW`）：前 Max Shadowed Spot Lights（默认 2，最多 4）盏聚光各有一张透视阴影图（`llcam0–3` 挂在灯上，fov = 外锥 + 余量，far = 衰减终点 × 1.05；`llsh0–3` 用主光阴影的几何体和 `mat_shadow`；`llsw0–3` 切到 `llsh_off` 时不占开销），composite / lighting 读输入 10–13 / 6–9；`uB` 扩到 124 槽，108–123 每盏 4 行（世界 → 灯相机矩阵 3 行 + tan 半角 / near / 偏移），灯槽 l4.y = 阴影号 + 1；3×3 PCF，偏移按距离加大。共用的 `llAtten()` 放进 `common.glsl`。**雾里的局部灯**（`FOG.LOCAL`）：`fog_scatter` 逐格子循环局部灯（衰减 + HG 相位，无阴影）。**多次散射**（J5，`FOG.MULTI` / `BUILD.FOGMULTI`）：Fog 页 Multiple Scattering（默认 0.5），`uMisc.z`；倍频近似再加两级（相位 g × 0.5 / × 0.25、亮度 0.5 / 0.25，再乘 ms），环境光 × (1 + 0.5 ms)。**光追命中点的局部灯**（`RT.LOCAL`）：`shadeHit` 加局部灯，遮挡用 `occluded()` 阴影射线，探针 GI、光追反射、光追折射都受益。改 Local Lights / Max Shadowed Spot Lights 自动 Refresh（`parexec`）。分块裁剪、等角采样没做（§12）。对比图 `docs/images/spot_shadows.jpg`。新测试 `tests/m91_tests.py` 7 项；回归 m1 39、m81 8、m8 18、m7 13、m6、m5 7、m83 18、m84 15、m85 5、m90 12 全过；Fog Multiple Scattering 0、Max Shadowed Spot Lights 0 时和 0.9.0 的最终画面 A/B 差 0 |
 | 2026-11-22 | 0.9.0 | 多光源第一阶段（`ROADMAP_0.9.md` §1）。**局部灯**（`LIGHT.LOCAL` / `UNI.LOCALLIGHTS` / `EXT.LIGHTS` / `BUILD.LOCALLIGHTS`）：第一盏平行光是主光，其余 Light COMP（点光、聚光、多出来的平行光）最多 8 盏；`uB` 从 68 扩到 108 槽，每盏灯 5 个 vec4（位置 \| 类型、颜色 × 强度 \| 衰减终点、朝向 \| 外锥 cos、衰减起点 / 指数 / 内锥 cos \| 衰减方式、锥体 roll），`uniforms` 每帧写（移动灯不用 Refresh），`uMisc.y` = 灯数；`lighting_core` 的 `localLights()` 直接循环（GGX + 能量补偿 + Lambert，无阴影）。亮度约定同主光（Dimmer × π，§11 第 67 条）；衰减读灯的 Attenuation，或 Local Falloff = Physical（平方反比，1 m 处 = Dimmer）。只匹配到点光 / 聚光时没有主光（`sun_off`）。`scene_watch` 的签名加上灯的类型，改类型会自动刷新。Light 页新增 Local Lights、Light Count、Local Intensity、Local Falloff。新测试 `tests/m90_tests.py` 12 项 |
 | 2026-11-22 | 0.8.5 | 路径追踪参考图（J2，`ROADMAP_0.9.md` §8.1）。新工具 `tools/pt_reference.py`（`TOOL.PTREF`）：同一个原生场景（Geometry COMP + PBR MAT + 平行光 + 纯色天空）由 BTDR 和 Josef Pelz 的 Pathtracer（只在本机当参考，不随 BTDR 分发）各渲一份，线性 HDR 逐区域比较，出并排图和 log2 比值热力图（`docs/images/pt_reference.jpg`）。比较时 BTDR 用线性颜色、Intensity Multiplier 1/π（§11 第 67 条）。按约定对齐后整幅亮度差 2 %，查出两个 bug 并修复：**阴影范围和探针网格的自动适配把墙、天花板当成地面排除了**（`EXT.SOLIDBOXES`：现在只排除地面，规则和 `EXT.CASTERS` 一样）——室内场景的阳光从阴影图外面的天花板漏进来、后墙上探针外推出竖条纹，两处都没了。其余差异记进 §12。新测试 `tests/m85_tests.py` 5 项 |
 | 2026-11-22 | 0.8.4 | 画质修补和玻璃控制（`ROADMAP_0.9.md` §8.2）。**能量补偿**（J1，`LIGHT.ENERGY` / `BUILD.ENERGY` / `UNI.MISC`）：Light 页 Energy Compensation（默认开），`uB[43]`（`uMisc`）x；直接光和环境的镜面项乘 `1 + F0 (1/E − 1)`，E 查离线算好的 16 × 16 GGX 方向反照率表（§11 第 62 条）。**光追反射的放大**（`COMP.RTUP` / `ACCUM.RTEDGE`）：composite 对 1/4 分辨率的比值做联合双边上采样（四个邻近纹素按法线、平面距离加权），`rt_acc` 的 3 × 3 预滤波和邻域统计只算同一表面（§11 第 64 条）。**Refraction Scale**（G3，`BUILD.REFRSCALE` / `REFR.SCALE`）和**吸收颜色**（G5，`BUILD.ABSORBCOLOR` / `REFR.ABSORBCOLOR`）：透明槽多三项（块大小 9 → 14），材质 `uTrans3`，透明层多一个输出 RT5（`tgbuffer` 6 个缓冲，`tgbuf5`，`GBUF.TRANS2`），`refract` 读输入 13，`rt_refr` 的 `sTBase` 改读 RT5、`rt_mat` 的 [2i] 存吸收颜色、[2i+1].x 存倍数。**哈希镂空**（G4，`BUILD.ALPHAHASH` / `GBUF.HASHALPHA`）：Transparency 页 Alpha Test Mode，材质 `uOpt.x`，Wyman & McGuire 2017。**实心玻璃的边缘**（`REFR.RIMBLEND`）：出射方向在临界角附近渐变到视线方向，去掉“球里还有一个球”的硬圆圈。M6c 首帧：测试读到 NaN 时隔 30 帧重读（`TEST.M6CWARM`，实测第二次就正常）。新工具 `tools/run_regression.py`。新测试 `tests/m84_tests.py` 15 项；回归 m1 39、m81 8、m8 18、m7 13、m6 24、m5 7、m83 18 全过。能量补偿关、光追关时和 0.8.3 的 A/B 差值为 0 |
