@@ -13,6 +13,8 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 - **texture coordinates and scene unit** (0.8.3): every map follows its PBR MAT's Extend, Filter, UV set (uv0 + one
   more) and Screen Space mode, pixel for pixel like the native Render TOP; Scene Unit (Meters / Centimeters / Inches …)
   keeps AO, reflections, fog and scattering at real-world size in centimetre or inch scenes.
+- **local lights** (0.9.0): point, cone and extra distant Light COMPs (up to 8, no shadows yet) next to the main
+  sun, read every frame (Attenuation, Cone Angle / Delta / Roll), BTDR's own brightness convention.
 - **energy compensation and glass controls** (0.8.4): rough metals keep the light that bounces between microfacets
   (multiple-scattering compensation); Refraction Scale and a separate Absorption Color per refractive slot; hashed
   alpha test for thin foliage; traced reflections are upsampled per surface (no blocks at object edges).
@@ -31,7 +33,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.8.5** (path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.9.0** (local lights; path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 
