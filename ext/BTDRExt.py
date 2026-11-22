@@ -629,19 +629,21 @@ class BTDRExt:
         for c in list(v.children):
             c.destroy()
         v.nodeX, v.nodeY = 400, -i * 120
-        attr = False
+        attr = None
         for c in g.children:
             t = v.create(type(c), c.name)
             if c.family == 'SOP':
                 t.par.sops = c.par.sops.eval()
                 o = t.par.sops.eval()
                 o = op(o) if isinstance(o, str) else o
-                attr = attr or (o is not None and any(a.name == 'v' for a in getattr(o, 'pointAttribs', [])))
+                if o is not None and any(a.name == 'v' for a in getattr(o, 'pointAttribs', [])):
+                    attr = attr or 'v'
             else:
                 t.par.pop = c.par.pop.eval()
                 o = t.par.pop.eval()
                 o = op(o) if isinstance(o, str) else o
-                attr = attr or (o is not None and any(a.name == 'PartVel' for a in getattr(o, 'pointAttributes', [])))
+                if o is not None and any(a.name == 'PartVel' for a in getattr(o, 'pointAttributes', [])):
+                    attr = attr or 'PartVel'
             t.render = True; t.display = True
         v.par.parentxformsrc = 'specify'
         v.par.parentobject = src.path
@@ -653,17 +655,17 @@ class BTDRExt:
                     q.expr = p.expr
         m = scene.create(glslMAT, 'vm%d' % i)
         m.nodeX, m.nodeY = 600, -i * 120
-        m.par.vdat = C.op('velocity_vert')
+        m.par.vdat = C.op({'PartVel': 'velocity_pv_vert', 'v': 'velocity_v_vert'}.get(attr, 'velocity_vert'))
         m.par.pdat = C.op('velocity_frag')
-        m.seq.attr.numBlocks = 2
-        m.par.attr0name = 'PartVel'; m.par.attr0type = 'float3'
-        m.par.attr1name = 'v'; m.par.attr1type = 'float3'
+        if attr:                     # [BTDR:VEL.ATTRIB] declared only where the geometry has it
+            m.seq.attr.numBlocks = 1
+            m.par.attr0name = attr; m.par.attr0type = 'float3'
         for d in list(m.docked):
             d.destroy()
         M = src.worldTransform
         self._vecs(m, [('uPW%d' % c, [M[r, c] for r in range(4)]) for c in range(4)] + [('uVelOpt', [1.0 / max(project.cookRate, 1.0), 0, 0, 0])])
         v.par.material = m
-        vel.append((v.path, src.path, m.path, attr))
+        vel.append((v.path, src.path, m.path, bool(attr)))
 
     # ------------------------------------------------------------------ ray tracing (M4)
     def _rt_build(self, geos, warn, info=None):

@@ -19,9 +19,14 @@ void main()
     // previous position of this vertex: same object-space point under last frame's world matrix (instances keep
     // their own transform; instance motion itself is not seen, [BTDR:VEL.LIMITS])
     vec4 pp = mat4(uPW0, uPW1, uPW2, uPW3) * (inverse(W) * wp);
-    // [BTDR:VEL.ATTRIB] (G1) a velocity point attribute moves the vertex by itself: PartVel (Particle POP), v (SOPs)
-    vec3 av = TDAttrib_PartVel() + TDAttrib_v();
-    pp.xyz -= mat3(W) * av * uVelOpt.x;
+    // [BTDR:VEL.ATTRIB] (G1) a velocity point attribute moves the vertex by itself: PartVel (Particle POP), v (SOPs).
+    // Only declared on objects that have it (shader variants velocity_pv_vert / _v): on POPs an undeclared-in-the-
+    // geometry attribute does not read 0 (measured 0.36 per frame on a box POP).
+#if defined(VEL_PARTVEL)
+    pp.xyz -= mat3(W) * TDAttrib_PartVel() * uVelOpt.x;
+#elif defined(VEL_V)
+    pp.xyz -= mat3(W) * TDAttrib_v() * uVelOpt.x;
+#endif
     oVert.disp = wp.xyz - pp.xyz;
     oVert.rel = wp.xyz - uTDMats[TDCameraIndex()].camInverse[3].xyz;
 }

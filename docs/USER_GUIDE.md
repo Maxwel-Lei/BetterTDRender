@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.9.1。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.9.2。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -367,11 +367,13 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Focal Length (mm) | 焦距。0 = 按相机的视角和下面的传感器宽度自动算（推荐） |
 | Sensor Width (mm) | 传感器宽度，默认 36（全画幅）。和焦距一起决定虚化程度 |
 | Max Blur Radius (px) | 虚化半径的上限 |
-| Motion Blur | 运动模糊：相机移动、转动时画面沿运动方向拖影 |
+| Motion Blur | 运动模糊：相机移动、转动时画面沿运动方向拖影；0.9.2 起物体自己动也会糊（Object Motion Vectors 开时） |
 | Shutter | 快门时间，占一帧的比例。0.5 相当于电影常用的 180° 快门；1 拖影最长 |
 | Max Blur Length (px) | 拖影长度上限 |
+| Object Motion Vectors | （0.9.2）物体运动矢量，默认开。每帧比较每个物体的世界变换（位置、旋转、缩放），动了的物体单独画一遍“运动矢量”（这一帧相对上一帧移动了多少）。TAA 按它把历史帧对回物体上，移动物体的贴图细节不再被抹糊、边缘拖影更少；运动模糊沿物体自己的运动方向糊。场景完全静止时这一遍不计算；每个在动的物体多一次绘制 |
+| Moving Objects | 只读：例如 `1 of 3`，这一帧有几个物体在动 |
 
-运动模糊目前只来自相机运动：相机不动、物体自己在动时物体不会糊（需要逐物体的运动矢量，后续版本加）。
+0.9.2 起物体自己动也有运动模糊和正确的 TAA，限制：只认 Geometry COMP 的变换（移动、旋转、缩放 Geometry COMP 本身）；SOP / POP 本身在变形（Noise SOP 动画、骨骼）看不到，除非几何体带速度属性——POP 的 `PartVel`（Particle POP 自带）或 SOP 的点属性 `v`（按每秒的速度换算到每帧）；实例的各自运动（Instance CHOP 在变）看不到；运动模糊只在物体轮廓内糊，快速物体边缘外的背景不会被拖过去（以后改成重建滤波）；玻璃、半透明物体后面的东西按玻璃表面算。
 景深和运动模糊的采样数跟随 Quality：Low 档采样少一半。
 
 ### Grade 页
@@ -461,7 +463,7 @@ TD 里贴图的**平铺**（Repeat 次数）和**偏移**不在材质上，要�
 - 不支持：骨骼变形、Material SOP 逐面材质。Geometry COMP 嵌套（子级里的 Geometry COMP）0.7.5 起支持；Geometry COMP 的 Render 标志关掉就不画（和原生一样）。线条（Line SOP 等）能画，但不参与光追。
 - 内部位置存成相对相机的 16 位浮点：离相机越远精度越低（5 m 处约 4 mm，50 m 处约 3 cm），几十米外的物体阴影可能出现瑕疵。阴影只覆盖 Shadow Range 以内。
 - 反射、AO、反弹光是屏幕空间算法，限制见 Indirect 页一节；光追部分的限制见 Ray Tracing 页一节。
-- 运动模糊和反射、反弹光的时间混合只考虑相机运动；物体自己运动时可能有轻微拖影。
+- 反射、反弹光、体积雾的时间混合只考虑相机运动，物体自己运动时可能有轻微拖影（TAA 和运动模糊 0.9.2 起已经按物体运动处理）。
 - 没人查看或使用输出时节点不计算，不占性能。
 
 ## 7. 素材建议

@@ -395,6 +395,9 @@ def build_btdr(dest, name='renderBTDR'):
     D = {}
     for i, n in enumerate(names):
         D[n] = dat(n.replace('.', '_'), _shader(n), X0, 400 - i * 100)
+    # [BTDR:VEL.ATTRIB] velocity vertex shader variants for geometry with a velocity attribute (PartVel / v)
+    D['velocity_pv_vert'] = dat('velocity_pv_vert', '#define VEL_PARTVEL\n' + _shader('velocity.vert'), X0 - 250, -300)
+    D['velocity_v_vert'] = dat('velocity_v_vert', '#define VEL_V\n' + _shader('velocity.vert'), X0 - 250, -400)
     D['white_frag'] = dat('white_frag', 'out vec4 fragColor;\nvoid main() { fragColor = vec4(1.0); }\n', X0 - 250, -100)   # unused pixel stage of compute TOPs
     D['rt_accum.frag'] = dat('rt_accum_frag', '#define RT_ACC\n' + _shader('ss_accum.frag'), X0, 300 - len(names) * 100)
     D['sss_v.frag'] = dat('sss_v_frag', '#define SSS_V\n' + _shader('sss.frag'), X0 - 250, -200)

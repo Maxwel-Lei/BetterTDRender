@@ -137,7 +137,8 @@ try:
             check('warnings for phong / constant / custom', all(k in w for k in ('Phong', 'not supported')), w[:300])
             u = R.op('uniforms')
             check('uniform block 4 x 124 (0.9.1)', u.numChans == 4 and u.numSamples == 124, '%d chans %d samples' % (u.numChans, u.numSamples))
-            mats = R.findChildren(type=glslMAT, path='*/scene/*')
+            # the velocity materials (scene/vm*, 0.9.2) carry last frame's matrix and have no maps: not G-Buffer materials
+            mats = [m for m in R.findChildren(type=glslMAT, path='*/scene/*') if not m.name.startswith('vm')]
             check('materials: no per-frame uniform, 4x anisotropic; G-Buffer through cam_jit',
                   mats and all(all(getattr(m.par, 'array%dchop' % i).eval() is None for i in range(m.seq.array.numBlocks)) and m.par.sampler0anisotropy.eval() == '4x' for m in mats)
                   and R.op('gbuffer').par.camera.eval() == R.op('cam_jit'), '%d materials' % len(mats))

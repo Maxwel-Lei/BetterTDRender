@@ -144,6 +144,7 @@ SHADER_NOTES = {
     'fog_integrate_comp': ('fog_integrate.comp', '体积雾积分'), 'fog_apply_frag': ('fog_apply.frag', '体积雾叠加'),
     'rt_probes_comp': ('rt_probes.comp', '探针 GI'), 'rt_refl_comp': ('rt_refl.comp', '光追反射'), 'rt_refr_comp': ('rt_refr.comp', '光追折射'),
     'rt_accum_frag': ('rt_accum.frag', '光追结果的时间累积'),
+    'velocity_pv_vert': ('velocity.vert（VEL_PARTVEL）', '运动矢量：带 PartVel 的 POP'), 'velocity_v_vert': ('velocity.vert（VEL_V）', '运动矢量：带 v 的 SOP'),
     'sss_frag': ('sss.frag', 'SSS 横向模糊'), 'sss_v_frag': ('sss.frag（SSS_V）', 'SSS 纵向模糊 + 合成'),
     'cover_frag': ('cover.frag', '封面 Logo'), 'white_frag': ('（内置）', '纯白'), 'zero_frag': ('（内置）', '纯黑 / 0'),
 }

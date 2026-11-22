@@ -74,7 +74,7 @@ try:
         step(s3, 110)
 
     def s3():
-        n = len([c for c in R.op('scene').children if c.OPType == 'geometryCOMP'])
+        n = len([c for c in R.op('scene').children if c.OPType == 'geometryCOMP' and not c.name.startswith('v')])   # v<i>: velocity mirrors (0.9.2)
         check('cover gone after warm-up; Render flag off not drawn; nested Geometry COMP drawn; a line does not break ray tracing',
               cs['show'].eval() == 0 and n == 4 and not errs(R) and R.par.Rtavailable.eval(), 'show %s mirrored %d errors %s' % (cs['show'].eval(), n, errs(R)))
         R.par.Tonemap = 'none'; R.par.Bloom = 0; R.par.Background = 'transparent'
@@ -98,7 +98,7 @@ try:
         step(s5, 50)
 
     def s5():
-        n = len([c for c in R.op('scene').children if c.OPType == 'geometryCOMP'])
+        n = len([c for c in R.op('scene').children if c.OPType == 'geometryCOMP' and not c.name.startswith('v')])   # v<i>: velocity mirrors (0.9.2)
         u = R.op('uniforms')
         st = R.fetch('status', {}) or {}
         check('scene watch: Render flag switched on, material swapped, Ambient Light COMP picked up',

@@ -123,6 +123,20 @@ try:
     def s6():
         check('static scene: velocity pass off', R.op('vel_src').par.index.eval() == 0 and R.op('velocity').cookFrame == ST['vc'],
               'Moving Objects %s, cookFrame %s -> %s' % (R.par.Movingcount.eval(), ST['vc'], R.op('velocity').cookFrame))
+        # POP geometry moving with its Geometry COMP (the velocity material declares PartVel / v: must compile on POPs)
+        pg = T.create(geometryCOMP, 'popmover')
+        for c in list(pg.children): c.destroy()
+        bp = pg.create(boxPOP, 's'); bp.render = bp.display = True
+        pg.par.ty = 0.25; pg.par.tz = -1.5; pg.par.material = mb
+        pg.par.tx.expr = "((absTime.frame * %g) %% 3.0) - 1.5" % SPEED
+        R.par.Geometry = 'floor mover still popmover'
+        step(s7, 60)
+    def s7():
+        e = [(c.name, c.errors()[:80]) for c in R.findChildren() if c.valid and c.errors()]
+        v = arr(R.op('velocity')); mk = v[..., 3] > 0
+        dx = float(np.median(v[mk][:, 0])) if mk.any() else float('nan')
+        check('VEL.OBJECT a POP box moves too', not e and R.par.Movingcount.eval().startswith('1 of 4') and abs(dx - SPEED) < 0.004,
+              'errors %s, Moving Objects %s, median dx %.4f' % (e[:2], R.par.Movingcount.eval(), dx))
         step(finish, 2)
     step(s1, 120)
 except Exception:

@@ -28,6 +28,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 ![path-traced reference (0.8.5): BTDR | Josef Pelz's Pathtracer | log2 ratio](docs/images/pt_reference.jpg)
 ![local lights (0.9.0)](docs/images/local_lights.jpg)
 ![spot-light shadow off / on, local lights in the fog (0.9.1)](docs/images/spot_shadows.jpg)
+![object motion vectors (0.9.2): TAA with camera motion only | with object motion vectors | object motion blur](docs/images/object_motion.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
@@ -35,7 +36,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.9.1** (spot-light shadows, local lights in the fog and in ray-traced GI, fog multiple scattering; local lights; path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.9.2** (object motion vectors for TAA and motion blur; spot-light shadows, local lights in the fog and in ray-traced GI, fog multiple scattering; local lights; path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 
