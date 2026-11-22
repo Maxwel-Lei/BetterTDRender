@@ -289,6 +289,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - 0.8.3 遗留：三平面投影（原生本身不起作用，§11 第 58 条；需要时可以自己实现）、POP 的自定义贴图坐标属性、一个材质里第三套 UV、实例纹理坐标（Instance Texture）。（M6c 首帧失败、方格暗斑在 0.8.4 处理，见 §11 第 64 条和 `TEST.M6CWARM`。）
 - 0.8.5 参考图里剩下的差异（§11b-8）：粗糙金属偏暗约 24 %（光追反射比值或镜面遮蔽）、彩色墙面的颜色渗透弱（探针只有一次反弹）、方块背光面偏暗约 10 %。
 - 0.8.4 遗留：阴影图不做 Alpha Test（镂空的叶子按整片投影，哈希镂空同样）；哈希镂空按世界坐标取噪声，运动物体上图案会游动（要物体空间坐标，0.9.2 没做：G-Buffer 材质要多传一个物体空间坐标）；能量补偿只用于不透明物体（玻璃的 F0 很小，影响可以忽略）；透明层的表层质感（G2）。
+- **交接（2026-11-22，做和原生的对比视频时发现，见 `ROADMAP_0.9.md` §8 待修的问题）**：① 缺少镜面遮蔽，粗糙度超过 Reflection Max Roughness 的表面环境高光不被遮挡，室内被 HDRI 的太阳照白；② 粗糙表面的光追反射闪烁（Sponza 1.67 % / 0.68 %，关掉光追反射 0.05 %）。临时做法：场景里关掉 Ray-Traced Reflections（不闪但①还在），或 Reflection Max Roughness = 1（不白但闪）。计划 0.9.8 一起修。
 - 开源场景实测（§11b-15）发现的：室内场景要开 Auto Exposure 才不暗（0.9.7 改成默认开）；大场景里探针 GI 的反弹弱、没有颜色渗透（多次反弹 / 更密的探针）。
 - 0.9.4 遗留（`CAM.ORTHO` / `GBUF.SPRITE`）：雾的深度切片在正交时仍是透视的分布；Perspective Ortho Blend、Custom Matrix；精灵的深度（`gl_FragDepth` 会关掉提前深度测试，没写）、精灵投影、精灵进光追（加速结构只收三角形）、精灵的运动矢量只有中心像素；SOP 的点（Particle 图元）检测没有实测，只测了 POP。
 - 0.9.3 遗留（`EXT.RTINST`）：实例来源是 TOP / SOP / POP 时不进光追（Script CHOP 只读 CHOP 通道和表格列）；Pivot、Rotate to Vector、Instance Order = World then Instance、Instance Count Mode 不读；Instance Color 不进光追（同一 ObjId，一个平均色）；探针网格和阴影范围的自动适配只按原型的包围盒，不按实例的分布。
