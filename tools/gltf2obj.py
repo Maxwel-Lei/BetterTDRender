@@ -90,7 +90,12 @@ for mi, parts in geo.items():
             dropped.append(kind); return False
         return True
     if pb and usable(pb.baseColorTexture, 'basecolor'):
-        tex_img(pb.baseColorTexture).convert('RGB').save(os.path.join(out, name + '_basecolor.png')); maps.append('basecolor')
+        bimg = tex_img(pb.baseColorTexture)
+        bimg.convert('RGB').save(os.path.join(out, name + '_basecolor.png')); maps.append('basecolor')
+        # alphaMode MASK / BLEND: the alpha channel as its own map (tools/scene_loader.py turns it into the PBR MAT's
+        # Alpha Map + Alpha Test). Found on Sponza: the plants and chains were solid squares without it.
+        if m is not None and m.alphaMode in ('MASK', 'BLEND') and bimg.mode in ('RGBA', 'LA', 'PA'):
+            bimg.convert('RGBA').split()[-1].save(os.path.join(out, name + '_alpha.png')); maps.append('alpha')
     if pb and usable(pb.metallicRoughnessTexture, 'metallicroughness'):
         mr = np.asarray(tex_img(pb.metallicRoughnessTexture).convert('RGB'))
         Image.fromarray(mr[..., 1]).save(os.path.join(out, name + '_roughness.png'))

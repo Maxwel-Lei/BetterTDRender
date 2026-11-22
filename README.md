@@ -32,6 +32,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 ![instanced geometry in the ray-tracing proxy (0.9.3): reflections of instanced pillars](docs/images/rt_instances.jpg)
 ![orthographic camera and point sprites (0.9.4): perspective | orthographic, POP points as sphere sprites](docs/images/ortho_sprites.jpg)
 ![depth of field focus tracking (0.9.5): the focus follows a target object](docs/images/focus_tracking.jpg)
+![open-source test scenes in BTDR 0.9.5: Sponza (Crytek, CC BY 4.0), A Beautiful Game (CC BY 4.0), Dragon Attenuation (Stanford), from the Khronos glTF Sample Assets](docs/images/open_scenes.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 

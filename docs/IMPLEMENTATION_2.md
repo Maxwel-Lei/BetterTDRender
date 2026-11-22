@@ -225,6 +225,15 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 两块带噪声贴图的竖板（3 m 处一块、10 m 处一块），F-Stop 1.4。Focus Method = Tracking、Focus Object = 放在近板上的 Null COMP：`uDOF.z` 和 Tracked Distance 都是 3.000；把 Null 挪到远板，不刷新，变成 10.000；两块板都是对焦到自己时更清晰（近板梯度 0.097 / 0.070，远板 0.140 / 0.095；两块板的贴图尺度不同，只能各自前后比）；Focus Offset −7 → 3；切回 Manual → Focus Distance 7；Tracking 但不指定物体 → 7、无报错。共 7 项。
 
+## 11b-15. 开源场景实测（2026-11-22，0.9.5，不是自动测试）
+
+用 Khronos glTF Sample Assets 里的三个场景（GitHub，`tools/gltf2obj.py` 转换、`tools/scene_loader.py` 加载；模型放在本机 `测试模型/`，不进仓库）：Sponza（Crytek，CC BY 4.0）、A Beautiful Game（CC BY 4.0）、Dragon Attenuation（Stanford Graphics Library）。总览 `docs/images/open_scenes.jpg`。
+
+- **Sponza**（25 个材质，光追代理 8 万三角形）：太阳要顺着中庭的长轴照进来（rx −58、ry −70）。**默认曝光下室内太暗**，开 Auto Exposure 后才是 UE5 的观感（UE5 默认开自动曝光）。体积雾 0.015 时有清楚的斜光柱，0.04 已经整片发白。探针 GI 在 30 m 的场景里间距约 0.9 m，背光一侧主要是均匀的环境光，被照亮的地面没有明显的反弹、帘子没有颜色渗透（§12：探针只有一次反弹、间距粗）。1080p High、光追开：稳定 60 fps（TD 的帧率上限）。
+- **A Beautiful Game**：大理石、金属包边的 PBR 贴图都对；跟踪对焦（0.9.5）对准黑方后排，前景白棋虚化自然。兵头的玻璃珠（KHR transmission）放进透明槽，白兵的珠子吸收很强，看起来接近不透明，和原模型一致。
+- **Dragon Attenuation**：玻璃龙进透明槽，吸收颜色用 KHR_materials_volume 的 attenuationColor（0.921, 0.64, 0.064），Hybrid 折射。和 Khronos 附带的路径追踪参考图比：色相、按厚度变深的吸收、透过龙身看到的背景都接近；龙身更“块”，少了多次内部反射的细碎高光（光栅化折射的固有差距）。
+- 工具修复：`gltf2obj.py` 以前把 Base Color 转成 RGB，丢掉 alpha，Sponza 的植物、锁链变成实心方片；现在 alphaMode = MASK / BLEND 的材质另存 `<材质>_alpha.png`，`scene_loader.py` 把它设成 PBR MAT 的 Alpha Map + Alpha Test（阈值 0.5）。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -274,6 +283,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - 0.8.3 遗留：三平面投影（原生本身不起作用，§11 第 58 条；需要时可以自己实现）、POP 的自定义贴图坐标属性、一个材质里第三套 UV、实例纹理坐标（Instance Texture）。（M6c 首帧失败、方格暗斑在 0.8.4 处理，见 §11 第 64 条和 `TEST.M6CWARM`。）
 - 0.8.5 参考图里剩下的差异（§11b-8）：粗糙金属偏暗约 24 %（光追反射比值或镜面遮蔽）、彩色墙面的颜色渗透弱（探针只有一次反弹）、方块背光面偏暗约 10 %。
 - 0.8.4 遗留：阴影图不做 Alpha Test（镂空的叶子按整片投影，哈希镂空同样）；哈希镂空按世界坐标取噪声，运动物体上图案会游动（要物体空间坐标，0.9.2 没做：G-Buffer 材质要多传一个物体空间坐标）；能量补偿只用于不透明物体（玻璃的 F0 很小，影响可以忽略）；透明层的表层质感（G2）。
+- 开源场景实测（§11b-15）发现的：室内场景要开 Auto Exposure 才不暗（考虑默认开，待定）；大场景里探针 GI 的反弹弱、没有颜色渗透（多次反弹 / 更密的探针）。
 - 0.9.4 遗留（`CAM.ORTHO` / `GBUF.SPRITE`）：雾的深度切片在正交时仍是透视的分布；Perspective Ortho Blend、Custom Matrix；精灵的深度（`gl_FragDepth` 会关掉提前深度测试，没写）、精灵投影、精灵进光追（加速结构只收三角形）、精灵的运动矢量只有中心像素；SOP 的点（Particle 图元）检测没有实测，只测了 POP。
 - 0.9.3 遗留（`EXT.RTINST`）：实例来源是 TOP / SOP / POP 时不进光追（Script CHOP 只读 CHOP 通道和表格列）；Pivot、Rotate to Vector、Instance Order = World then Instance、Instance Count Mode 不读；Instance Color 不进光追（同一 ObjId，一个平均色）；探针网格和阴影范围的自动适配只按原型的包围盒，不按实例的分布。
 - 0.9.2 遗留（`VEL.LIMITS`）：实例的各自运动（要 Cache CHOP 存上一帧的实例变换，S2）；SOP 变形（无速度属性时）；Particle POP 的 `PartVel` 路径编译通过但没有实测粒子（G-Buffer 画点要等 0.9.4 的点精灵）；运动模糊的瓦片最大速度 + 重建滤波（McGuire 2012）；SSGI / SSR / 光追 / 雾的时间累积仍只按相机重投影；J4 折射区域的运动矢量（玻璃后面的物体按玻璃表面算）；透明、混合物体不写速度。
