@@ -30,6 +30,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 ![spot-light shadow off / on, local lights in the fog (0.9.1)](docs/images/spot_shadows.jpg)
 ![object motion vectors (0.9.2): TAA with camera motion only | with object motion vectors | object motion blur](docs/images/object_motion.jpg)
 ![instanced geometry in the ray-tracing proxy (0.9.3): reflections of instanced pillars](docs/images/rt_instances.jpg)
+![orthographic camera and point sprites (0.9.4): perspective | orthographic, POP points as sphere sprites](docs/images/ortho_sprites.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
