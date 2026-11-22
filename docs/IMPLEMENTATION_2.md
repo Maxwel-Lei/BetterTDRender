@@ -212,6 +212,10 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 斜俯视的地面 + 一个按帧匀速平移的方块（0.04 / 帧，带噪声贴图）+ 一个静止方块。速度缓冲只画移动的方块（Moving Objects `1 of 3`），中位位移 0.0400、y / z 为 0（和 `uniforms` 同一帧，没有一帧延迟）；Object Motion Vectors 关时不画；方块上噪声贴图的横向梯度 0.0446 vs 关时 0.0346（TAA 按物体运动对齐后更清晰）；运动模糊（Shutter 1）横向 / 纵向梯度比 0.51 vs 0.65（沿 x 糊）；停下后 `velocity` 不再 cook；Box POP 跟着 Geometry COMP 移动也得到 0.04 / 帧。共 8 项。
 
+## 11b-12. 0.9.3 测试（`tests/m93_tests.py`）
+
+镜面地面 + 6 根实例化柱子（Script CHOP：tx 等距、tz −1、ry 0/15/…/75、sy 1–2）+ 4 个实例化小方块（表格 DAT：tx ty tz）。光追代理里有两个 Copy POP；柱子的点数是 6 的倍数，物体空间 x 范围 5.445（最后一根转了 75°）、顶 1.2（sy 2）；小方块中心 z 1.2；Debug View = Ray-Traced Reflections 时，地面上柱子倒影处的“红 − 绿” 0.214 vs Max Instances 0 时 0.050；Max Instances 0 时没有 Copy POP；3 时两个实例源都是 3 个；表格多一行后实例源从 4 变 5（不用 Refresh）。共 8 项。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -224,6 +228,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 0.8.1 专项 | `tests/m81_tests.py` | 8 项：POP 贴图、薄壁按距离模糊、圆盘旋转逐帧变化、边缘无暗带、薄壁透射提亮 |
 | 0.8.3 专项 | `tests/m83_tests.py` | 18 项，§11b-6：贴图坐标和原生逐像素对比、场景比例 |
 | 0.8.4 专项 | `tests/m84_tests.py` | 15 项，§11b-7：能量补偿、光追反射的方块结构对比 0.8.3、Refraction Scale、吸收颜色、哈希镂空 |
+| 0.9.3 专项 | `tests/m93_tests.py` | 8 项，§11b-12：实例化进光追代理 |
 | 0.9.2 专项 | `tests/m92_tests.py` | 8 项，§11b-11：物体运动矢量、TAA、运动模糊 |
 | 0.9.1 专项 | `tests/m91_tests.py` | 7 项，§11b-10：聚光阴影、雾里的局部灯、多次散射、探针 GI 里的局部灯 |
 | 0.9.0 专项 | `tests/m90_tests.py` | 12 项，§11b-9：局部灯 |
@@ -250,7 +255,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 ## 12. 尚未实现
 
 - M5 遗留：示例网络的 4060 / 2060 实测；Palette 安装说明以外的安装方式（TD 的 Package / 组件库）。
-- M4 遗留：实例化几何体进光追代理；命中点用逐纹素的贴图颜色（现在是每物体平均色）和高光；探针可见性（DDGI 的深度矩，防薄墙漏光）；光追阴影；探针多次反弹；不支持光追的机器上实测降级路径。
+- M4 遗留：命中点用逐纹素的贴图颜色（现在是每物体平均色）和高光；探针可见性（DDGI 的深度矩，防薄墙漏光）；光追阴影；探针多次反弹；不支持光追的机器上实测降级路径。
 - M3 遗留：High 档 SSGI 半分辨率 + 深度感知上采样；屏幕空间光束（太阳在画面里时的径向光芒，便宜的补充）。
 - M2 遗留：景深的散景形状（目前是圆盘）、镜头切换的自动检测（现在只在换相机节点时重置历史）。
 - M6 遗留：M6a 剩余项见 §9e 末尾；M6b 混合透明默认不构建（§9f 写了要改进的地方）；M6c：命中点用贴图颜色、色散、光追玻璃投彩色阴影（焦散）。
@@ -258,6 +263,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - 0.8.3 遗留：三平面投影（原生本身不起作用，§11 第 58 条；需要时可以自己实现）、POP 的自定义贴图坐标属性、一个材质里第三套 UV、实例纹理坐标（Instance Texture）。（M6c 首帧失败、方格暗斑在 0.8.4 处理，见 §11 第 64 条和 `TEST.M6CWARM`。）
 - 0.8.5 参考图里剩下的差异（§11b-8）：粗糙金属偏暗约 24 %（光追反射比值或镜面遮蔽）、彩色墙面的颜色渗透弱（探针只有一次反弹）、方块背光面偏暗约 10 %。
 - 0.8.4 遗留：阴影图不做 Alpha Test（镂空的叶子按整片投影，哈希镂空同样）；哈希镂空按世界坐标取噪声，运动物体上图案会游动（要物体空间坐标，0.9.2 没做：G-Buffer 材质要多传一个物体空间坐标）；能量补偿只用于不透明物体（玻璃的 F0 很小，影响可以忽略）；透明层的表层质感（G2）。
+- 0.9.3 遗留（`EXT.RTINST`）：实例来源是 TOP / SOP / POP 时不进光追（Script CHOP 只读 CHOP 通道和表格列）；Pivot、Rotate to Vector、Instance Order = World then Instance、Instance Count Mode 不读；Instance Color 不进光追（同一 ObjId，一个平均色）；探针网格和阴影范围的自动适配只按原型的包围盒，不按实例的分布。
 - 0.9.2 遗留（`VEL.LIMITS`）：实例的各自运动（要 Cache CHOP 存上一帧的实例变换，S2）；SOP 变形（无速度属性时）；Particle POP 的 `PartVel` 路径编译通过但没有实测粒子（G-Buffer 画点要等 0.9.4 的点精灵）；运动模糊的瓦片最大速度 + 重建滤波（McGuire 2012）；SSGI / SSR / 光追 / 雾的时间累积仍只按相机重投影；J4 折射区域的运动矢量（玻璃后面的物体按玻璃表面算）；透明、混合物体不写速度。
 - 0.9.1 遗留：点光的阴影（立方体阴影图）；聚光阴影图不随 Shadow Update 的“运动中半分辨率”降级；分块裁剪（64 盏以上，现在 8 盏直接循环，够用就先不做）；雾里局部灯的等角采样（J3：雾按格子逐个算、不沿视线取样，用不上；只有以后改成沿视线积分时才需要）、光追 GI 按功率随机选一盏灯；双瓣相位函数（J5 的后一半）；SSS 透射只算主光。
 - 之后：正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
@@ -267,6 +273,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-22 | 0.9.3 | 实例化进光追代理（`ROADMAP_0.9.md` §4，S4）。**`EXT.RTINST`**：实例化的 Geometry COMP 不再跳过；`rtscene/inst<i>`（Script CHOP，回调 `rt_inst_callbacks` = `ext/rt_inst_chop.py`）按 Instance 页的 OP 和通道 / 列名读出 tx..sz（CHOP 或表格 DAT，每个实例一个采样，最多 Max Instances in Proxy 个；读源数据建立依赖，实例变了自动重算）→ `tp<i>`（CHOP to POP：P = 平移，`InstR` = 旋转（度），`InstS` = 缩放）→ 每个子 SOP / POP 的代理链在 Transform POP 之前插一个 Copy POP（模板平移 / 旋转 / 缩放，默认 SRT、XYZ，和 Geometry COMP 的实例一致，原型验证过）。实例化物体的减面下限改成“每份至少 12 个三角形、总共至少 800”。Ray Tracing 页新增 Max Instances in Proxy（默认 1024，改了自动 Refresh）；不支持的实例来源提示 `Instanced geometry left out of the ray-tracing scene`。对比图 `docs/images/rt_instances.jpg`。新测试 `tests/m93_tests.py` 8 项；回归 m1 ~ m92 全过，和 0.9.2 的示例场景 A/B 差 0 |
 | 2026-11-22 | 0.9.2 | 物体运动矢量（`ROADMAP_0.9.md` §2，G1 的一半）。**速度缓冲**（`BUILD.VELOCITY` / `EXT.VELMIRROR` / `VEL.OBJECT` / `UNI.VELOCITY`）：每个不透明物体多一个镜像 `scene/v<i>`，各自一个材质 `vm<i>`（`velocity.vert/frag`，不读 common），上一帧的世界矩阵是 4 个 vec4 uniform；`uniforms` 每帧比较各物体的 worldTransform，动了的放进 `velocity` 的 Geometry 列表、写上一帧矩阵；`velocity` 的一个参数表达式读 `uniforms`，所以总在它之后渲染（位移和当前帧对齐，实测 0.0400 / 0.04）。输出 rgb = 世界位移、a = 到相机距离（没有静态物体挡在前面的深度测试，用距离和 G-Buffer 比对）；没有物体在动时 `vel_src` 切 1×1 常量，`velocity` 不 cook。`uMisc.w` = 有运动矢量。**TAA**（`TAA.VELDILATE` / `TAA.RESPONSIVE`）：3×3 里取最近的表面的点和位移重投影（Karis 2014）；历史帧的稳定深度和这个点上一帧的深度对不上时（物体移开露出的背景），当前帧权重至少 0.5。**运动模糊**（`MB.OBJECT`）：位移加进投影差，轮廓内沿物体运动糊。**速度属性**（`VEL.ATTRIB`，G1）：几何体带 `PartVel`（POP）或 `v`（SOP）时用变体 `velocity_pv_vert` / `_v`，按每秒换算到每帧（§11 第 70 条）。Post 页新增 Object Motion Vectors（默认开）、Moving Objects（只读）。没做的见 §12。对比图 `docs/images/object_motion.jpg`。新测试 `tests/m92_tests.py` 8 项；回归 m1 39、m81 8、m8 18、m7 13、m6、m5 7、m83 18、m84 15、m85 5、m90 12、m91 7 全过（m1、m7 改成不数 `scene/v*`）；和 0.9.1 的示例场景 A/B 差 0 |
 | 2026-11-22 | 0.9.1 | 多光源第二阶段（`ROADMAP_0.9.md` §8.2）。**聚光阴影**（`LIGHT.LLSHADOW` / `BUILD.LLSHADOW` / `EXT.LLSHADOW` / `UNI.LLSHADOW`）：前 Max Shadowed Spot Lights（默认 2，最多 4）盏聚光各有一张透视阴影图（`llcam0–3` 挂在灯上，fov = 外锥 + 余量，far = 衰减终点 × 1.05；`llsh0–3` 用主光阴影的几何体和 `mat_shadow`；`llsw0–3` 切到 `llsh_off` 时不占开销），composite / lighting 读输入 10–13 / 6–9；`uB` 扩到 124 槽，108–123 每盏 4 行（世界 → 灯相机矩阵 3 行 + tan 半角 / near / 偏移），灯槽 l4.y = 阴影号 + 1；3×3 PCF，偏移按距离加大。共用的 `llAtten()` 放进 `common.glsl`。**雾里的局部灯**（`FOG.LOCAL`）：`fog_scatter` 逐格子循环局部灯（衰减 + HG 相位，无阴影）。**多次散射**（J5，`FOG.MULTI` / `BUILD.FOGMULTI`）：Fog 页 Multiple Scattering（默认 0.5），`uMisc.z`；倍频近似再加两级（相位 g × 0.5 / × 0.25、亮度 0.5 / 0.25，再乘 ms），环境光 × (1 + 0.5 ms)。**光追命中点的局部灯**（`RT.LOCAL`）：`shadeHit` 加局部灯，遮挡用 `occluded()` 阴影射线，探针 GI、光追反射、光追折射都受益。改 Local Lights / Max Shadowed Spot Lights 自动 Refresh（`parexec`）。分块裁剪、等角采样没做（§12）。对比图 `docs/images/spot_shadows.jpg`。新测试 `tests/m91_tests.py` 7 项；回归 m1 39、m81 8、m8 18、m7 13、m6、m5 7、m83 18、m84 15、m85 5、m90 12 全过；Fog Multiple Scattering 0、Max Shadowed Spot Lights 0 时和 0.9.0 的最终画面 A/B 差 0 |
 | 2026-11-22 | 0.9.0 | 多光源第一阶段（`ROADMAP_0.9.md` §1）。**局部灯**（`LIGHT.LOCAL` / `UNI.LOCALLIGHTS` / `EXT.LIGHTS` / `BUILD.LOCALLIGHTS`）：第一盏平行光是主光，其余 Light COMP（点光、聚光、多出来的平行光）最多 8 盏；`uB` 从 68 扩到 108 槽，每盏灯 5 个 vec4（位置 \| 类型、颜色 × 强度 \| 衰减终点、朝向 \| 外锥 cos、衰减起点 / 指数 / 内锥 cos \| 衰减方式、锥体 roll），`uniforms` 每帧写（移动灯不用 Refresh），`uMisc.y` = 灯数；`lighting_core` 的 `localLights()` 直接循环（GGX + 能量补偿 + Lambert，无阴影）。亮度约定同主光（Dimmer × π，§11 第 67 条）；衰减读灯的 Attenuation，或 Local Falloff = Physical（平方反比，1 m 处 = Dimmer）。只匹配到点光 / 聚光时没有主光（`sun_off`）。`scene_watch` 的签名加上灯的类型，改类型会自动刷新。Light 页新增 Local Lights、Light Count、Local Intensity、Local Falloff。新测试 `tests/m90_tests.py` 12 项 |

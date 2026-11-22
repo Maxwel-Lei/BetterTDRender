@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.9.2。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.9.3。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -204,13 +204,14 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Reflection Intensity | 光追反射的混合程度，0 = 只用环境反射 |
 | Reflection Max Roughness | 比这更粗糙的表面不发反射光线 |
 | Proxy Detail (%) | 光追代理保留原模型多少面（默认 15%）。越高越准，但每帧重建加速结构更慢；面数显示在下面的 Proxy |
+| Max Instances in Proxy | （0.9.3）实例化物体每个最多放多少个实例进光追代理，默认 1024；0 = 实例化物体不进光追。实例越多，加速结构重建越慢（每个实例按减面后的面数算，实例很多时每份至少 12 个三角形、总共至少 800） |
 | Proxy | 只读：代理的三角形数量 |
 
 光追的几个限制（简化版 Lumen 的取舍）：
 - 光线打到的表面只按"漫反射"着色，颜色是材质贴图的平均色：反射里的物体没有自己的高光和贴图细节，比真实的略暗、略平。离得近、看得清的反射仍由屏幕空间反射负责。
 - 代理是减面后的模型，和真实表面有几毫米到几厘米的差别：光线从表面稍微离开一点再出发，所以紧贴的接触处由屏幕空间效果补。
 - 探针间距几十厘米：比这更小的缝（比如车底 15 cm 的空隙）分辨不出，Height-Field AO（Indirect 页）可以一起开着补充。
-- 实例化（Instancing）的几何体暂时不进光追代理（节点上有提示）。
+- 实例化（Instancing）的几何体 0.9.3 起进光追代理（探针 GI、光追反射、光追折射都能看到它们）：读 Instance 页的 Translate / Rotate / Scale，来源是 CHOP（通道）或表格 DAT（列，第一行是名字），实例数变化、位置变化会自动跟上；Pivot、Rotate to Vector、Instance Order 不读；实例来源是 TOP、SOP、POP 时不进光追（节点上有提示）。光追里所有实例用同一个平均颜色（Instance Color 不读）。
 - 改了材质颜色要点 Refresh Scene 才会更新代理的颜色；移动物体、灯光会自动跟上。
 
 ### Fog 页（体积雾）
