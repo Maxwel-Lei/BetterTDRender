@@ -3,7 +3,8 @@ def onValueChange(par, prev):
     n = par.name
     if n in ('Camera', 'Geometry', 'Lights', 'Shadowfit', 'Transparency', 'Refr', 'Blend', 'Refrmethod', 'Sss',
              'Sceneunit', 'Unitsize',           # [BTDR:UNI.UNIT] probe-grid margins are in metres
-             'Locallights', 'Localshadows'):    # [BTDR:EXT.LLSHADOW] (0.9.1) which spot lights get a shadow map
+             'Locallights', 'Localshadows',     # [BTDR:EXT.LLSHADOW] (0.9.1) which spot lights get a shadow map
+             'Rtmaxinstances'):                 # [BTDR:EXT.RTINST] (0.9.3) instances in the ray-tracing proxy
         parent().Refresh()
     elif n.startswith('Sss') and n[3:4].isdigit():
         # [BTDR:EXT.SSSSLOTS] Subsurface slots: a preset fills the slot, the geometry rebuilds; the rest is read per frame

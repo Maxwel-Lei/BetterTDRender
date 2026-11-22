@@ -15,6 +15,7 @@ NOTES = {
     'cover_warm': '加载封面显示期间每帧拉取渲染结果，让着色器编译、时间累积填满，封面撤下时画面已经稳定。[BTDR:EXT.COVER]',
     'uniforms': '全局 uniform 数组（4 通道 × 108 槽，uB[]；0.9.0 起 68–107 是 8 盏局部灯）：相机、太阳、阴影、环境、各效果开关和参数（0.8.3 起按 Render 页的 Scene Unit 把按米设计的距离换算成场景单位，uB[42]），所有着色器共用。[BTDR:UNI.BLOCK]',
     'uniforms_callbacks': '`uniforms` 的计算脚本：把参数和场景状态写进 uB 的各个槽位。源文件 ext/uniforms_chop.py。[BTDR:FILE.UNIFORMS]',
+    'rt_inst_callbacks': '（0.9.3）光追代理里实例化物体的 Script CHOP 回调：把 Geometry COMP Instance 页指定的 CHOP 通道 / 表格列读成 tx..sz，每个实例一个采样。源文件 ext/rt_inst_chop.py。[BTDR:EXT.RTINST]',
     'uniforms_callbacks1': 'TD 新建 Script CHOP 时自动带的模板回调，没有被使用（真正的回调是 uniforms_callbacks）。',
     'status': '状态文本：相机、灯、几何体的解析结果和所有警告。Render 页的 Status 参数显示它的第一条。',
     'white': '4×4 白色常量：没有贴图时给材质采样器用，也给 Debug View 当占位输入。',
@@ -153,7 +154,7 @@ SHADER_NOTES = {
 # 分组按一帧的数据流排序；layout() 按这个顺序把每组节点排成网格、再把各组像书架一样从左到右、从上到下摆放。
 # 每项：(标题, 成员, 底色, 每行几个)。成员 None = 所有着色器 DAT（*_frag / *_comp / *_vert）。
 GROUPS = [
-    ('脚本与控制：扩展、参数回调、场景监视', ['BTDRExt', 'parexec', 'execute', 'scene_watch', 'uniforms_callbacks', 'status'], (0.35, 0.35, 0.45), 3),
+    ('脚本与控制：扩展、参数回调、场景监视', ['BTDRExt', 'parexec', 'execute', 'scene_watch', 'uniforms_callbacks', 'rt_inst_callbacks', 'status'], (0.35, 0.35, 0.45), 3),
     ('场景镜像与相机：Refresh 时重建，不要手动改', ['uniforms', 'uniforms_callbacks1', 'scene', 'cam_jit', 'white'], (0.3, 0.4, 0.3), 3),
     ('G-Buffer：延迟渲染第一步，4 个缓冲', ['gbuffer', 'gbuf0', 'gbuf1', 'gbuf2', 'gbuf3'], (0.25, 0.35, 0.5), 5),
     ('主光阴影：只在变化时重画', ['mat_shadow', 'suncam', 'shadow', 'shadow_cache', 'shadow_src'], (0.4, 0.35, 0.25), 3),

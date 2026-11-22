@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.9.2'
+VERSION = '0.9.3'
 BLOG = []
 
 def _read(rel):
@@ -208,6 +208,8 @@ def build_btdr(dest, name='renderBTDR'):
     p = setup(pg.appendFloat('Rtreflmaxrough', label='Reflection Max Roughness')[0], 0.7, 0.05, 1, True, True); p.enableExpr = 'me.par.Raytracing and me.par.Rtreflections'
     p = setup(pg.appendFloat('Rtproxydetail', label='Proxy Detail (%)')[0], 15.0, 1, 100, True, True); p.enableExpr = 'me.par.Raytracing'
     p = pg.appendStr('Rtproxyinfo', label='Proxy')[0]; p.readOnly = True
+    # [BTDR:BUILD.RTINST] (0.9.3) instanced geometry in the proxy: at most this many instances per object
+    p = setup(pg.appendInt('Rtmaxinstances', label='Max Instances in Proxy')[0], 1024, 0, 16384, True); p.enableExpr = 'me.par.Raytracing'
 
     # [BTDR:BUILD.POSTPARS] lens / camera effects (M2)
     pg = C.appendCustomPage('Post')
@@ -405,6 +407,7 @@ def build_btdr(dest, name='renderBTDR'):
     dat('BTDRExt', _read('ext/BTDRExt.py'), X0 - 250, 400)
     dat('status', 'OK', X0 - 250, 0)
     cb = dat('uniforms_callbacks', _read('ext/uniforms_chop.py'), X0 - 250, 300)
+    dat('rt_inst_callbacks', _read('ext/rt_inst_chop.py'), X0 - 500, 300)      # [BTDR:EXT.RTINST] (0.9.3)
     pe = place(C.create(parameterexecuteDAT, 'parexec'), X0 - 250, 200)
     pe.text = _read('ext/parexec.py')
     pe.par.op = '..'; pe.par.pars = '*'; pe.par.custom = True; pe.par.builtin = False

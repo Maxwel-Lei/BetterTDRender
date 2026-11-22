@@ -708,11 +708,21 @@ class BTDRExt:
             to_main = kind == 'opaque' or (kind == 'refr' and info[i].get('inrt'))
             to_glass = kind == 'refr' and not to_main and rtrefr and mgt is not None
             skip = not (to_main or to_glass)
+            # [BTDR:EXT.RTINST] (0.9.3) instanced objects: the proxy of the geometry is copied onto a template POP made from
+            # the instance transforms (Script CHOP rtscene/inst<i> -> CHOP to POP -> Copy POP), then the object transform
+            tmpl = None
             try:
-                if not skip and src.par.instancing.eval():
-                    inst.append(src.path); skip = True
+                instanced = bool(src.par.instancing.eval())
             except Exception:
-                pass
+                instanced = False
+            if not skip and instanced:
+                kind_ = self._rt_inst_kind(src)
+                cap = int(C.par.Rtmaxinstances.eval()) if hasattr(C.par, 'Rtmaxinstances') else 0
+                if kind_ != 'ok' or cap <= 0:
+                    inst.append('%s (%s)' % (src.path, 'Max Instances in Proxy 0' if cap <= 0 else 'instance OP is a ' + kind_))
+                    skip = True
+                else:
+                    tmpl = self._rt_inst_template(R, i, src, cap)
             for ch in ([] if skip else src.children):
                 if not getattr(ch, 'render', False) or ch.family not in ('SOP', 'POP'):
                     continue
@@ -733,8 +743,10 @@ class BTDRExt:
                     # missing from the ray-traced scene (found with M6c's traced glass)
                     pr = R.create(polyreduceSOP, 'pr%d' % k); pr.par.method = 'number'
                     # (Keep # counts triangles after Pre-Triangulate: a quad is two)
-                    pr.par.numpolys.expr = ("max(int(op('cv%d').numPrims * 2 * parent.BTDR.par.Rtproxydetail / 100), "
-                                            "min(op('cv%d').numPrims * 2, 800))" % (k, k))
+                    # instanced: the floor is 800 triangles for all copies together (at least 12 per copy)
+                    floor = ("min(op('cv%d').numPrims * 2, max(12, 800 // max(op('%s').numSamples, 1)))" % (k, tmpl[0].name)) if tmpl else \
+                            ("min(op('cv%d').numPrims * 2, 800)" % k)
+                    pr.par.numpolys.expr = ("max(int(op('cv%d').numPrims * 2 * parent.BTDR.par.Rtproxydetail / 100), %s)" % (k, floor))
                     cv.outputConnectors[0].connect(pr)
                     sp = R.create(soptoPOP, 'sp%d' % k); sp.par.sop = pr
                     for n, o in enumerate((a, cv, pr, sp)): o.nodeX, o.nodeY = -800 + n * 150, y
@@ -742,7 +754,16 @@ class BTDRExt:
                     sp = R.create(selectPOP, 'sp%d' % k); sp.par.pop = ch.path
                     sp.nodeX, sp.nodeY = -350, y
                 x = R.create(transformPOP, 'x%d' % k); x.par.xformmatrixop = t; x.nodeX, x.nodeY = 0, y
-                sp.outputConnectors[0].connect(x)
+                if tmpl:
+                    cp = R.create(copyPOP, 'cp%d' % k); cp.nodeX, cp.nodeY = -150, y - 60
+                    sp.outputConnectors[0].connect(cp.inputConnectors[0])
+                    tmpl[1].outputConnectors[0].connect(cp.inputConnectors[1])
+                    cp.par.dotemplatetranslate = True; cp.par.translateattr = 'P'
+                    cp.par.dotemplaterotate = True; cp.par.rotateattr = 'InstR'
+                    cp.par.dotemplatescale = True; cp.par.scaleattrib = 'InstS'
+                    cp.outputConnectors[0].connect(x)
+                else:
+                    sp.outputConnectors[0].connect(x)
                 at = R.create(attributePOP, 'id%d' % k); at.nodeX, at.nodeY = 200, y
                 at.par.attr0name = 'custom'; at.par.attr0customname = 'ObjId'; at.par.attr0type = 'float'
                 at.par.attr0numcomps = '1'; at.par.attr0value0 = i
@@ -766,7 +787,7 @@ class BTDRExt:
                 rr = [(ac[0], ac[1], ac[2], max(ab, 1e-3)), (scl, 0.0, 0.0, -ior if thin else ior)]
             rows += rr
         if inst:
-            warn.append('Instanced geometry is not in the ray-tracing scene yet: %s' % ', '.join(inst))
+            warn.append('Instanced geometry left out of the ray-tracing scene: %s' % ', '.join(inst))
         C.store('rt_geos', [g.path for g in geos])
         # [BTDR:EXT.RTMAT] two texels per object: albedo rgb | metallic, emissive rgb | 0 (linear)
         mt = C.op('rt_mat')
@@ -796,6 +817,29 @@ class BTDRExt:
                 n = int(min(40, max(3, round(float(v) / step) + 1)))
                 par.expr = "max(3, int(round(%d * (1.0 if parent.BTDR.par.Quality != 'low' else 0.75))))" % n
         return k
+
+    def _rt_inst_kind(self, src):
+        ns = {}
+        exec(self.ownerComp.op('rt_inst_callbacks').text, ns)
+        return ns['source_kind'](src)
+
+    def _rt_inst_template(self, R, i, src, cap):
+        """[BTDR:EXT.RTINST] Script CHOP inst<i> (instance transforms, rt_inst_chop.py) -> CHOP to POP tp<i>: one point per
+        instance, P = translate, InstR = rotate (degrees), InstS = scale. Copy POP's default order (SRT, XYZ) matches
+        the Geometry COMP's instancing."""
+        C = self.ownerComp
+        sc = R.create(scriptCHOP, 'inst%d' % i); sc.nodeX, sc.nodeY = -1100, -i * 120 - 400
+        sc.par.callbacks = C.op('rt_inst_callbacks')
+        sc.store('src', src.path); sc.store('cap', cap)
+        tp = R.create(choptoPOP, 'tp%d' % i); tp.nodeX, tp.nodeY = -950, -i * 120 - 400
+        tp.par.chop = sc
+        tp.par.surftype = 'none'; tp.par.specifypos = False
+        tp.par.chanscope = 'tx ty tz'; tp.par.attrscope = 'P'
+        tp.seq.attr.numBlocks = 2
+        tp.par.attr0chanscope = 'rx ry rz'; tp.par.attr0customname = 'InstR'; tp.par.attr0numcomps = '3'
+        tp.par.attr1chanscope = 'sx sy sz'; tp.par.attr1customname = 'InstS'; tp.par.attr1numcomps = '3'
+        sc.cook(force=True)
+        return (sc, tp)
 
     @staticmethod
     def _solid_boxes(boxes):
