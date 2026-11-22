@@ -23,6 +23,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 ![texture coordinates: BTDR's G-Buffer and the native Render TOP with a second UV set](docs/images/uv_compare.jpg)
 ![energy compensation off / on: rough gold, smooth gold, rough plastic](docs/images/energy_compare.jpg)
 ![Refraction Scale 0 / 1 / 2 and a red Absorption Color](docs/images/refract_scale_compare.jpg)
+![path-traced reference (0.8.5): BTDR | Josef Pelz's Pathtracer | log2 ratio](docs/images/pt_reference.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
@@ -30,7 +31,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.8.4** (energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.8.5** (path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 

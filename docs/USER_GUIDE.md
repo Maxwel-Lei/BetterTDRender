@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.8.4。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.8.5。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -121,7 +121,7 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 | Energy Compensation | 默认开（0.8.4）：粗糙金属的能量补偿。普通的 GGX 高光只算光在表面反射一次，粗糙度高时，在微观凹凸之间来回反射的那部分光丢了，粗糙金属会偏暗（粗糙度 0.8 时最多丢掉约四成）。开着时把这部分补回来，粗糙金属更亮、颜色更饱和；光滑表面和非金属几乎不变。关掉 = 0.8.3 的效果 |
 | Shadows | 阴影开关 |
 | Shadow Softness | 半影宽度的倍数。0 接近硬阴影 |
-| Auto Fit Shadow Range | 开：刷新场景时按几何体包围盒自动设置下面两项（地面这类扁平物体不参与计算） |
+| Auto Fit Shadow Range | 开：刷新场景时按几何体包围盒自动设置下面两项（地面不参与计算；0.8.5 起墙、天花板这类薄板参与计算，室内场景的阳光不会再从天花板漏进来） |
 | Shadow Center / Shadow Range | 阴影覆盖范围的中心和宽度（场景单位）。范围越小阴影越清晰 |
 | Shadow Resolution | 阴影图分辨率。Quality = Custom 时可改 |
 | Shadow Update | On Change（默认）：只有灯光、物体的位置或形状变化时才重画阴影图，静止的场景省掉阴影的全部开销（相机怎么动都不影响）。Every Frame：每帧都重画；如果发现阴影没跟上变化，改成这个 |
@@ -131,6 +131,8 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 地面这类只接收阴影的扁平物体（比其他物体都低、几乎没有高度）会自动不参与画阴影图，省掉一次绘制。
 
 灯光的方向、颜色、强度直接读 Light COMP：方向取它的朝向，位置不影响结果。
+
+**亮度约定（和原生不同，有意为之）**：BTDR 把灯的 Dimmer × π 当作照度，颜色参数和颜色贴图按 sRGB 解码（Render 页 sRGB Colors and Color Maps）。所以同一盏灯、同一个材质，BTDR 比原生 Render TOP 亮（中灰约 1.4 倍，浅色更多），画面更接近 UE5 的默认观感。想和原生亮度接近，把 Intensity Multiplier 调到 0.3–0.5 左右，或关掉 sRGB Colors。
 `Lights` 没匹配到任何灯时用内置的一盏主光，节点上会有提示。
 
 ### Environment 页

@@ -114,6 +114,8 @@
 64. **0.8.3 那张图里的“光追反射方格暗斑”，在单个 BTDR、跑够帧数的场景里复现不出来**（2026-11-22，稳定时、刚打开光追 20 帧时、相机摆动时都看过）。它来自 m83 测试：两个 BTDR 同时开着、150 帧就截图，反射的时间累积还没收敛，而 1/4 分辨率的纹素在放大（双线性）和累积前的 3 × 3 预滤波里跨物体边缘混合，就显成了一块块的。0.8.4 两处都改成按表面加权（`COMP.RTUP`、`ACCUM.RTEDGE`）；m84 用“4 像素边界上的跳变 ÷ 内部跳变”量化，比 0.8.3 低。
 65. **同一帧里加载多个 BTDR、或者在 TD 正在做别的重活（同步脚本）时加载 BTDR，TD 可能卡死**：2026-11-22 新建诊断场景时 MCP 超时、TD 失去响应，重开后恢复。测试统一用 `tools/run_regression.py` 一个一个跑，测试内部也一步只建一个 BTDR。
 66. 实心玻璃球的“球里有个球”：出射方向在全内反射的临界角（玻璃 cos = 0.745）处从折射方向一下子切到视线方向，切换处是一个硬圆。0.8.4 改成在临界角往上 0.15 的范围里渐变（`REFR.RIMBLEND`）。真实的玻璃球（球透镜）在这一圈本来就是反光或发暗的，中间是放大、上下颠倒的背景，所以“中间一个大色块、外面一圈”本身是对的，只是边界不该是硬的。
+67. **BTDR 的亮度约定和原生不同（有意保留，2026-11-22 决定）**：原生 PBR MAT 在 Dimmer 1 的平行光下显示 albedo ÷ π（0.5 灰实测 0.154），颜色参数按线性处理；BTDR 照度 = Dimmer × π（`UNI.SUN`），颜色参数和贴图按 sRGB 解码（0.5 → 0.218，显示 0.218）。0.1 版的说明“这样和原生一致”是错的，实际 BTDR 中灰亮 1.4 倍、浅色更多。作者选择保留 BTDR 自己的观感（UE5 风格），不向原生对齐；多光源（0.9.0）也用同一约定。和路径追踪比较时要按原生约定换算（`PTREF.MATCH`）。
+68. Josef Pelz 的 Pathtracer 作参考时的坑：它只导入 Geometry COMP 里打了渲染标志的 **POP**（SOP 不认，画面只有天空）；默认按 `Panel` 的大小出图（/project1 的 1280×720），要关 `Panelresolution`；累积的样本数在 `state/out` 的 `n` × Samples，`Samplecount` 参数在 TD 的 `except Exception` 里抓不到它的报错。
 
 ## 11b. 测试（`tests/m1_tests.py`）
 
@@ -191,6 +193,11 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - “新功能全关 = 0.8.3”用 `ab_compare.py` 查（Energy Compensation 关、光追关）：out1 / out2 差值都是精确的 0。
 - 0.8.4：15 项全过。
 
+## 11b-8. 0.8.5 测试（`tests/m85_tests.py`）和参考图
+
+- 开放的房间（地面、三面 0.1 厚的墙、天花板、一个小方块）：阴影范围的中心高度落在房间中部、范围大于 8 m；探针网格的顶到天花板、背面到后墙；阴影图只排除地面（5 个投射物）。室外（40 m 的地面 + 一个物体）：阴影范围仍然只框住物体（< 6 m）。
+- 参考图（`tools/pt_reference.py`，房间场景，约 1200 spp）。0.8.5 修完后 BTDR / 路径追踪：地面受光 0.978、方块下 0.960、后墙 0.982、红墙 0.999、绿墙 1.193、方块顶 0.977、方块背光面 0.897、粗糙金属球 0.759、塑料球 0.987、天花板 1.024；墙面的蓝通道高 11–47 %（颜色渗透弱、天光多）。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -203,6 +210,8 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 0.8.1 专项 | `tests/m81_tests.py` | 8 项：POP 贴图、薄壁按距离模糊、圆盘旋转逐帧变化、边缘无暗带、薄壁透射提亮 |
 | 0.8.3 专项 | `tests/m83_tests.py` | 18 项，§11b-6：贴图坐标和原生逐像素对比、场景比例 |
 | 0.8.4 专项 | `tests/m84_tests.py` | 15 项，§11b-7：能量补偿、光追反射的方块结构对比 0.8.3、Refraction Scale、吸收颜色、哈希镂空 |
+| 0.8.5 专项 | `tests/m85_tests.py` | 5 项，§11b-8：阴影范围、探针网格包含墙和天花板 |
+| 路径追踪参考图 | `tools/pt_reference.py`（要本机有 Josef Pelz 的 `PT_FAM.tox`，`PTREF_TOX` 指路径；`PTREF_SPP`、`PTREF_PARS`、`PTREF_KEEP`） | `out/pt_ref_<tag>.txt` 逐区域比值，`out/pt_ref_<tag>.jpg` 并排图 + 热力图 |
 | 顺序跑多个测试 | `tools/run_regression.py`（`REG_TESTS = [...]` 指定，默认全套回归） | `out/regression.txt`，每个测试一行结果；一个跑完再开始下一个（§11 第 65 条） |
 | 透明测试 | `tests/m6_tests.py`（测试场景单独搭：`tests/m6_scene.py`，`M6_SHOT = 'tag'` 存 `out/m6_<tag>.jpg`） | §11b-3 |
 | 混合透明测试 | `tests/m6b_tests.py`（场景：`tests/m6b_scene.py`，`M6_SHOT` 存 `out/m6b_<tag>.jpg`） | §11b-4 |
@@ -230,6 +239,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - M6 遗留：M6a 剩余项见 §9e 末尾；M6b 混合透明默认不构建（§9f 写了要改进的地方）；M6c：命中点用贴图颜色、色散、光追玻璃投彩色阴影（焦散）。
 - 0.8 遗留（次表面散射，`docs/SUBSURFACE.md`）：可选的厚度贴图（Thickness Map）、多光源的透射、光追反射 / 探针里的 SSS 物体不散射、半分辨率的 Low 档。
 - 0.8.3 遗留：三平面投影（原生本身不起作用，§11 第 58 条；需要时可以自己实现）、POP 的自定义贴图坐标属性、一个材质里第三套 UV、实例纹理坐标（Instance Texture）。（M6c 首帧失败、方格暗斑在 0.8.4 处理，见 §11 第 64 条和 `TEST.M6CWARM`。）
+- 0.8.5 参考图里剩下的差异（§11b-8）：粗糙金属偏暗约 24 %（光追反射比值或镜面遮蔽）、彩色墙面的颜色渗透弱（探针只有一次反弹）、方块背光面偏暗约 10 %。
 - 0.8.4 遗留：阴影图不做 Alpha Test（镂空的叶子按整片投影，哈希镂空同样）；哈希镂空按世界坐标取噪声，运动物体上图案会游动（要物体空间坐标，等 0.9.2 的运动矢量一起做）；能量补偿只用于不透明物体（玻璃的 F0 很小，影响可以忽略）；透明层的表层质感（G2）。
 - 之后：多盏灯、点光 / 聚光、正交相机、点精灵（未实测）。嵌套几何体、场景变化自动检测已在 0.7.4 / 0.7.5 完成；仍需手动 Refresh 的只剩“改了材质颜色后让光追代理的平均色跟上”。
 
@@ -238,6 +248,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-22 | 0.8.5 | 路径追踪参考图（J2，`ROADMAP_0.9.md` §8.1）。新工具 `tools/pt_reference.py`（`TOOL.PTREF`）：同一个原生场景（Geometry COMP + PBR MAT + 平行光 + 纯色天空）由 BTDR 和 Josef Pelz 的 Pathtracer（只在本机当参考，不随 BTDR 分发）各渲一份，线性 HDR 逐区域比较，出并排图和 log2 比值热力图（`docs/images/pt_reference.jpg`）。比较时 BTDR 用线性颜色、Intensity Multiplier 1/π（§11 第 67 条）。按约定对齐后整幅亮度差 2 %，查出两个 bug 并修复：**阴影范围和探针网格的自动适配把墙、天花板当成地面排除了**（`EXT.SOLIDBOXES`：现在只排除地面，规则和 `EXT.CASTERS` 一样）——室内场景的阳光从阴影图外面的天花板漏进来、后墙上探针外推出竖条纹，两处都没了。其余差异记进 §12。新测试 `tests/m85_tests.py` 5 项 |
 | 2026-11-22 | 0.8.4 | 画质修补和玻璃控制（`ROADMAP_0.9.md` §8.2）。**能量补偿**（J1，`LIGHT.ENERGY` / `BUILD.ENERGY` / `UNI.MISC`）：Light 页 Energy Compensation（默认开），`uB[43]`（`uMisc`）x；直接光和环境的镜面项乘 `1 + F0 (1/E − 1)`，E 查离线算好的 16 × 16 GGX 方向反照率表（§11 第 62 条）。**光追反射的放大**（`COMP.RTUP` / `ACCUM.RTEDGE`）：composite 对 1/4 分辨率的比值做联合双边上采样（四个邻近纹素按法线、平面距离加权），`rt_acc` 的 3 × 3 预滤波和邻域统计只算同一表面（§11 第 64 条）。**Refraction Scale**（G3，`BUILD.REFRSCALE` / `REFR.SCALE`）和**吸收颜色**（G5，`BUILD.ABSORBCOLOR` / `REFR.ABSORBCOLOR`）：透明槽多三项（块大小 9 → 14），材质 `uTrans3`，透明层多一个输出 RT5（`tgbuffer` 6 个缓冲，`tgbuf5`，`GBUF.TRANS2`），`refract` 读输入 13，`rt_refr` 的 `sTBase` 改读 RT5、`rt_mat` 的 [2i] 存吸收颜色、[2i+1].x 存倍数。**哈希镂空**（G4，`BUILD.ALPHAHASH` / `GBUF.HASHALPHA`）：Transparency 页 Alpha Test Mode，材质 `uOpt.x`，Wyman & McGuire 2017。**实心玻璃的边缘**（`REFR.RIMBLEND`）：出射方向在临界角附近渐变到视线方向，去掉“球里还有一个球”的硬圆圈。M6c 首帧：测试读到 NaN 时隔 30 帧重读（`TEST.M6CWARM`，实测第二次就正常）。新工具 `tools/run_regression.py`。新测试 `tests/m84_tests.py` 15 项；回归 m1 39、m81 8、m8 18、m7 13、m6 24、m5 7、m83 18 全过。能量补偿关、光追关时和 0.8.3 的 A/B 差值为 0 |
 | 2026-11-19 | 0.8.3 | 贴图坐标和场景比例（`ROADMAP_0.9.md` §3）。**贴图坐标**（`GBUF.UVSET` / `EXT.UVSET` / `EXT.SAMPLERSTATE`）：镜像材质每张贴图的 Extend U / V、Filter 用表达式绑到 PBR MAT（各向异性取材质的、最低 4×）；新增 `uUV0` / `uUV1`（每张贴图的代码 = UV 套 + 2 × 屏幕空间，`uUV1.w` = 额外那套 UV 的编号）和 `uScr`（1 / 分辨率），`gbuffer.vert` 多传一套 `texCoord1 = TDTexAttrib_Tex(uUV1.w)`，`gbuffer.frag` 的 `uvOf()` 按代码取 uv0 / uv1 / 屏幕坐标，法线贴图的切线框架用它自己的坐标。Triplanar 不支持（§11 第 58 条），用了会提示。和原生逐像素一致（§11b-6）。**场景比例**（`BUILD.SCENEUNIT` / `UNI.UNIT`）：Render 页 Scene Unit（Meters / Centimeters / Millimeters / Inches / Feet / Custom + Unit Size）；`uniforms` 算 K = 每米多少场景单位，写进 `uB[42]`（`uUnit`），按米设计的参数乘 K（AO / GI 半径、SSR 距离和厚度、雾的浓度 / 衰减 ÷ K、基准高度和距离 × K、HF AO 半径、散射半径、薄片厚度），景深在米里算（对焦距离 × 米每单位，`dof.frag` 把深度换成米），吸收距离在 `refract` / `rt_refr` 里用 `UM()`；着色器里按米写死的常数都包上 `UM()`（阴影 / 雾的偏移和 PCSS 搜索范围、SSR / 光追的起点偏移、光追反射的最远距离、SSS 透射的偏移和薄片衰减、折射步进起点、雾的噪声频率），探针网格的边距也乘 K。改 Scene Unit 自动 Refresh。**备份保护**：`RELEASED.txt`（§11 第 59 条）。新测试 `tests/m83_tests.py` 18 项；回归 m1 39、m81 8、m8 18、m7 13、m5 7 全过；m6 除 M6c 两项外全过（0.8.2 同样失败，§12）。Meters 下和 0.8.2 的 A/B 差 0 |
 | 2026-11-19 | 0.8.2 | 内部网络重新排版（`ANNOT.LAYOUT`，`ext/annotations.py` 的 `layout()`）：只改节点的 nodeX / nodeY，不增删节点、不改连线和参数（构建前后 199 条连线逐条比对一致）。GROUPS 改成 20 组、按一帧的数据流排序，每项多了“每行几个”；组内排成网格，组与组像书架一样从左到右排，一排超过 4400 换行；组宽至少等于标题宽，标题不会压到隔壁。没写进 GROUPS 的新节点会自动放进“其他”组并记进构建日志。结果：20 个分组框，0 个跳过（0.8.1 只有 4 个）。m81 / m8 的版本检查改成读 build.py 的 VERSION。回归 m81 8、m8 18、m1 39 全过 |

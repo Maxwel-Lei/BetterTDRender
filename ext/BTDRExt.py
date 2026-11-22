@@ -744,6 +744,25 @@ class BTDRExt:
                 par.expr = "max(3, int(round(%d * (1.0 if parent.BTDR.par.Quality != 'low' else 0.75))))" % n
         return k
 
+    @staticmethod
+    def _solid_boxes(boxes):
+        """[BTDR:EXT.SOLIDBOXES] (0.8.5) the bounds the shadow camera and the probe grid fit to: every object but a
+        ground plane (flat in Y and not above the lowest point of the others, the rule of [BTDR:EXT.CASTERS]).
+        Before 0.8.5 every flat object was dropped, walls and ceilings too (0.1 thick, 6 wide): in a room the shadow
+        map covered only the furniture (sun came in through a ceiling outside it) and the probe grid stopped short of
+        the walls (vertical stripes of extrapolated light on them). Found with the path-traced reference
+        (tools/pt_reference.py)."""
+        def ground(i):
+            lo_, hi_ = boxes[i]
+            others = [boxes[j] for j in range(len(boxes)) if j != i]
+            if not others:
+                return False
+            w = max(hi_[0] - lo_[0], hi_[2] - lo_[2])
+            low = min(o[0][1] for o in others)
+            size = max(float(np.max([o[1] for o in others], axis=0).max() - np.min([o[0] for o in others], axis=0).min()), 1e-6)
+            return (hi_[1] - lo_[1]) < 0.02 * w and hi_[1] <= low + 0.01 * size
+        return [b for i, b in enumerate(boxes) if not ground(i)] or boxes
+
     def _bounds(self, geos):
         boxes = []
         for g in geos:
@@ -756,7 +775,7 @@ class BTDRExt:
                 pass
         if not boxes:
             return None
-        solid = [b for b in boxes if (b[1] - b[0]).min() > 0.02 * (b[1] - b[0]).max()] or boxes
+        solid = self._solid_boxes(boxes)   # [BTDR:EXT.SOLIDBOXES]
         return np.min([b[0] for b in solid], axis=0), np.max([b[1] for b in solid], axis=0)
 
     def _map_mean(self, top, srgb):
@@ -808,7 +827,7 @@ class BTDRExt:
     # ------------------------------------------------------------------ shadow camera
     def _fit_shadow(self, geos):
         # [BTDR:EXT.SHADOWFIT] centre and range of the shadow camera from the geometry bounds.
-        # Flat objects (floors, backdrops) are ignored so a large ground plane does not waste resolution.
+        # A ground plane is ignored so a large floor does not waste resolution (walls and ceilings are kept, 0.8.5).
         boxes = []
         for g in geos:
             try:
@@ -820,7 +839,7 @@ class BTDRExt:
                 pass
         if not boxes:
             return None
-        solid = [b for b in boxes if (b[1] - b[0]).min() > 0.02 * (b[1] - b[0]).max()] or boxes
+        solid = self._solid_boxes(boxes)
         lo = np.min([b[0] for b in solid], axis=0); hi = np.max([b[1] for b in solid], axis=0)
         centre = (lo + hi) / 2.0
         return centre, float(np.linalg.norm(hi - lo)) * 1.6

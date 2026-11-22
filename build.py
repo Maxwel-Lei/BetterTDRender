@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.8.4'
+VERSION = '0.8.5'
 BLOG = []
 
 def _read(rel):
