@@ -21,7 +21,7 @@ uniform vec4 uB[124];
 #define uBgColor   uB[16]   // rgb background colour (linear), w background intensity
 #define uGrade     uB[17]   // x exposure multiplier, y vignette, z grain, w tonemap (0 none, 1 ACES)
 #define uView      uB[18]   // x debug view, y sRGB colour inputs, z distance fade start, w distance fade end
-#define uClip      uB[19]   // x camera near, y camera far, z aspect (w / h)
+#define uClip      uB[19]   // x camera near, y camera far, z aspect (w / h), w (0.9.4) 1 = orthographic camera
 #define uTAA       uB[20]   // x current-frame weight, y 1 = TAA on, z variance clip gamma
 #define uBloom     uB[21]   // x intensity, y threshold, z knee, w radius (mip-chain blend)
 #define uAE        uB[22]   // x auto exposure on, y min EV, z max EV, w key (target mid grey)
@@ -72,6 +72,31 @@ float hash12(vec2 p)
 // [BTDR:UNI.LLSHADOW] (0.9.1) spot-light shadow maps 0..3, 4 slots each from 108: rows 0..2 of the light camera's
 // world-to-camera matrix (xyz | w), 3 x tan(half fov), y near, z bias (scene units), w 1 = on
 #define LLS(k, r) uB[108 + 4 * (k) + (r)]
+// [BTDR:CAM.ORTHO] (0.9.4) orthographic camera: uClip.w = 1 and uCamFwd.w / uPrevFwd.w hold half the view width (scene
+// units) instead of tan(fov / 2). Every pass that builds a camera ray, projects a point or turns a world size into
+// pixels goes through these, so perspective results are unchanged (same arithmetic).
+#define ORTHO (uClip.w > 0.5)
+vec3 camOffset(vec2 ndc) { return ndc.x * uCamFwd.w * uCamRight.xyz + ndc.y * uCamFwd.w / uClip.z * uCamUp.xyz; }
+// world point at view depth d (along the view axis) under screen position ndc
+vec3 camPoint(vec2 ndc, float d)
+{
+    vec3 o = camOffset(ndc);
+    return ORTHO ? uCamPos.xyz + o + uCamFwd.xyz * d : uCamPos.xyz + (uCamFwd.xyz + o) * d;
+}
+// unit direction of the camera ray through ndc
+vec3 camDir(vec2 ndc) { return ORTHO ? uCamFwd.xyz : normalize(uCamFwd.xyz + camOffset(ndc)); }
+// camera -> surface direction for a camera-relative position
+vec3 viewDirRel(vec3 rel) { return ORTHO ? uCamFwd.xyz : rel / max(length(rel), 1e-6); }
+// screen uv of a world point under a camera basis (P position, R right, U up, F forward | w)
+vec2 camProject(vec3 wp, vec4 P, vec4 R, vec4 U, vec4 F)
+{
+    vec3 v = wp - P.xyz;
+    float z = ORTHO ? 1.0 : max(dot(v, F.xyz), 1e-4);
+    return vec2(dot(v, R.xyz) / (z * F.w), dot(v, U.xyz) / (z * F.w / uClip.z)) * 0.5 + 0.5;
+}
+// pixels per scene unit at view depth z, horizontally, in an image xres pixels wide
+float pxPerUnit(float z, float xres) { return xres * 0.5 / ((ORTHO ? 1.0 : z) * uCamFwd.w); }
+
 // [BTDR:LIGHT.LOCALATT] (0.9.1) one local light's direction and attenuation at P (shared by the surface lighting, the
 // fog and the ray-traced hit shading); returns the attenuation (0 = no light), L = direction to the light, dist =
 // distance to it (1e9 for a distant light)

@@ -1,12 +1,7 @@
 // [BTDR:FILE.SSCOMMON] ss_common.glsl — helpers shared by the screen-space passes (ssgi, ssr, ss_accum)
 // G-Buffer position is camera-relative ([BTDR:GBUF.RELPOS]); background pixels store 0.
 // POSBUF / NRMBUF are #defined by the including shader.
-vec2 projectUV(vec3 wp, vec4 P, vec4 R, vec4 U, vec4 F)
-{
-    vec3 v = wp - P.xyz;
-    float z = max(dot(v, F.xyz), 1e-4);
-    return vec2(dot(v, R.xyz) / (z * F.w), dot(v, U.xyz) / (z * F.w / uClip.z)) * 0.5 + 0.5;
-}
+vec2 projectUV(vec3 wp, vec4 P, vec4 R, vec4 U, vec4 F) { return camProject(wp, P, R, U, F); }   // [BTDR:CAM.ORTHO]
 vec2 curUV(vec3 wp)  { return projectUV(wp, uCamPos, uCamRight, uCamUp, uCamFwd); }
 vec2 prevUV(vec3 wp) { return projectUV(wp, uPrevPos, uPrevRight, uPrevUp, uPrevFwd); }
 float viewDepth(vec3 wp) { return dot(wp - uCamPos.xyz, uCamFwd.xyz); }

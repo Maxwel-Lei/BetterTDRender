@@ -38,7 +38,7 @@ void main()
     float R = 4.0 * dmax;                                   // world range of the kernel
     vec3 rel = texelFetch(sTD2DInputs[1], pc, 0).xyz;
     float z = max(dot(rel, uCamFwd.xyz), 1e-3);
-    float pxPerM = float(sz.x) * 0.5 / (z * uCamFwd.w);
+    float pxPerM = pxPerUnit(z, float(sz.x));             // [BTDR:CAM.ORTHO]
     float Rpx = min(R * pxPerM, 64.0);
     R = Rpx / pxPerM;                                       // clamped: keep the profile, cut its range
 #ifdef SSS_V

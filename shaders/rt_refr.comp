@@ -55,7 +55,7 @@ void main()
 
     float dist = length(tp.xyz);
     vec3 P = tp.xyz + uCamPos.xyz;
-    vec3 V = tp.xyz / max(dist, 1e-6);                    // camera -> surface
+    vec3 V = viewDirRel(tp.xyz);                          // camera -> surface ([BTDR:CAM.ORTHO])
     vec3 N = normalize(tn.xyz);
     if (dot(N, V) > 0.0) N = -N;
     float rough = clamp(tn.w, 0.0, 1.0);

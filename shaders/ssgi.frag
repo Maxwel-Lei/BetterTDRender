@@ -17,7 +17,7 @@ void main()
     vec3 N = normalize(fetchNrm(vUV.st).xyz);
     vec2 res = vec2(textureSize(POSBUF, 0));
     float depth = max(dot(p0.xyz, uCamFwd.xyz), 1e-3);
-    float radPx = min(uGI.x / (depth * uCamFwd.w) * 0.5 * res.x, 0.25 * res.x);   // world radius -> pixels
+    float radPx = min(uGI.x * pxPerUnit(depth, res.x), 0.25 * res.x);   // world radius -> pixels ([BTDR:CAM.ORTHO])
     int steps = int(uGI.y);
     int dirs = int(uGI.z);
     float n1 = ign(gl_FragCoord.xy, uFrame.x);

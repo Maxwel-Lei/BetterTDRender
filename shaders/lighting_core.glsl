@@ -179,7 +179,7 @@ void lightingTerms(vec2 uv, out vec4 oDirect, out vec4 oAmbDiff, out vec4 oAmbSp
 
     // [BTDR:LIGHT.BACKGROUND]
     vec2 ndc = uv * 2.0 - 1.0;
-    vec3 rd = normalize(uCamFwd.xyz + ndc.x * uCamFwd.w * uCamRight.xyz + ndc.y * uCamFwd.w / uClip.z * uCamUp.xyz);
+    vec3 rd = camDir(ndc);                            // [BTDR:CAM.ORTHO] orthographic: one direction, a flat background
     vec3 bg = uView.y > 0.5 ? pow(max(uBgColor.rgb, 0.0), vec3(2.2)) : uBgColor.rgb;
     if (uEnv.z > 0.5) bg = envRadiance(rd, uEnv.w);
     bg *= uBgColor.w;
@@ -197,7 +197,7 @@ void lightingTerms(vec2 uv, out vec4 oDirect, out vec4 oAmbDiff, out vec4 oAmbSp
     float ao = g2.a;
     vec3 emit = texture(LC_EMIT, uv).rgb;
 
-    vec3 V = normalize(-g2.xyz);
+    vec3 V = -viewDirRel(g2.xyz);
     vec3 L = normalize(uSunDir.xyz);
     vec3 H = normalize(V + L);
     float NoV = clamp(abs(dot(N, V)) + 1e-4, 0.0, 1.0);

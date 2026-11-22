@@ -29,7 +29,7 @@ void main()
     if (!isGeoRel(p0) || rough > uSSR.z) { fragColor = vec4(0.0); return; }
     vec3 P = p0.xyz + uCamPos.xyz;
     vec3 N = normalize(n0.xyz);
-    vec3 V = normalize(p0.xyz);
+    vec3 V = viewDirRel(p0.xyz);
     float a = max(rough * rough, 0.002);
     vec2 xi = vec2(ign(gl_FragCoord.xy, uFrame.x), ign(gl_FragCoord.yx + 31.0, uFrame.x * 1.3));
     xi.y *= 0.85;                                        // trim the long GGX tail (less noise)

@@ -30,14 +30,19 @@ def _norm(x, y, z):
     n = math.sqrt(x * x + y * y + z * z)
     return n if n > 1e-9 else 1e-9
 
+def _is_ortho(cam):
+    return _pars(cam)['projection'].eval() == 'ortho'
+
 def _camera(cam, aspect):
     # [BTDR:UNI.CAMBASIS] plain Python on Matrix.vals (column-major), ~10x cheaper than numpy for 4x4
+    # [BTDR:CAM.ORTHO] (0.9.4) an orthographic camera puts half its Ortho Width in forward.w instead of tan(fov / 2)
     v = cam.worldTransform.vals
+    w = _pars(cam)['orthowidth'].eval() * 0.5 if _is_ortho(cam) else _tan_half_fov(cam, aspect)
     nx, ny, nz = _norm(*v[0:3]), _norm(*v[4:7]), _norm(*v[8:11])
     return ((v[12], v[13], v[14], 1.0),                                  # pos
             (v[0] / nx, v[1] / nx, v[2] / nx, 0.0),                      # right
             (v[4] / ny, v[5] / ny, v[6] / ny, 0.0),                      # up
-            (-v[8] / nz, -v[9] / nz, -v[10] / nz, _tan_half_fov(cam, aspect)))   # forward, tan(fov/2)
+            (-v[8] / nz, -v[9] / nz, -v[10] / nz, w))     # forward, tan(fov/2) or half the ortho width
 
 _ZERO = (0.0, 0.0, 0.0, 0.0)
 UNIT_M = {'meters': 1.0, 'centimeters': 0.01, 'millimeters': 0.001, 'inches': 0.0254, 'feet': 0.3048, 'custom': None}
@@ -197,7 +202,7 @@ def onCook(scriptOp):
         a[0:4] = cur
         a[4:8] = prev
         cpar = _pars(cam)
-        a[19] = (cpar['near'].eval(), cpar['far'].eval(), aspect, 0.0)
+        a[19] = (cpar['near'].eval(), cpar['far'].eval(), aspect, 1.0 if _is_ortho(cam) else 0.0)   # w [BTDR:CAM.ORTHO]
         # [BTDR:UNI.JITTER] Halton(2,3), 8 samples, within +-half a pixel, in NDC. Applied as a projection
         # offset of `cam_jit` (Window X/Y: NDC shift = -2 x window offset, measured), used by the next G-Buffer
         # render (the G-Buffer cooks before this CHOP in a frame). TAA does not need the value itself: it
@@ -388,7 +393,7 @@ def onCook(scriptOp):
     if flen <= 0.0 and cam is not None:                       # from the camera's horizontal view angle
         flen = Q['Sensorwidth'].eval() / (2.0 * max(_tan_half_fov(cam, aspect), 1e-4))
     a[24] = (max(flen, 1.0), Q['Fstop'].eval(), Q['Focusdistance'].eval() * um, Q['Dofmaxblur'].eval())   # metres (dof.frag)
-    a[25] = (Q['Sensorwidth'].eval(), 1.0 if Q['Dof'].eval() else 0.0, 1.25 if high else 2.0, Q['Fogshadowblur'].eval())
+    a[25] = (Q['Sensorwidth'].eval(), 1.0 if Q['Dof'].eval() and a[19][3] < 0.5 else 0.0,     # no depth of field with an orthographic camera 1.25 if high else 2.0, Q['Fogshadowblur'].eval())
     a[26] = (Q['Shutter'].eval(), Q['Mbmaxblur'].eval(), 12.0 if high else 6.0, 1.0 if Q['Motionblur'].eval() else 0.0)
     # [BTDR:UNI.SS] M3 screen-space AO / GI / reflections (0 strength = off; the passes are bypassed by Switch TOPs)
     a[27] = (Q['Aointensity'].eval() if Q['Ambientocclusion'].eval() else 0.0,

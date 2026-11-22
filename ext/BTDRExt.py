@@ -251,7 +251,7 @@ class BTDRExt:
                     a.expr = ''; a.val = '4x'
 
     # ------------------------------------------------------------------ materials
-    def _bind_material(self, m, src, warn, tr=None, sss=None):
+    def _bind_material(self, m, src, warn, tr=None, sss=None, sprite=None):
         # [BTDR:EXT.MATERIAL] bind the internal G-Buffer material to the user's material by expression,
         # so edits to the source material show up immediately without a refresh.
         white = "parent.BTDR.op('white')"
@@ -303,7 +303,8 @@ class BTDRExt:
         k = -1 if (sss is None or t == 'constantMAT') else sss
         scr = ('1.0 / max(1, parent.BTDR.par.Resolutionw.eval())', '1.0 / max(1, parent.BTDR.par.Resolutionh.eval())', 0, 0)
         self._vecs(m, [('uBase', base), ('uPBR', pbr), ('uEmit', emit), ('uChan', chan), ('uTrans', trans), ('uTrans2', trans2),
-                       ('uTrans3', trans3), ('uOpt', opt), ('uSSS', (k, 0, 0, 0)), ('uUV0', uv0), ('uUV1', uv1), ('uScr', scr)])
+                       ('uTrans3', trans3), ('uOpt', opt), ('uSSS', (k, 0, 0, 0)), ('uUV0', uv0), ('uUV1', uv1), ('uScr', scr)]
+                   + ([('uSprite', ('parent.BTDR.par.Pointsize', 'parent.BTDR.par.Resolutionh', 0, 0))] if sprite else []))
         self._samplers(m, list(maps.items()), state)
 
     def UnitsPerMeter(self):
@@ -350,23 +351,51 @@ class BTDRExt:
         uv1 = tuple(codes[4:7]) + (('max(%s)' % ', '.join(extra)) if extra else 0,)
         return state, uv0, uv1
 
-    def _new_material(self, scene, name, src, warn, tr=None, sss=None):
+    def _new_material(self, scene, name, src, warn, tr=None, sss=None, sprite=None):
         C = self.ownerComp
         m = scene.create(glslMAT, name)
-        m.par.vdat = C.op('gbuffer_vert')
-        m.par.pdat = C.op('gbuffer_frag')
+        # [BTDR:EXT.SPRITE] (0.9.4) points: the sprite variants ('scale' = the geometry has PointScale)
+        m.par.vdat = C.op({'points': 'gbuffer_sprite_vert', 'scale': 'gbuffer_spritescale_vert'}.get(sprite, 'gbuffer_vert'))
+        m.par.pdat = C.op('gbuffer_sprite_frag' if sprite else 'gbuffer_frag')
         # [BTDR:GBUF.POPUV] (0.8.1) POP geometry keeps its texture coordinates in the point attribute `Tex`: declared
         # here so gbuffer.vert can read it with TDTexAttrib_Tex() (which is uv[0] on SOPs). TDTexCoord(0) is 0 on POPs,
         # so every map sampled one corner (found on a POP membrane in a commission, 2026-11-16).
-        m.seq.attr.numBlocks = 1
+        m.seq.attr.numBlocks = 2 if sprite == 'scale' else 1
         m.par.attr0name = 'Tex'
         m.par.attr0type = 'float3'
+        if sprite == 'scale':
+            m.par.attr1name = 'PointScale'; m.par.attr1type = 'float'
         for d in list(m.docked):             # TD adds template shader DATs to every new GLSL MAT
             d.destroy()
         # no per-frame uniform in the material (TAA jitter lives in the projection of `cam_jit`, [BTDR:EXT.JITCAM]),
         # so the mirror materials never re-cook
-        self._bind_material(m, src, warn, tr, sss)
+        self._bind_material(m, src, warn, tr, sss, sprite)
         return m
+
+    @staticmethod
+    def _sprite_kind(src):
+        """[BTDR:EXT.SPRITE] None for surfaces; 'points' when every rendered child is point-only (a POP with only point
+        primitives or no primitives, a SOP without primitives or with only particle primitives); 'scale' when such a
+        POP also has a PointScale attribute."""
+        kids = [c for c in src.children if getattr(c, 'render', False) and c.family in ('SOP', 'POP')]
+        if not kids:
+            return None
+        scale = False
+        for c in kids:
+            try:
+                if c.family == 'POP':
+                    n = c.numPrims()
+                    if n and c.numPrims(primType='pointPrims') != n:
+                        return None
+                    if c.numPoints() == 0:
+                        return None
+                    scale = scale or any(a.name == 'PointScale' for a in c.pointAttributes)
+                else:
+                    if c.numPoints == 0 or any(type(p).__name__ != 'Particle' for p in c.prims):
+                        return None
+            except Exception:
+                return None
+        return 'scale' if scale else 'points'
 
     def _new_forward_material(self, scene, name, src, warn, slot):
         """[BTDR:EXT.FWDMAT] M6b: forward-lit material of a blended mirror (forward.frag, premultiplied output).
@@ -598,12 +627,13 @@ class BTDRExt:
             msrc = src.par.material.eval()
             slot = info[i].get('slot')
             sss = info[i].get('sss')
-            key = (msrc.path if msrc is not None else '', info[i]['kind'], slot, sss)
+            spr = info[i].get('sprite')
+            key = (msrc.path if msrc is not None else '', info[i]['kind'], slot, sss, spr)
             if key not in mats:
                 if info[i]['kind'] == 'blend':
                     mats[key] = self._new_forward_material(scene, 'm%d' % len(mats), msrc, warn, slot)
                 else:
-                    mats[key] = self._new_material(scene, 'm%d' % len(mats), msrc, warn, self._slot_exprs(slot), sss)
+                    mats[key] = self._new_material(scene, 'm%d' % len(mats), msrc, warn, self._slot_exprs(slot), sss, spr)
                 mats[key].nodeX, mats[key].nodeY = 0, -(len(mats) - 1) * 120
             g.par.material = mats[key]
             # [BTDR:EXT.INSTANCING] every parameter of the Instance pages follows the source by expression;
@@ -705,7 +735,7 @@ class BTDRExt:
             for r in range(4):
                 t.appendRow([M[r, c] for c in range(4)])
             kind = info[i]['kind']
-            to_main = kind == 'opaque' or (kind == 'refr' and info[i].get('inrt'))
+            to_main = (kind == 'opaque' and not info[i].get('sprite')) or (kind == 'refr' and info[i].get('inrt'))   # [BTDR:EXT.SPRITE] no points
             to_glass = kind == 'refr' and not to_main and rtrefr and mgt is not None
             skip = not (to_main or to_glass)
             # [BTDR:EXT.RTINST] (0.9.3) instanced objects: the proxy of the geometry is copied onto a template POP made from
@@ -984,13 +1014,15 @@ class BTDRExt:
                 ground = (b[4] - b[1]) < 0.02 * w and b[4] <= low + 0.01 * size
             if info is not None and info[i]['kind'] == 'blend':
                 continue                     # blended objects never cast ([BTDR:FWD.*])
+            if info is not None and info[i].get('sprite'):
+                continue                     # [BTDR:EXT.SPRITE] the shadow material draws points one pixel wide
             refr = info is not None and info[i]['kind'] == 'refr'
             if refr and not info[i]['cast']:
                 continue                     # [BTDR:EXT.TRANSSHADOW] glass casts no shadow unless its slot says Opaque
             if not ground:
                 casters.append(('scene/t%d' if refr else 'scene/g%d') % i)
         sh = self.ownerComp.op('shadow')
-        nopaque = sum(1 for d in (info or [dict(kind='opaque')] * len(geos)) if d['kind'] == 'opaque')
+        nopaque = sum(1 for d in (info or [dict(kind='opaque')] * len(geos)) if d['kind'] == 'opaque' and not d.get('sprite'))
         allg = len(casters) == nopaque == len(geos)
         sh.par.geometry = 'scene/g*' if allg else (' '.join(casters) or 'none')
         self.ownerComp.store('shadow_casters', casters)
@@ -1059,8 +1091,11 @@ class BTDRExt:
         if cam is None or cam.OPType != 'cameraCOMP':
             warn.append('Camera: no Camera COMP found for "%s".' % C.par.Camera.val)
             cam = None
-        elif cam.par.projection.eval() != 'perspective':
-            warn.append('%s: only perspective cameras are supported.' % cam.path)
+        elif cam.par.projection.eval() not in ('perspective', 'ortho'):
+            # [BTDR:CAM.ORTHO] (0.9.4) perspective and orthographic; the blend and custom matrices are not followed
+            warn.append('%s: Projection %s is not supported (Perspective or Orthographic).' % (cam.path, cam.par.projection.eval()))
+        elif cam.par.projection.eval() == 'ortho' and C.par.Dof.eval():
+            warn.append('Depth of field is off with an orthographic camera.')
         geos = self._geos()
         if not geos:
             warn.append('Geometry: nothing matches "%s" (or every match has its Render flag off).' % C.par.Geometry.eval())
@@ -1121,6 +1156,9 @@ class BTDRExt:
         self._setup_jitcam(cam)
         C.op('gbuffer').par.camera = 'cam_jit'
         geos, info = self._classify(geos, warn)
+        # [BTDR:EXT.SPRITE] (0.9.4) point-only geometry is drawn as spheres (sprite material); no shadow, not ray traced
+        for g, d in zip(geos, info):
+            d['sprite'] = self._sprite_kind(g)
         n = self._mirror(geos, warn, info)
         ntr = sum(1 for d in info if d['kind'] == 'refr')
         C.par.Transcount = ntr

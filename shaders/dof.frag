@@ -19,6 +19,7 @@ float blurSize(float d)
 void main()
 {
     vec4 c0 = texture(sTD2DInputs[0], vUV.st);
+    if (uDOF2.y < 0.5) { fragColor = c0; return; }   // [BTDR:CAM.ORTHO] off with an orthographic camera (uniforms)
     float cd = c0.a;
     vec2 px = 1.0 / uTD2DInfos[0].res.zw;
     float cs = blurSize(cd);

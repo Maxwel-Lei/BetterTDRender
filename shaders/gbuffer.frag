@@ -37,6 +37,9 @@ in Vertex {
     vec3 camPos;
     vec4 color;
     vec2 texCoord1;
+#ifdef SPRITE
+    float spriteR;
+#endif
 } iVert;
 
 layout(location = 0) out vec4 oAlbedo;
@@ -93,6 +96,18 @@ vec3 toLinear(vec3 c)
 void main()
 {
     TDCheckDiscard();
+    vec3 WP = iVert.worldPos, WN = iVert.worldNorm;
+#ifdef SPRITE
+    // [BTDR:GBUF.SPRITE] (0.9.4) sphere impostor: round cut-out, normal and position on the sphere facing the camera.
+    // Depth stays the point's (no gl_FragDepth: it would turn off early depth testing).
+    vec2 sc = gl_PointCoord * 2.0 - 1.0;
+    sc.y = -sc.y;
+    float r2 = dot(sc, sc);
+    if (r2 > 1.0) discard;
+    mat4 CI = uTDMats[TDCameraIndex()].camInverse;
+    WN = normalize(sc.x * CI[0].xyz + sc.y * CI[1].xyz + sqrt(1.0 - r2) * CI[2].xyz);
+    WP += WN * iVert.spriteR;
+#endif
     vec3 base = toLinear(uBase.rgb) * toLinear(texture(sBaseColor, uvOf(uUV0.x)).rgb);
     float metal = uPBR.x * pick(texture(sMetallic, uvOf(uUV0.y)), uChan.x);
     float rough = uPBR.y * pick(texture(sRoughness, uvOf(uUV0.z)), uChan.y);
@@ -101,7 +116,7 @@ void main()
     float alpha = uTrans.x;
     if (uTrans2.x > 0.5) { vec4 am = texture(sAlpha, uvOf(uUV1.z)); alpha *= am.a < 0.999 ? am.a : am.r; }
     if (uTrans2.y >= 0.0) {
-        if (uOpt.x > 0.5) { if (alpha < hashedThreshold(iVert.worldPos)) discard; }
+        if (uOpt.x > 0.5) { if (alpha < hashedThreshold(WP)) discard; }
         else if (alpha <= uTrans2.y) discard;
     }
     if (uTrans2.z >= 0.0) rough = uTrans2.z;
@@ -109,17 +124,17 @@ void main()
     if (uEmit.w > 0.5) emit *= toLinear(texture(sEmit, uvOf(uUV1.y)).rgb);
 
     // [BTDR:GBUF.NORMAL] geometry without a normal attribute gets a flat normal from screen-space derivatives
-    vec3 n = iVert.worldNorm;
+    vec3 n = WN;
     if (dot(n, n) < 1e-10) {
-        n = normalize(cross(dFdx(iVert.worldPos), dFdy(iVert.worldPos)));
-        if (dot(n, iVert.camPos - iVert.worldPos) < 0.0) n = -n;
+        n = normalize(cross(dFdx(WP), dFdy(WP)));
+        if (dot(n, iVert.camPos - WP) < 0.0) n = -n;
     } else {
         n = normalize(n);
         if (!gl_FrontFacing) n = -n;
     }
     // [BTDR:GBUF.NORMALMAP] tangent frame from screen-space derivatives: no tangent attribute needed
     if (uPBR.w != 0.0) {
-        vec3 dp1 = dFdx(iVert.worldPos), dp2 = dFdy(iVert.worldPos);
+        vec3 dp1 = dFdx(WP), dp2 = dFdy(WP);
         vec2 uvn = uvOf(uUV1.x);
         vec2 du1 = dFdx(uvn), du2 = dFdy(uvn);
         vec3 dp2p = cross(dp2, n), dp1p = cross(n, dp1);
@@ -139,7 +154,7 @@ void main()
     if (uTrans2.w > 0.5) { emit = base; base = vec3(0.0); metal = 1.0; rough = 1.0; ao = 0.0; }
     oAlbedo = vec4(base, clamp(metal, 0.0, 1.0));
     oNormal = vec4(n, clamp(rough, 0.04, 1.0));
-    oPosition = vec4(iVert.worldPos - iVert.camPos, ao);
+    oPosition = vec4(WP - iVert.camPos, ao);
     oEmissive = vec4(emit, uSSS.x >= 0.0 ? 2.0 + uSSS.x : clamp(alpha, 0.0, 1.0));
     oTrans = vec4(uTrans.y, uTrans.z, uTrans.w > 0.5 ? 1.0 : 0.0, max(uTrans.w - 1.0, 0.0));   // w: thin transmission lift
     oTrans2 = vec4(uTrans3.r < 0.0 ? base : toLinear(uTrans3.rgb), uTrans3.w);

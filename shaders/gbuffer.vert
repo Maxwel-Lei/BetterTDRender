@@ -6,7 +6,13 @@ out Vertex {
     vec3 camPos;
     vec4 color;     // [BTDR:GBUF.INSTCOLOR] instance colour (1 without instancing / Instance Color)
     vec2 texCoord1; // [BTDR:GBUF.UVSET] (0.8.3) the second UV set a map asks for (SOP Texture Coord uv1..uv7)
+#ifdef SPRITE
+    float spriteR;  // [BTDR:GBUF.SPRITE] (0.9.4) sphere radius of this point (scene units)
+#endif
 } oVert;
+#ifdef SPRITE
+uniform vec4 uSprite;   // x point diameter (scene units, Point Sprite Size), y render height (pixels)
+#endif
 uniform vec4 uUV1;  // w: index of the extra UV set (0 = none); static per material, see gbuffer.frag
 // [BTDR:GBUF.SHARED] material shaders are built without common.glsl and read no per-frame uniform, so the
 // mirror materials never re-cook. The TAA jitter is in the projection of the internal camera `cam_jit`
@@ -23,4 +29,14 @@ void main()
     oVert.camPos = uTDMats[TDCameraIndex()].camInverse[3].xyz;
     oVert.color = TDInstanceColor(vec4(1.0));
     oVert.texCoord1 = TDTexAttrib_Tex(int(uUV1.w + 0.5)).st;   // [BTDR:GBUF.UVSET] uv[n] on SOPs (S3, 0.8.3)
+#ifdef SPRITE
+    // [BTDR:GBUF.SPRITE] (0.9.4) points drawn as small spheres: size in pixels from the projection (works for
+    // perspective and orthographic cameras: proj[1][1] x half the height / clip w = pixels per scene unit)
+    float diam = uSprite.x;
+#ifdef SPRITE_SCALE
+    diam *= TDAttrib_PointScale();     // only declared when the geometry has it ([BTDR:EXT.SPRITE])
+#endif
+    gl_PointSize = max(diam * uTDMats[TDCameraIndex()].proj[1][1] * 0.5 * uSprite.y / max(gl_Position.w, 1e-6), 1.0);
+    oVert.spriteR = 0.5 * diam;
+#endif
 }

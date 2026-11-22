@@ -42,7 +42,7 @@ void main()
     float dist = length(rp);
     vec3 P = rp + uCamPos.xyz;
     vec3 N = normalize(n0.xyz);
-    vec3 V = rp / max(dist, 1e-6);
+    vec3 V = viewDirRel(rp);
     uint seed = hashu(id * 747796405U + uint(uFrame.x) * 2891336453U);
     vec2 xi = vec2(hash1(seed), hash1(seed ^ 0x9e3779b9U) * 0.85);
     float a = max(rough * rough, 0.002);

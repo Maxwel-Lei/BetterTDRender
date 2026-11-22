@@ -19,15 +19,11 @@ vec3 pixelWorldPos(vec2 uv, out bool geo)
     geo = dot(texelFetch(sTD2DInputs[3], p, 0).xyz, texelFetch(sTD2DInputs[3], p, 0).xyz) > 0.25;
     if (geo) return texelFetch(sTD2DInputs[2], p, 0).xyz + uCamPos.xyz;
     vec2 ndc = uv * 2.0 - 1.0;
-    vec3 rd = normalize(uCamFwd.xyz + ndc.x * uCamFwd.w * uCamRight.xyz + ndc.y * uCamFwd.w / uClip.z * uCamUp.xyz);
+    if (ORTHO) return camPoint(ndc, 1000.0);
+    vec3 rd = camDir(ndc);
     return uCamPos.xyz + rd * 1000.0;
 }
-vec2 project(vec3 wp, vec4 P, vec4 R, vec4 U, vec4 F)
-{
-    vec3 v = wp - P.xyz;
-    float z = max(dot(v, F.xyz), 1e-4);
-    return vec2(dot(v, R.xyz) / (z * F.w), dot(v, U.xyz) / (z * F.w / uClip.z)) * 0.5 + 0.5;
-}
+vec2 project(vec3 wp, vec4 P, vec4 R, vec4 U, vec4 F) { return camProject(wp, P, R, U, F); }   // [BTDR:CAM.ORTHO]
 float viewDepth(vec3 wp) { return dot(wp - uCamPos.xyz, uCamFwd.xyz); }
 
 // [BTDR:TAA.VELOCITY] (0.9.2) the object displacement of a surface point, if the velocity buffer holds this surface

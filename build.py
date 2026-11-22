@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.9.3'
+VERSION = '0.9.4'
 BLOG = []
 
 def _read(rel):
@@ -119,6 +119,8 @@ def build_btdr(dest, name='renderBTDR'):
     setup(pg.appendOBJ('Camera', label='Camera')[0], 'cam1')
     setup(pg.appendStr('Geometry', label='Geometry')[0], '*')
     setup(pg.appendStr('Lights', label='Lights')[0], '*')
+    # [BTDR:BUILD.SPRITE] (0.9.4) diameter of the spheres that point geometry is drawn as (scene units; x PointScale)
+    setup(pg.appendFloat('Pointsize', label='Point Sprite Size')[0], 0.05, 0.001, 1.0, True)
     pg.appendPulse('Refresh', label='Refresh Scene')
     p = pg.appendStr('Status', label='Status')[0]; p.readOnly = True
     wh = pg.appendWH('Resolution', label='Resolution')
@@ -398,6 +400,10 @@ def build_btdr(dest, name='renderBTDR'):
     for i, n in enumerate(names):
         D[n] = dat(n.replace('.', '_'), _shader(n), X0, 400 - i * 100)
     # [BTDR:VEL.ATTRIB] velocity vertex shader variants for geometry with a velocity attribute (PartVel / v)
+    # [BTDR:GBUF.SPRITE] (0.9.4) point sprite variants of the G-Buffer material (points drawn as spheres)
+    D['gbuffer_sprite_vert'] = dat('gbuffer_sprite_vert', '#define SPRITE\n' + _shader('gbuffer.vert'), X0 - 500, -300)
+    D['gbuffer_spritescale_vert'] = dat('gbuffer_spritescale_vert', '#define SPRITE\n#define SPRITE_SCALE\n' + _shader('gbuffer.vert'), X0 - 500, -400)
+    D['gbuffer_sprite_frag'] = dat('gbuffer_sprite_frag', '#define SPRITE\n' + _shader('gbuffer.frag'), X0 - 500, -500)
     D['velocity_pv_vert'] = dat('velocity_pv_vert', '#define VEL_PARTVEL\n' + _shader('velocity.vert'), X0 - 250, -300)
     D['velocity_v_vert'] = dat('velocity_v_vert', '#define VEL_V\n' + _shader('velocity.vert'), X0 - 250, -400)
     D['white_frag'] = dat('white_frag', 'out vec4 fragColor;\nvoid main() { fragColor = vec4(1.0); }\n', X0 - 250, -100)   # unused pixel stage of compute TOPs

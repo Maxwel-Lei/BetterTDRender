@@ -64,7 +64,7 @@ void main()
     float rscale = max(t5.a, 0.0);                    // [BTDR:REFR.SCALE] (0.8.4, G3) 1 = physical
 
     vec3 P = tp.xyz + uCamPos.xyz;
-    vec3 V = normalize(-tp.xyz);
+    vec3 V = -viewDirRel(tp.xyz);
     vec3 N = normalize(tn.xyz);
     if (dot(N, V) < 0.0) N = -N;                      // looking at the inside of an open mesh
     float NoV = clamp(dot(N, V), 1e-4, 1.0);

@@ -4,19 +4,13 @@
 // background next to a fast object is not smeared over, [BTDR:VEL.LIMITS]). output: same layout.
 // uMB: x shutter (fraction of a frame), y max blur px, z samples
 out vec4 fragColor;
-vec2 project(vec3 wp, vec4 P, vec4 R, vec4 U, vec4 F)
-{
-    vec3 v = wp - P.xyz;
-    float z = max(dot(v, F.xyz), 1e-4);
-    return vec2(dot(v, R.xyz) / (z * F.w), dot(v, U.xyz) / (z * F.w / uClip.z)) * 0.5 + 0.5;
-}
+vec2 project(vec3 wp, vec4 P, vec4 R, vec4 U, vec4 F) { return camProject(wp, P, R, U, F); }   // [BTDR:CAM.ORTHO]
 void main()
 {
     vec4 c0 = texture(sTD2DInputs[0], vUV.st);
     // world position from the stable depth: depth is along the view axis, the ray's forward component is 1
     vec2 ndc = vUV.st * 2.0 - 1.0;
-    vec3 ray = uCamFwd.xyz + ndc.x * uCamFwd.w * uCamRight.xyz + ndc.y * uCamFwd.w / uClip.z * uCamUp.xyz;
-    vec3 wp = uCamPos.xyz + ray * c0.a;
+    vec3 wp = camPoint(ndc, c0.a);                   // [BTDR:CAM.ORTHO]
     // [BTDR:MB.VELOCITY] jitter-free camera velocity in uv per frame, scaled by the shutter
     // [BTDR:MB.OBJECT] (0.9.2) a moving object's own displacement (velocity pass holds this surface: same distance)
     vec3 disp = vec3(0.0);
