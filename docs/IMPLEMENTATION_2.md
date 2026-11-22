@@ -221,6 +221,10 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 
 正交相机（Ortho Width 8，斜俯视 35°）+ 地面、方块、球 + 10 × 10 个 POP 点（Point Sprite Size 0.2）。`uClip.w` = 1、`uCamFwd.w` = 4；G-Buffer 位置按正交公式投回像素，误差 p95 0.51 px、最大 0.68 px（TAA 抖动 ±0.5 px；修 `cam_jit` 不复制 Ortho Width 之前是 241 px）；画面有限、背景是一片纯色；点网格用的是精灵材质，不在阴影和光追里；精灵像素数和 100 个直径 0.2 的圆盘相符（18792 / 20106）；法线从正对相机（1.00）到边缘（0.03）；球面明暗（亮度标准差 0.52）；开雾、景深、运动模糊时画面有限；切回透视后标志关闭、无报错。共 12 项。
 
+## 11b-14. 0.9.5 测试（`tests/m95_tests.py`）
+
+两块带噪声贴图的竖板（3 m 处一块、10 m 处一块），F-Stop 1.4。Focus Method = Tracking、Focus Object = 放在近板上的 Null COMP：`uDOF.z` 和 Tracked Distance 都是 3.000；把 Null 挪到远板，不刷新，变成 10.000；两块板都是对焦到自己时更清晰（近板梯度 0.097 / 0.070，远板 0.140 / 0.095；两块板的贴图尺度不同，只能各自前后比）；Focus Offset −7 → 3；切回 Manual → Focus Distance 7；Tracking 但不指定物体 → 7、无报错。共 7 项。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -233,6 +237,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 0.8.1 专项 | `tests/m81_tests.py` | 8 项：POP 贴图、薄壁按距离模糊、圆盘旋转逐帧变化、边缘无暗带、薄壁透射提亮 |
 | 0.8.3 专项 | `tests/m83_tests.py` | 18 项，§11b-6：贴图坐标和原生逐像素对比、场景比例 |
 | 0.8.4 专项 | `tests/m84_tests.py` | 15 项，§11b-7：能量补偿、光追反射的方块结构对比 0.8.3、Refraction Scale、吸收颜色、哈希镂空 |
+| 0.9.5 专项 | `tests/m95_tests.py` | 7 项，§11b-14：跟踪对焦 |
 | 0.9.4 专项 | `tests/m94_tests.py` | 12 项，§11b-13：正交相机、点精灵 |
 | 0.9.3 专项 | `tests/m93_tests.py` | 8 项，§11b-12：实例化进光追代理 |
 | 0.9.2 专项 | `tests/m92_tests.py` | 8 项，§11b-11：物体运动矢量、TAA、运动模糊 |
@@ -280,6 +285,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-22 | 0.9.5 | 景深的跟踪对焦（用户提的需求：“景深能不能加一个 Look At”；TD 相机的 Look At 管朝向，对焦对应 UE5 Cine Camera 的 Focus Method = Tracking）。**`UNI.FOCUSTRACK` / `BUILD.FOCUSTRACK`**：Post 页新增 Focus Method（Manual / Tracking）、Focus Object（OBJ 参数，相对路径按 BTDR 所在网络解析，和 Camera 一样）、Focus Offset、Tracked Distance（只读）；`uniforms` 每帧算物体原点到相机的距离（沿视线轴，Python 直接读两个 worldTransform，不经过 numpy）+ Offset，下限 0.05，写进 `uDOF.z`（再乘米每单位）；没有物体时退回 Focus Distance。着色器不变。对比图 `docs/images/focus_tracking.jpg`。新测试 `tests/m95_tests.py` 7 项；回归 m1 ~ m94 全过；默认 Manual 时和 0.9.4 的 A/B 差 0 |
 | 2026-11-22 | 0.9.4 | 正交相机和点精灵（`ROADMAP_0.9.md` §5，S5）。**正交相机**（`CAM.ORTHO`）：`common.glsl` 加 `ORTHO`（`uClip.w`）和 `camPoint` / `camDir` / `viewDirRel` / `camProject` / `pxPerUnit`，正交时 `uCamFwd.w` / `uPrevFwd.w` 存半个 Ortho Width；TAA、运动模糊、SSR / SSGI / 累积（`ss_common`）、SSS 核大小、雾的散射和重投影、光照的视线和背景、折射、光追反射 / 折射都改用它们（透视时算术不变，A/B 差 0）；景深在正交时关闭（`uDOF2.y`，提示）；`cam_jit` 补复制 Ortho Width 等（§11 第 71 条）；Projection 是 Blend / Custom 时提示。**点精灵**（`GBUF.SPRITE` / `EXT.SPRITE` / `BUILD.SPRITE`）：只有点的几何体（POP 只有点图元，SOP 没有面）用 G-Buffer 材质的精灵变体（`gbuffer_sprite_vert` / `gbuffer_spritescale_vert` / `gbuffer_sprite_frag`，`#define SPRITE`）：顶点里 `gl_PointSize` = 直径 × proj[1][1] × 高 / 2 / w（透视、正交通用），像素里按 `gl_PointCoord` 切成圆、球面法线和位置；有 `PointScale` 的 POP 用 `SPRITE_SCALE` 变体。精灵不投影（不进 `shadow_casters`）、不进光追代理。Render 页新增 Point Sprite Size。对比图 `docs/images/ortho_sprites.jpg`。新测试 `tests/m94_tests.py` 12 项；回归 m1 ~ m93 全过（m92 改成接受掉帧：位移是整数帧 × 0.04）；和 0.9.3 的示例场景 A/B：最终画面差 0，HDR 输出 0.001 % 像素不同 |
 | 2026-11-22 | 0.9.3 | 实例化进光追代理（`ROADMAP_0.9.md` §4，S4）。**`EXT.RTINST`**：实例化的 Geometry COMP 不再跳过；`rtscene/inst<i>`（Script CHOP，回调 `rt_inst_callbacks` = `ext/rt_inst_chop.py`）按 Instance 页的 OP 和通道 / 列名读出 tx..sz（CHOP 或表格 DAT，每个实例一个采样，最多 Max Instances in Proxy 个；读源数据建立依赖，实例变了自动重算）→ `tp<i>`（CHOP to POP：P = 平移，`InstR` = 旋转（度），`InstS` = 缩放）→ 每个子 SOP / POP 的代理链在 Transform POP 之前插一个 Copy POP（模板平移 / 旋转 / 缩放，默认 SRT、XYZ，和 Geometry COMP 的实例一致，原型验证过）。实例化物体的减面下限改成“每份至少 12 个三角形、总共至少 800”。Ray Tracing 页新增 Max Instances in Proxy（默认 1024，改了自动 Refresh）；不支持的实例来源提示 `Instanced geometry left out of the ray-tracing scene`。对比图 `docs/images/rt_instances.jpg`。新测试 `tests/m93_tests.py` 8 项；回归 m1 ~ m92 全过，和 0.9.2 的示例场景 A/B 差 0 |
 | 2026-11-22 | 0.9.2 | 物体运动矢量（`ROADMAP_0.9.md` §2，G1 的一半）。**速度缓冲**（`BUILD.VELOCITY` / `EXT.VELMIRROR` / `VEL.OBJECT` / `UNI.VELOCITY`）：每个不透明物体多一个镜像 `scene/v<i>`，各自一个材质 `vm<i>`（`velocity.vert/frag`，不读 common），上一帧的世界矩阵是 4 个 vec4 uniform；`uniforms` 每帧比较各物体的 worldTransform，动了的放进 `velocity` 的 Geometry 列表、写上一帧矩阵；`velocity` 的一个参数表达式读 `uniforms`，所以总在它之后渲染（位移和当前帧对齐，实测 0.0400 / 0.04）。输出 rgb = 世界位移、a = 到相机距离（没有静态物体挡在前面的深度测试，用距离和 G-Buffer 比对）；没有物体在动时 `vel_src` 切 1×1 常量，`velocity` 不 cook。`uMisc.w` = 有运动矢量。**TAA**（`TAA.VELDILATE` / `TAA.RESPONSIVE`）：3×3 里取最近的表面的点和位移重投影（Karis 2014）；历史帧的稳定深度和这个点上一帧的深度对不上时（物体移开露出的背景），当前帧权重至少 0.5。**运动模糊**（`MB.OBJECT`）：位移加进投影差，轮廓内沿物体运动糊。**速度属性**（`VEL.ATTRIB`，G1）：几何体带 `PartVel`（POP）或 `v`（SOP）时用变体 `velocity_pv_vert` / `_v`，按每秒换算到每帧（§11 第 70 条）。Post 页新增 Object Motion Vectors（默认开）、Moving Objects（只读）。没做的见 §12。对比图 `docs/images/object_motion.jpg`。新测试 `tests/m92_tests.py` 8 项；回归 m1 39、m81 8、m8 18、m7 13、m6、m5 7、m83 18、m84 15、m85 5、m90 12、m91 7 全过（m1、m7 改成不数 `scene/v*`）；和 0.9.1 的示例场景 A/B 差 0 |

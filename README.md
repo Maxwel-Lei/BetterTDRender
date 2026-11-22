@@ -31,6 +31,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 ![object motion vectors (0.9.2): TAA with camera motion only | with object motion vectors | object motion blur](docs/images/object_motion.jpg)
 ![instanced geometry in the ray-tracing proxy (0.9.3): reflections of instanced pillars](docs/images/rt_instances.jpg)
 ![orthographic camera and point sprites (0.9.4): perspective | orthographic, POP points as sphere sprites](docs/images/ortho_sprites.jpg)
+![depth of field focus tracking (0.9.5): the focus follows a target object](docs/images/focus_tracking.jpg)
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
@@ -38,7 +39,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.9.4** (orthographic camera, point sprites; instanced geometry in the ray-tracing proxy; object motion vectors for TAA and motion blur; spot-light shadows, local lights in the fog and in ray-traced GI, fog multiple scattering; local lights; path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.9.5** (depth of field focus tracking; orthographic camera, point sprites; instanced geometry in the ray-tracing proxy; object motion vectors for TAA and motion blur; spot-light shadows, local lights in the fog and in ray-traced GI, fog multiple scattering; local lights; path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 

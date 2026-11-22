@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.9.4。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.9.5。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -364,7 +364,11 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Target Grey | 把画面平均亮度调到多少，默认 0.18（中灰）。整体偏暗就调大 |
 | Adapt Speed To Brighter / Darker | 适应速度，数值越大越快。默认变亮快（3）、变暗慢（1），和人眼一样 |
 | Depth of Field | 景深：对焦距离以外的物体变虚 |
-| Focus Distance | 对焦距离（场景单位），沿相机朝向量 |
+| Focus Method | （0.9.5）对焦方式。**Manual**：用下面的 Focus Distance。**Tracking**：跟踪对焦（追焦，UE5 Cine Camera 的 Tracking），焦点每帧自动对到 Focus Object，物体或相机在动也一直清楚 |
+| Focus Object | Tracking 时对焦的物体：拖入任意 COMP（Geometry COMP、Null COMP……），取它的位置（原点），沿相机朝向量距离。想对到物体表面某一点，放一个 Null COMP 在那里当靶子 |
+| Focus Offset | Tracking 时在跟踪距离上再加减多少（场景单位），负数 = 焦点往相机这边挪 |
+| Tracked Distance | 只读：当前跟踪到的对焦距离。没指定 Focus Object 时退回 Focus Distance |
+| Focus Distance | 对焦距离（场景单位），沿相机朝向量。Focus Method = Manual 时使用 |
 | F-Stop | 光圈值。越小越虚（f/1.4 很虚，f/8 几乎全清楚） |
 | Focal Length (mm) | 焦距。0 = 按相机的视角和下面的传感器宽度自动算（推荐） |
 | Sensor Width (mm) | 传感器宽度，默认 36（全画幅）。和焦距一起决定虚化程度 |
