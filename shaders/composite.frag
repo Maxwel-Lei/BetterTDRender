@@ -23,6 +23,10 @@
 #define IN_SSR sTD2DInputs[7]
 #define IN_HF sTD2DInputs[8]
 #define IN_RT sTD2DInputs[9]
+#define LC_LLSH0 sTD2DInputs[10]   // (0.9.1) spot-light shadow maps ([BTDR:LIGHT.LLSHADOW])
+#define LC_LLSH1 sTD2DInputs[11]
+#define LC_LLSH2 sTD2DInputs[12]
+#define LC_LLSH3 sTD2DInputs[13]
 //#include env_lookup
 //#include lighting_core
 // Hold (clamp-to-edge) sampling for inputs that may be smaller than the output (SSGI / SSR at half resolution on

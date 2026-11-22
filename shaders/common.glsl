@@ -1,7 +1,7 @@
 // [BTDR:FILE.COMMON] common.glsl — prepended to every BTDR shader by build.py
 // [BTDR:UNI.BLOCK] one shared uniform array, filled once per frame by the Script CHOP `uniforms`
 // (ext/uniforms_chop.py). Slot layout must match that file.
-uniform vec4 uB[108];
+uniform vec4 uB[124];
 #define uCamPos    uB[0]    // xyz camera position
 #define uCamRight  uB[1]    // xyz camera right
 #define uCamUp     uB[2]    // xyz camera up
@@ -45,7 +45,7 @@ uniform vec4 uB[108];
 #define uAmb       uB[40]   // 0.7.5: rgb Ambient Light COMPs (colour x dimmer, summed)
 #define uSSSG      uB[41]   // 0.8.0 subsurface: x on, y Scatter Scale, z taps per side, w transmission on
 #define uUnit      uB[42]   // 0.8.3 [BTDR:UNI.UNIT] x scene units per metre, y metres per scene unit
-#define uMisc      uB[43]   // 0.8.4: x energy compensation on ([BTDR:LIGHT.ENERGY]); 0.9.0: y local light count; zw free
+#define uMisc      uB[43]   // 0.8.4: x energy compensation on ([BTDR:LIGHT.ENERGY]); 0.9.0: y local light count; 0.9.1: z fog multiple scattering; w free
 #define UM(m_)     ((m_) * uUnit.x)  // a length designed in metres, in scene units (parameter not named x: .x would expand)
 // [BTDR:UNI.SSS] subsurface profile k (0..7) = Subsurface slot k: three slots each, 44 + 3k ..
 #define SSS_A(k)   uB[44 + 3 * (k)]   // rgb scatter distance per channel (m, x Scatter Scale), w scatter strength (0 = thin)
@@ -65,7 +65,31 @@ float hash12(vec2 p)
 //   2 xyz direction the light points (spot axis; distant: direction TO the light), w cos of the outer cone half-angle
 //   3 x attenuation start, y attenuation exponent, z cos of the inner cone half-angle, w falloff (0 none, 1 the
 //     Light COMP's attenuation, 2 physical inverse square)
-//   4 x cone roll-off exponent
+//   4 x cone roll-off exponent, y spot shadow map index + 1 (0 = none; 0.9.1)
 #define LL_MAX 8
 #define LL_COUNT int(uMisc.y + 0.5)
 #define LL(i, k) uB[68 + 5 * (i) + (k)]
+// [BTDR:UNI.LLSHADOW] (0.9.1) spot-light shadow maps 0..3, 4 slots each from 108: rows 0..2 of the light camera's
+// world-to-camera matrix (xyz | w), 3 x tan(half fov), y near, z bias (scene units), w 1 = on
+#define LLS(k, r) uB[108 + 4 * (k) + (r)]
+// [BTDR:LIGHT.LOCALATT] (0.9.1) one local light's direction and attenuation at P (shared by the surface lighting, the
+// fog and the ray-traced hit shading); returns the attenuation (0 = no light), L = direction to the light, dist =
+// distance to it (1e9 for a distant light)
+float llAtten(int i, vec3 P, out vec3 L, out float dist)
+{
+    vec4 l0 = LL(i, 0), l1 = LL(i, 1), l2 = LL(i, 2), l3 = LL(i, 3), l4 = LL(i, 4);
+    int t = int(l0.w + 0.5);
+    float att = 1.0;
+    if (t == 3) { L = normalize(l2.xyz); dist = 1e9; return 1.0; }
+    vec3 d = l0.xyz - P;
+    dist = length(d);
+    L = d / max(dist, 1e-6);
+    int f = int(l3.w + 0.5);
+    if (f == 1) att = pow(clamp((l1.w - dist) / max(l1.w - l3.x, 1e-4), 0.0, 1.0), max(l3.y, 1e-3));
+    else if (f == 2) { float m = UM(1.0); att = m * m / max(dist * dist, UM(0.01) * UM(0.01)); }
+    if (t == 2) {
+        float c = dot(-L, normalize(l2.xyz));
+        att *= pow(smoothstep(l2.w, max(l3.z, l2.w + 1e-4), c), max(l4.x, 1e-3));
+    }
+    return att;
+}

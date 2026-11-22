@@ -114,33 +114,46 @@ float sunShadow(vec3 wp, vec3 n, float NoL)
 // (GGX + Smith + Schlick + energy compensation, Lambert diffuse); brightness follows BTDR's convention (Dimmer x pi).
 // Falloff: the Light COMP's own Attenuation (Start / End / Exp; none when Attenuated is off, like a TouchDesigner
 // light) or physical inverse square (the Dimmer x pi irradiance is reached at 1 m).
+#ifdef LC_LLSH0
+// [BTDR:LIGHT.LLSHADOW] (0.9.1) spot-light shadow: the map stores the distance in front of the light camera (same depth
+// material as the sun's), 3 x 3 PCF; slots LLS(k, *) from `uniforms`
+float llShadow(int k, vec3 P, vec3 N)
+{
+    if (LLS(k, 3).w < 0.5) return 1.0;
+    vec4 q = vec4(P + N * LLS(k, 3).z, 1.0);
+    vec3 c = vec3(dot(LLS(k, 0), q), dot(LLS(k, 1), q), dot(LLS(k, 2), q));
+    float z = -c.z;
+    if (z <= LLS(k, 3).y) return 1.0;
+    vec2 uv = 0.5 + 0.5 * c.xy / (z * LLS(k, 3).x);
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
+    float bias = LLS(k, 3).z * 2.0 + z * 0.004;
+    float lit = 0.0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++) {
+            vec2 o = vec2(x, y) / 1024.0;
+            float d = k == 0 ? texture(LC_LLSH0, uv + o).r : k == 1 ? texture(LC_LLSH1, uv + o).r :
+                      k == 2 ? texture(LC_LLSH2, uv + o).r : texture(LC_LLSH3, uv + o).r;
+            lit += (d > 0.001 && d < z - bias) ? 0.0 : 1.0;
+        }
+    return lit / 9.0;
+}
+#endif
 vec3 localLight(int i, vec3 P, vec3 N, vec3 V, vec3 diff, vec3 F0, float a, float a2, float rough, float NoV)
 {
-    vec4 l0 = LL(i, 0), l1 = LL(i, 1), l2 = LL(i, 2), l3 = LL(i, 3), l4 = LL(i, 4);
-    int t = int(l0.w + 0.5);
-    vec3 L;
-    float att = 1.0;
-    if (t == 3) {
-        L = normalize(l2.xyz);
-    } else {
-        vec3 d = l0.xyz - P;
-        float dist = length(d);
-        L = d / max(dist, 1e-6);
-        int f = int(l3.w + 0.5);
-        if (f == 1) att = pow(clamp((l1.w - dist) / max(l1.w - l3.x, 1e-4), 0.0, 1.0), max(l3.y, 1e-3));
-        else if (f == 2) { float m = UM(1.0); att = m * m / max(dist * dist, UM(0.01) * UM(0.01)); }
-        if (t == 2) {
-            float c = dot(-L, normalize(l2.xyz));
-            att *= pow(smoothstep(l2.w, max(l3.z, l2.w + 1e-4), c), max(l4.x, 1e-3));
-        }
-    }
+    vec3 L; float dist;
+    float att = llAtten(i, P, L, dist);
     float NoL = dot(N, L);
     if (NoL <= 0.0 || att <= 0.0) return vec3(0.0);
+#ifdef LC_LLSH0
+    int k = int(LL(i, 4).y + 0.5) - 1;     // stored as index + 1 (0 = none)
+    if (k >= 0) att *= llShadow(k, P, N);
+    if (att <= 0.0) return vec3(0.0);
+#endif
     vec3 H = normalize(V + L);
     float NoH = clamp(dot(N, H), 0.0, 1.0);
     float VoH = clamp(dot(V, H), 0.0, 1.0);
     vec3 spec = D_GGX(a2, NoH) * V_SmithJointApprox(a, NoV, NoL) * F_Schlick(F0, VoH) * energyComp(F0, rough, NoV);
-    return (diff / PI + spec) * l1.rgb * NoL * att;
+    return (diff / PI + spec) * LL(i, 1).rgb * NoL * att;
 }
 vec3 localLights(vec3 P, vec3 N, vec3 V, vec3 diff, vec3 F0, float a, float a2, float rough, float NoV)
 {

@@ -984,6 +984,32 @@ class BTDRExt:
         if len(local) > 8:
             warn.append('%d local lights matched: only the first 8 are used (%s ...).' % (len(local), ', '.join(l.name for l in local[8:11])))
         C.store('local_lights', [l.path for l in local[:8]])
+        # [BTDR:EXT.LLSHADOW] (0.9.1) spot lights whose Shadow Type is not Off get a shadow map, up to Max Shadowed
+        # Spot Lights (default 2, at most 4); point lights have none yet (a cube map is six renders).
+        nmax = int(C.par.Localshadows.eval()) if hasattr(C.par, 'Localshadows') else 0
+        shadowed = [l for l in local[:8] if l.par.lighttype.eval() == 'cone' and l.par.shadowtype.eval() != 'off'][:min(nmax, 4)]
+        skipped = [l for l in local[:8] if l.par.lighttype.eval() == 'cone' and l.par.shadowtype.eval() != 'off'][len(shadowed):]
+        if skipped:
+            warn.append('Spot shadows: only %d allowed (Max Shadowed Spot Lights): %s without.' % (len(shadowed), ', '.join(l.name for l in skipped)))
+        if any(l.par.lighttype.eval() == 'point' and l.par.shadowtype.eval() != 'off' for l in local[:8]):
+            warn.append('Point lights do not cast shadows yet (spot lights do).')
+        K = self.UnitsPerMeter()
+        C.store('llshadow', {l.path: k for k, l in enumerate(shadowed)})
+        for k in range(4):
+            cam_, sw_ = C.op('llcam%d' % k), C.op('llsw%d' % k)
+            if cam_ is None or sw_ is None:
+                continue
+            if k < len(shadowed):
+                l = shadowed[k]
+                cam_.par.parentxformsrc = 'specify'
+                cam_.par.parentobject = l.path
+                cam_.par.fov = min(max(l.par.coneangle.eval() + 2 * l.par.conedelta.eval() + 4.0, 5.0), 170.0)
+                cam_.par.near = 0.05 * K
+                cam_.par.far = (l.par.attenuationend.eval() if l.par.attenuated.eval() else 50.0 * K) * 1.05
+                sw_.par.index = 1
+            else:
+                cam_.par.parentobject = ''
+                sw_.par.index = 0
         if hasattr(C.par, 'Lightcount'):
             kinds = [l.par.lighttype.eval() for l in local[:8]]
             C.par.Lightcount = '%s, %d point, %d cone, %d distant' % (

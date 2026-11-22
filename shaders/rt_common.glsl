@@ -48,5 +48,16 @@ vec3 shadeHit(vec3 o, vec3 d, Hit h)
     vec3 E = RT_AMBIENT(p, n);
     if (NoL > 0.0 && (uSunPos.w < 0.5 || !occluded(p + n * 0.01, L, 100.0)))
         E += uSunColor.rgb * uSunDir.w * NoL / PI;
+    // [BTDR:RT.LOCAL] (0.9.1) local lights at traced hits (probe GI, traced reflections / refraction): one shadow ray
+    // each, so they are occluded here even though the screen image has no point-light shadows yet
+    int nl = min(LL_COUNT, LL_MAX);
+    for (int i = 0; i < LL_MAX; i++) {
+        if (i >= nl) break;
+        vec3 Ll; float dl;
+        float at = llAtten(i, p, Ll, dl);
+        float nl_ = max(dot(n, Ll), 0.0);
+        if (at > 0.0 && nl_ > 0.0 && !occluded(p + n * 0.01, Ll, min(dl, 100.0)))
+            E += LL(i, 1).rgb * at * nl_ / PI;
+    }
     return m0.rgb * E + m1.rgb;
 }

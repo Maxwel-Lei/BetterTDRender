@@ -80,8 +80,23 @@ void main()
     float n = TDSimplexNoise(vec4(p * (1.3 * uUnit.y), uFrame.w * 0.05)) * 0.5 + 0.5;
     dens *= mix(1.0, 0.4 + 1.2 * n, uFog2.w);
     vec3 V = normalize(ray);
-    vec3 sun = uSunColor.rgb * uSunDir.w * sunVisibility(p, rnd) * phaseHG(dot(V, normalize(uSunDir.xyz)), uFog.w);
+    // [BTDR:FOG.MULTI] (0.9.1, J5) multiple scattering, approximated after Wrenninge 2013: two further octaves with a
+    // wider phase lobe (g x 0.5, x 0.25) and less energy (0.5, 0.25), scaled by Multiple Scattering (uMisc.z). Dense
+    // fog no longer turns grey-dark away from the sun direction. 0 = the single scattering of 0.9.0.
+    float cs = dot(V, normalize(uSunDir.xyz));
+    float ms = uMisc.z;
+    float ph = phaseHG(cs, uFog.w) + ms * (0.5 * phaseHG(cs, uFog.w * 0.5) + 0.25 * phaseHG(cs, uFog.w * 0.25));
+    vec3 sun = uSunColor.rgb * uSunDir.w * sunVisibility(p, rnd) * ph;
     // ambient: average sky radiance (irradiance / PI of up and down), isotropic phase 1 / 4PI x 4PI solid angle
-    vec3 amb = 0.5 * (envIrradiance(vec3(0.0, 1.0, 0.0)) + envIrradiance(vec3(0.0, -1.0, 0.0))) * uFog2.z;
+    vec3 amb = 0.5 * (envIrradiance(vec3(0.0, 1.0, 0.0)) + envIrradiance(vec3(0.0, -1.0, 0.0))) * uFog2.z * (1.0 + 0.5 * ms);
+    // [BTDR:FOG.LOCAL] (0.9.1, J3) local lights scatter in the fog (point glows, spot cones); no shadows here.
+    // The fog is evaluated per froxel, not sampled along the view ray, so equiangular sampling is not needed.
+    int nl = min(LL_COUNT, LL_MAX);
+    for (int i = 0; i < LL_MAX; i++) {
+        if (i >= nl) break;
+        vec3 L; float dl;
+        float at = llAtten(i, p, L, dl);
+        if (at > 0.0) sun += LL(i, 1).rgb * at * phaseHG(dot(V, L), uFog.w);
+    }
     TDImageStoreOutput(0, uvec3(gid), vec4(uFog3.rgb * dens * (sun + amb), dens));
 }

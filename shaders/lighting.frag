@@ -9,6 +9,10 @@
 #define LC_SHADOW sTD2DInputs[3]
 #define LC_EMIT sTD2DInputs[4]
 #define ENV_SHARP sTD2DInputs[5]
+#define LC_LLSH0 sTD2DInputs[6]    // (0.9.1) spot-light shadow maps ([BTDR:LIGHT.LLSHADOW])
+#define LC_LLSH1 sTD2DInputs[7]
+#define LC_LLSH2 sTD2DInputs[8]
+#define LC_LLSH3 sTD2DInputs[9]
 #define ENV_ATLAS sTD3DInputs[0]
 //#include env_lookup
 //#include lighting_core

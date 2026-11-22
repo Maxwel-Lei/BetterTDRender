@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.9.0'
+VERSION = '0.9.1'
 BLOG = []
 
 def _read(rel):
@@ -159,6 +159,9 @@ def build_btdr(dest, name='renderBTDR'):
     setup(pg.appendFloat('Localintensity', label='Local Intensity')[0], 1.0, 0, 4, True)
     menu(pg.appendMenu('Localfalloff', label='Local Falloff')[0], ['light', 'physical'],
          ['Light COMP Attenuation', 'Physical (inverse square)'], 'light')
+    # [BTDR:BUILD.LLSHADOWPARS] (0.9.1) spot lights whose Shadow Type is not Off cast shadows, up to this many
+    setup(pg.appendInt('Localshadows', label='Max Shadowed Spot Lights')[0], 2, 0, 4, True, True)
+    menu(pg.appendMenu('Localshadowres', label='Spot Shadow Resolution')[0], ['512', '1024', '2048'], ['512', '1024', '2048'], '1024')
     setup(pg.appendToggle('Shadows', label='Shadows')[0], True)
     setup(pg.appendFloat('Shadowsoftness', label='Shadow Softness')[0], 1.0, 0, 4, True)
     setup(pg.appendToggle('Shadowfit', label='Auto Fit Shadow Range')[0], True)
@@ -269,6 +272,8 @@ def build_btdr(dest, name='renderBTDR'):
     p.menuNames = ['auto', 'low', 'medium', 'high', 'ultra']
     p.menuLabels = ['Auto (from Quality)', 'Low 128x72x48', 'Medium 160x90x64', 'High 240x135x96', 'Ultra 320x180x128']
     p.default = 'auto'; p.val = 'auto'; p.enableExpr = 'me.par.Fog'
+    # [BTDR:BUILD.FOGMULTI] (0.9.1) multiple-scattering approximation ([BTDR:FOG.MULTI])
+    p = setup(pg.appendFloat('Fogmultiple', label='Multiple Scattering')[0], 0.5, 0, 1, True, True); p.enableExpr = 'me.par.Fog'
     for nm, lab, d, lo, hi in (('Fogcurweight', 'Fog Current Frame Weight', 0.1, 0.02, 1),
                                ('Fogjitter', 'Fog Jitter', 1.0, 0, 1),
                                ('Fogshadowblur', 'Fog Shadow Blur', 1.0, 0, 4)):
@@ -459,6 +464,28 @@ def build_btdr(dest, name='renderBTDR'):
     shd.outputConnectors[0].connect(shs); shc.outputConnectors[0].connect(shs)
     shs.par.index = 1
 
+    # [BTDR:BUILD.LLSHADOW] (0.9.1) spot-light shadow maps: four perspective cameras (parented to the shadowed spot
+    # lights by Refresh, [BTDR:EXT.LLSHADOW]), the same casters and depth material as the sun. `llsw<k>` keeps an
+    # unused slot on a 1 x 1 constant, so its Render TOP does not cook.
+    llo = place(C.create(constantTOP, 'llsh_off'), -800, -1500)
+    llo.par.colorr = llo.par.colorg = llo.par.colorb = 0; llo.par.alpha = 0
+    res(llo, 1, 1, ['r32float', 'mono32float', 'rgba32float'])
+    llsw = []
+    for k in range(4):
+        lc = place(C.create(cameraCOMP, 'llcam%d' % k), -800, -1600 - k * 200)
+        lc.par.near = 0.05; lc.par.far = 50
+        lr = place(C.create(renderTOP, 'llsh%d' % k), -600, -1600 - k * 200)
+        lr.par.camera = 'llcam%d' % k; lr.par.lights = ''
+        lr.par.geometry.expr = "op('shadow').par.geometry.eval()"
+        lr.par.overridemat = msh
+        res(lr, 'int(parent.BTDR.par.Localshadowres)', 'int(parent.BTDR.par.Localshadowres)', ['r32float', 'mono32float', 'rgba32float'])
+        _menu(lr.par.antialias, ['aa1', '1x', '1'])
+        lr.par.bgcolorr = lr.par.bgcolorg = lr.par.bgcolorb = lr.par.bgcolora = 0
+        sw_ = place(C.create(switchTOP, 'llsw%d' % k), -400, -1600 - k * 200)
+        llo.outputConnectors[0].connect(sw_); lr.outputConnectors[0].connect(sw_)
+        sw_.par.index = 0
+        llsw.append(sw_)
+
     # [BTDR:BUILD.HFAO] height-field AO: orthographic camera looking straight down over the shadow range, the same
     # casters and depth material as the shadow map (the ground plane is not a caster, so it is not in the map).
     # Stored value = depth below the camera, so height = camera height - value; 0 = nothing there. Cached like the
@@ -505,7 +532,7 @@ def build_btdr(dest, name='renderBTDR'):
     _menu(eat.par.inputextenduv, ['repeat'])
 
     # [BTDR:BUILD.LIGHT]
-    lit = glsl('lighting', D['lighting.frag'], rs[:3] + [shs, rs[3], esw, eat], RW, RH, ['rgba16float'], -200, 400)
+    lit = glsl('lighting', D['lighting.frag'], rs[:3] + [shs, rs[3], esw, eat] + llsw, RW, RH, ['rgba16float'], -200, 400)
     lit.par.numcolorbufs = 4
     _menu(lit.par.inputextenduv, ['repeat'])
     litb = [lit]
@@ -650,7 +677,7 @@ def build_btdr(dest, name='renderBTDR'):
     rts.par.index.expr = '1 if (parent.BTDR.par.Raytracing and parent.BTDR.par.Rtavailable and parent.BTDR.par.Rtreflections) else 0'
     # [BTDR:BUILD.COMPINLINE] composite computes the lighting terms itself ([BTDR:COMP.INLINE]); `lighting` and lit1..3
     # are only pulled by the Debug View. 2D inputs in order, then 3D (environment atlas, probes).
-    comp = glsl('composite', D['composite.frag'], rs[:3] + [shs, rs[3], esw, ssg, ssr, hfs, rts, eat] + psrc,
+    comp = glsl('composite', D['composite.frag'], rs[:3] + [shs, rs[3], esw, ssg, ssr, hfs, rts, eat] + psrc + llsw,
                 RW, RH, ['rgba16float'], 200, 400)
     _menu(comp.par.inputextenduv, ['repeat'])
 

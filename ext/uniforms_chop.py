@@ -5,7 +5,7 @@
 import math
 import numpy as np
 
-NSLOT = 108                 # 0.9.0: + 8 local lights x 5 slots from 68 ([BTDR:UNI.LOCALLIGHTS])
+NSLOT = 124                 # 0.9.0: + 8 local lights x 5 slots from 68; 0.9.1: + 4 spot shadows x 4 from 108
 _STATE = {}      # per-CHOP runtime state (previous camera, frame counter); not saved with the file
 
 def _halton(i, b):
@@ -93,7 +93,18 @@ def _local_lights(C, Q, a):
         a[base + 1] = (col[0], col[1], col[2], p['attenuationend'].eval())
         a[base + 2] = (d[0], d[1], d[2], cos_out)
         a[base + 3] = (p['attenuationstart'].eval(), p['attenuationexp'].eval(), cos_in, fall)
-        a[base + 4] = (p['coneroll'].eval(), 0.0, 0.0, 0.0)
+        k = C.fetch('llshadow', {}).get(path)
+        a[base + 4] = (p['coneroll'].eval(), float(k + 1) if k is not None else 0.0, 0.0, 0.0)
+        if k is not None:
+            # [BTDR:UNI.LLSHADOW] (0.9.1) the shadow camera's world-to-camera rows and its lens
+            cam = C.op('llcam%d' % k)
+            if cam is not None:
+                Mi = cam.worldTransform
+                Mi.invert()
+                for r in range(3):
+                    a[108 + 4 * k + r] = (Mi[r, 0], Mi[r, 1], Mi[r, 2], Mi[r, 3])
+                cp = _pars(cam)
+                a[108 + 4 * k + 3] = (math.tan(math.radians(cp['fov'].eval()) * 0.5), cp['near'].eval(), 0.02 * K, 1.0)
         n += 1
     return n
 
@@ -113,7 +124,8 @@ def onCook(scriptOp):
     a[42] = (K, um, 0.0, 0.0)
     # [BTDR:UNI.MISC] (0.8.4) x energy compensation ([BTDR:LIGHT.ENERGY]); (0.9.0) y local light count
     nll = _local_lights(C, Q, a)
-    a[43] = (1.0 if ('Energycomp' not in Q or Q['Energycomp'].eval()) else 0.0, float(nll), 0.0, 0.0)
+    a[43] = (1.0 if ('Energycomp' not in Q or Q['Energycomp'].eval()) else 0.0, float(nll),
+             Q['Fogmultiple'].eval() if 'Fogmultiple' in Q else 0.0, 0.0)          # z (0.9.1) fog multiple scattering
 
     # [BTDR:UNI.CAMERA] current + previous camera
     cp = C.fetch('cam_path', '')
@@ -362,10 +374,10 @@ def onCook(scriptOp):
     if gi_on:
         # [BTDR:UNI.RTSTATICKEY] the key is the 7 slots as computed (same inputs give bit-identical floats); 0.4.0
         # rounded all 160 values every frame (~0.07 ms)
-        key = (a[10], a[11], a[12][3], a[15], a[36][0], a[37], a[38])
+        key = (a[10], a[11], a[12][3], a[15], a[36][0], a[37], a[38], tuple(a[68:108]))   # 0.9.1: + local lights
         if rs.get('static') != key:
             rs['static'] = key
-            keep = {10, 11, 12, 15, 36, 37, 38}
+            keep = {10, 11, 12, 15, 36, 37, 38, 42, 43} | set(range(68, 108))   # 0.9.1: unit, light count, local lights
             st = [a[i] if i in keep else _ZERO for i in range(NSLOT)]
             st[12] = (0.0, 0.0, 0.0, a[12][3])
             st[36] = (a[36][0], 0.0, 0.0, 0.0)             # reflection settings do not affect the probes
