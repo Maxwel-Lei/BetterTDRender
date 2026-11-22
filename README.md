@@ -36,7 +36,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 [![TouchDesigner Render TOP vs BetterTDRender — before / after (click to watch)](docs/media/btdr_vs_td.gif)](docs/media/btdr_vs_td_render_top.mp4)
 
-**[▶ Watch the comparison: TouchDesigner Render TOP vs BetterTDRender](docs/media/btdr_vs_td_render_top.mp4)** (52 s, 0.9.8 preview build) — six before / after shots: global illumination + AO, volumetric light shafts, auto exposure + bloom (Sponza), soft shadows + tracking focus (A Beautiful Game), reflections + energy compensation (MetalRoughSpheres), refraction + volume absorption (Dragon Attenuation). Each shot shows the native render, then the split, then BTDR. Same lights, same HDRI environment light and the same native PBR MATs on both sides; the native side gets the HDRI as a sky dome, soft shadows, 4x MSAA and one fixed exposure gain per shot to match the average brightness.
+**[▶ Watch the comparison: TouchDesigner Render TOP vs BetterTDRender](docs/media/btdr_vs_td_render_top.mp4)** (52 s, 0.9.8 preview build, music generated for the edit) — six before / after shots: global illumination + AO, volumetric light shafts, auto exposure + bloom (Sponza), soft shadows + tracking focus (A Beautiful Game), reflections + energy compensation (MetalRoughSpheres), refraction + volume absorption (Dragon Attenuation). Each shot shows the native render, then the split, then BTDR. Same lights, same HDRI environment light and the same native PBR MATs on both sides; the native side gets the HDRI as a sky dome, soft shadows, 4x MSAA and one fixed exposure gain per shot to match the average brightness.
 
 [![BetterTDRender — 60 s intro (click to watch)](docs/media/btdr_intro.gif)](docs/media/btdr_intro.mp4)
 
