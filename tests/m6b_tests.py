@@ -3,7 +3,7 @@
 # Result: btdr/out/m6b_tests.txt, first line STATUS PASS / FAIL. Builds /project1/m6b_test (tests/m6b_scene.py), removes it.
 import traceback
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOGF = BT + '/out/m6b_tests.txt'
 LOG, FAILS = [], []
 def check(name, ok, info=''):

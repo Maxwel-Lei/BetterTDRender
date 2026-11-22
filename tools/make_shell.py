@@ -5,7 +5,7 @@
 # three outputs and the node viewer; everything else is in `core` (the normal renderBTDR), which the author
 # can then make private (enter the shell, RMB on core > Privacy). [BTDR:EXT.SHELL]
 import os, shutil, traceback
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 SLOG = []
 try:
     P = op('/project1')

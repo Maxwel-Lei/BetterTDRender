@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.9.5。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.9.6。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -104,6 +104,8 @@ Palette 的 BTDR 文件夹里还有带版本号的旧版本（如 `BTDR_0.7.6.to
 | Unit Size (m) | Scene Unit = Custom 时：1 个单位等于多少米 |
 | Anti-Aliasing | TAA（默认）：时间性抗锯齿，每帧把相机错开不到一个像素，再和前几帧混合，边缘和细小高光不再闪烁。None：关闭，边缘有锯齿 |
 | TAA Current Frame Weight | 每帧新画面占的比例，默认 0.1。调小更平滑但运动时更"拖"，调大反应更快但会轻微闪烁 |
+| TAA Static Stabilization | （0.9.6）默认开。画面里没在动的像素多保留历史帧，细小的东西（镂空的叶子、细杆、花盆边缘、法线贴图的细纹）不再一闪一闪（时间性闪烁，temporal shimmering）。灯光、阴影真的变了会马上退回正常模式，不会拖影；相机或物体在动的像素不受影响。Sponza 实测：闪烁的像素从 3.8 % 降到 1.2 %。**注意**：它靠运动矢量判断"没在动"，所以在动、却报不出运动矢量的东西（视频贴图、没有 `v` / `PartVel` 属性的形变网格、Object Motion Vectors 关掉时的运动物体）可能有轻微重影，这种画面把它关掉 |
+| Specular Anti-Aliasing | （0.9.6）默认开。几何镜面抗锯齿：法线在一个像素里变化很大的地方（细杆、小球、法线贴图的细节），把粗糙度略微调高，高光不会在像素之间跳。平整的面完全不受影响 |
 
 TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面略软，属于正常现象；Debug View 看到的中间结果是没有抗锯齿的。
 

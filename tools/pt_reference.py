@@ -16,7 +16,7 @@
 # heat map: red = BTDR brighter, blue = darker, one stop per full colour).
 import os, traceback, time
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 _SCENE = globals().get('PTREF_SCENE', 'room')
 _SPP = int(globals().get('PTREF_SPP', 1024))
 # [BTDR:PTREF.MATCH] BTDR's own light convention differs from TouchDesigner's (and the Pathtracer's): sun = Dimmer x pi,

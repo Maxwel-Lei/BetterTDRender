@@ -3,7 +3,7 @@
 #   exec(open(project.folder + '/btdr/tools/make_release.py', encoding='utf-8').read())
 # Result: btdr/out/release_log.txt (first line STATUS DONE / FAIL).
 import os, zipfile, hashlib, traceback
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 _log = []
 try:
     _src = BT + '/release/BTDR.tox'

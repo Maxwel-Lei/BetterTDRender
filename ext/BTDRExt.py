@@ -269,7 +269,8 @@ class BTDRExt:
         # [BTDR:EXT.TRANS3] (0.8.4) absorption colour (r < 0: the base colour) | refraction scale (G3, G5);
         # uOpt x: hashed alpha test (G4)
         trans3 = tr.get('trans3', (-1, 1, 1, 1))
-        opt = ("1 if parent.BTDR.par.Alphatestmode == 'hashed' else 0", 0, 0, 0)
+        opt = ("1 if parent.BTDR.par.Alphatestmode == 'hashed' else 0",
+               "1 if parent.BTDR.par.Specularaa else 0", 0, 0)          # (0.9.6) [BTDR:GBUF.SPECAA]
         state, uv0, uv1 = {}, (0, 0, 0, 0), (0, 0, 0, 0)
         t = src.OPType if src is not None else None
         if t == 'pbrMAT':

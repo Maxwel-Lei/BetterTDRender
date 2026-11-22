@@ -4,7 +4,7 @@
 # Result: btdr/out/m91_tests.txt (first line STATUS PASS / FAIL), btdr/out/m91_*.jpg; the test network is removed.
 import traceback
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG, FAILS = [], []
 NAME = 'm91_test'
 W, H = 640, 360

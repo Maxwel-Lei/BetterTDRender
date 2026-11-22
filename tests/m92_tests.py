@@ -3,7 +3,7 @@
 # Result: btdr/out/m92_tests.txt (first line STATUS PASS / FAIL), btdr/out/m92_*.jpg; the test network is removed.
 import traceback
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG, FAILS = [], []
 NAME = 'm92_test'
 W, H = 640, 360
@@ -54,6 +54,8 @@ try:
     sun.par.shadowtype = 'off'
     R = T.loadTox(BT + '/release/BTDR.tox'); R.name = 'renderBTDR1'
     R.par.Startupinfo = False; R.par.Cover = False; R.par.Resolutionw, R.par.Resolutionh = W, H
+    # 0.9.6 static stabilization keeps more history where nothing reports motion: off here, the 'no motion vectors' baseline would ghost
+    if hasattr(R.par, 'Taastatic'): R.par.Taastatic = False
     R.par.Camera = 'cam1'; R.par.Geometry = 'floor mover still'; R.par.Lights = 'sun'
     R.par.Bloom = 0; R.par.Envintensity = 0.3; R.par.Ambientocclusion = False; R.par.Ssgi = False; R.par.Ssr = False
     keep = T.create(executeDAT, 'keep')

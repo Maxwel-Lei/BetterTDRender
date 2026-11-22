@@ -4,7 +4,7 @@
 # Result: btdr/out/m5_acceptance.txt (first line STATUS PASS / FAIL); the test network is removed afterwards.
 import traceback, time
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG, FAILS = [], []
 def check(name, ok, detail=''):
     LOG.append('%s  %s  %s' % ('PASS' if ok else 'FAIL', name, detail))

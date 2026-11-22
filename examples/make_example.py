@@ -4,7 +4,7 @@
 # Run: exec(open(project.folder + '/btdr/examples/make_example.py', encoding='utf-8').read())
 # Writes btdr/examples/BTDR_Example.tox (+ a copy in btdr/release/), log in btdr/out/example_log.txt
 import traceback
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG = []
 try:
     P = op('/project1')

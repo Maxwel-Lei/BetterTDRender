@@ -13,7 +13,7 @@
 # BTDRs are created one per step (several in one frame can trip the GPU driver timeout, §11 #...).
 import traceback, shutil, os
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG, FAILS = [], []
 NAME = 'm84_test'
 W, H = 640, 360

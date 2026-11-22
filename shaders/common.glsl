@@ -22,7 +22,7 @@ uniform vec4 uB[124];
 #define uGrade     uB[17]   // x exposure multiplier, y vignette, z grain, w tonemap (0 none, 1 ACES)
 #define uView      uB[18]   // x debug view, y sRGB colour inputs, z distance fade start, w distance fade end
 #define uClip      uB[19]   // x camera near, y camera far, z aspect (w / h), w (0.9.4) 1 = orthographic camera
-#define uTAA       uB[20]   // x current-frame weight, y 1 = TAA on, z variance clip gamma
+#define uTAA       uB[20]   // x current-frame weight, y 1 = TAA on, z variance clip gamma, w (0.9.6) static stabilization
 #define uBloom     uB[21]   // x intensity, y threshold, z knee, w radius (mip-chain blend)
 #define uAE        uB[22]   // x auto exposure on, y min EV, z max EV, w key (target mid grey)
 #define uAE2       uB[23]   // x speed up, y speed down, z delta seconds, w reset

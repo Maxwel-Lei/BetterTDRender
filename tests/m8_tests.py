@@ -5,7 +5,7 @@
 # otherwise show up as differences.
 import traceback
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG, FAILS = [], []
 NAME = 'm8_test'
 def check(name, ok, detail=''):

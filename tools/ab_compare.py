@@ -8,7 +8,7 @@
 # Result: btdr/out/ab_compare.txt (STATUS DONE + numbers), out/ab_A.jpg, out/ab_B.jpg
 import traceback
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 REF = globals().get('AB_REF', BT + '/release/BTDR_ref.tox')
 NEW = globals().get('AB_NEW', BT + '/release/BTDR.tox')
 NF = int(globals().get('AB_FRAMES', 90))

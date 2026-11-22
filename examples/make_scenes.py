@@ -6,7 +6,7 @@
 # Builds /project1/sc_<name> (replacing an existing one). Log: btdr/out/scenes_log.txt
 # Cameras are static here; tools/video_rig.py animates them while recording.
 import traceback, math
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG = []
 
 

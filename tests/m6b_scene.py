@@ -4,7 +4,7 @@
 # Run: exec(open(project.folder + '/btdr/tests/m6b_scene.py', encoding='utf-8').read())
 # Optional: M6_SHOT = 'tag' -> after M6_WAIT frames saves btdr/out/m6b_<tag>.jpg and out/m6b_log.txt
 import os
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 P = op('/project1')
 if P.op('m6b_test'): P.op('m6b_test').destroy()
 T = P.create(baseCOMP, 'm6b_test'); T.nodeX, T.nodeY = 200, -1200

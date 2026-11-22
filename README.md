@@ -40,7 +40,7 @@ volumetric fog, hardware ray tracing (probe GI + traced reflections, a simplifie
 
 ![example](docs/images/example.jpg)
 
-Current build: **0.9.5** (depth of field focus tracking; orthographic camera, point sprites; instanced geometry in the ray-tracing proxy; object motion vectors for TAA and motion blur; spot-light shadows, local lights in the fog and in ray-traced GI, fog multiple scattering; local lights; path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
+Current build: **0.9.6** (anti-flicker: TAA static stabilization, specular AA; depth of field focus tracking; orthographic camera, point sprites; instanced geometry in the ray-tracing proxy; object motion vectors for TAA and motion blur; spot-light shadows, local lights in the fog and in ray-traced GI, fog multiple scattering; local lights; path-traced reference tool and indoor shadow / probe-grid fixes; energy compensation, Refraction Scale, Absorption Color, hashed alpha; texture coordinates and scene unit; subsurface scattering, design in [docs/SUBSURFACE.md](docs/SUBSURFACE.md); refraction design in [docs/M6_TRANSPARENCY.md](docs/M6_TRANSPARENCY.md)). Branch `release/v0.1.0` = first snapshot (internal build 0.5.0).
 
 ## Quick start
 

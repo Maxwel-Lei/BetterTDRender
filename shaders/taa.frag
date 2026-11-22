@@ -3,7 +3,7 @@
 //         2 G-Buffer camera-relative position | ao, 3 G-Buffer normal | roughness (geometry mask),
 //         4 (0.9.2) object velocity: world displacement since the last frame | camera distance (0 = none)
 // output: rgb resolved HDR colour, a temporally stable view depth (scene units, background = camera far)
-// uTAA: x current-frame weight, y 1 = TAA on, z variance clip gamma
+// uTAA: x current-frame weight, y 1 = TAA on, z variance clip gamma, w (0.9.6) 1 = static pixel stabilization
 out vec4 fragColor;
 
 bool isGeo(vec2 uv)
@@ -127,8 +127,23 @@ void main()
 
     vec3 hc = sampleHistoryCR(puv);
     if (any(isnan(hc)) || any(isinf(hc))) hc = cur;                 // a poisoned history heals itself
-    vec3 hist = clipAABB(bmin, bmax, RGB2YCoCg(toneW(hc)));
+    vec3 hraw = RGB2YCoCg(toneW(hc));
+    vec3 hist = clipAABB(bmin, bmax, hraw);
     float w = offscreen ? 0.4 : uTAA.x;
+    // [BTDR:TAA.STATIC] (0.9.6) a pixel that does not move on screen (camera and object motion both under 0.05 px)
+    // keeps more history: a wider clip box (gamma x 2) and 0.3 x the current-frame weight. High-frequency detail
+    // (alpha-tested leaves, thin rods, normal-map detail) gives a different value at each of the 8 jitter positions;
+    // the normal 1.25-sigma box clips the history against that spread every frame and the pixel shimmers (Sponza).
+    // Only while the history stays near the normal box (within two sigma of it): a real change
+    // (moving shadow, light switched) falls back to the normal box at once, so it is not smeared.
+    vec2 mpx = (vUV.st - puv) * uTD2DInfos[0].res.zw;
+    if (uTAA.w > 0.5 && !offscreen && !moved && dot(mpx, mpx) < 0.0025) {
+        float outside = length((hraw - hist) / (sigma + 1e-4)) ;
+        if (outside < 2.0) {
+            hist = clipAABB(mu - 2.0 * uTAA.z * sigma, mu + 2.0 * uTAA.z * sigma, hraw);
+            w *= 0.3;
+        }
+    }
     // [BTDR:TAA.RESPONSIVE] (0.9.2, G1) near moving objects: where the history held a different surface (its stable
     // depth does not match where this point was last frame) it is a disocclusion; take more of the current frame
     if (moved) {

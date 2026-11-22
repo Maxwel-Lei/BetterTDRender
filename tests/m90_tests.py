@@ -5,7 +5,7 @@
 # the camera projection. Compared on `composite` (before TAA), so a parameter switch shows after a few frames.
 import traceback
 import numpy as np
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG, FAILS = [], []
 NAME = 'm90_test'
 W, H = 640, 360

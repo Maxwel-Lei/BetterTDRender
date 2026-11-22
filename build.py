@@ -5,8 +5,8 @@
 # Result and errors: btdr/out/build_log.txt
 import os, re, traceback
 
-BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.9.5'
+BT = globals().get('BTDR_SRC', project.folder.replace('\\', '/') + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
+VERSION = '0.9.6'
 BLOG = []
 
 def _read(rel):
@@ -138,6 +138,10 @@ def build_btdr(dest, name='renderBTDR'):
     menu(pg.appendMenu('Antialias', label='Anti-Aliasing')[0], ['taa', 'none'], ['TAA (Temporal)', 'None'], 'taa')
     p = setup(pg.appendFloat('Taaweight', label='TAA Current Frame Weight')[0], 0.1, 0.03, 0.5, True, True)
     p.enableExpr = "me.par.Antialias == 'taa'"
+    # [BTDR:BUILD.STABLE] (0.9.6) anti-flicker: TAA keeps more history on still pixels; specular AA widens highlights
+    # where the normal changes within a pixel
+    p = setup(pg.appendToggle('Taastatic', label='TAA Static Stabilization')[0], True); p.enableExpr = "me.par.Antialias == 'taa'"
+    setup(pg.appendToggle('Specularaa', label='Specular Anti-Aliasing')[0], True)
     # [BTDR:BUILD.NCONV] normal map convention of all materials (Blender / Tripo default OpenGL = Y+, Unreal / Substance default DirectX = Y-)
     menu(pg.appendMenu('Normalconvention', label='Normal Map Convention')[0], ['opengl', 'directx'],
          ['OpenGL (Y+)', 'DirectX (Y-)'], 'opengl')

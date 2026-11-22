@@ -22,7 +22,7 @@ uniform vec4 uChan;    // xyz channel source of the metallic, roughness, AO maps
 uniform vec4 uTrans;   // [BTDR:GBUF.TRANS] x opacity, y IOR, z absorption distance, w thin walled: 0 = solid, 1 + lift = thin
 uniform vec4 uTrans2;  // x 1 = alpha map, y alpha-test threshold (< 0 = off), z roughness override (< 0 = material), w 1 = unlit
 uniform vec4 uTrans3;  // (0.8.4) rgb absorption colour (r < 0 = the base colour), w refraction scale ([BTDR:EXT.TRANS3])
-uniform vec4 uOpt;     // (0.8.4) x 1 = hashed alpha test ([BTDR:GBUF.HASHALPHA])
+uniform vec4 uOpt;     // (0.8.4) x 1 = hashed alpha test ([BTDR:GBUF.HASHALPHA]), (0.9.6) y 1 = specular AA ([BTDR:GBUF.SPECAA])
 uniform vec4 uSSS;     // x subsurface profile (Subsurface slot index), < 0 = none ([BTDR:GBUF.SSSID])
 // [BTDR:GBUF.UVSET] (0.8.3) per-map texture coordinates, following the PBR MAT's SOP Texture Coord and Texture
 // Sampling Mode: code = UV set (0 = uv0, 1 = the extra set uUV1.w) + 2 for Screen Space.
@@ -146,6 +146,16 @@ void main()
         if (uPBR.w < 0.0) tn.y = -tn.y;         // [BTDR:GBUF.NCONV] DirectX (Y-) normal map
         tn.xy *= abs(uPBR.w);
         n = normalize(mat3(T * inv, B * inv, n) * tn);
+    }
+    // [BTDR:GBUF.SPECAA] (0.9.6) geometric specular anti-aliasing (Kaplanyan et al. 2016, Tokuyoshi & Kaplanyan 2019):
+    // where the shading normal changes a lot within a pixel (thin rods, vases, normal-map detail) widen the GGX lobe by
+    // the normal's screen-space variance, so a highlight cannot jump between pixels from one TAA jitter to the next
+    // (Sponza: shimmering rails, pots, emblems). uOpt.y = Specular Anti-Aliasing on.
+    if (uOpt.y > 0.5) {
+        vec3 dnx = dFdx(n), dny = dFdy(n);
+        float kern = min(0.5 * (dot(dnx, dnx) + dot(dny, dny)), 0.18);   // 2 x variance (variance = 0.25 x sum)
+        float a2 = rough * rough * rough * rough;
+        rough = sqrt(sqrt(clamp(a2 + kern, 0.0, 1.0)));
     }
     // [BTDR:GBUF.INSTCOLOR] the instance colour tints base colour and emission (particles, per-instance glow)
     base *= max(iVert.color.rgb, 0.0);

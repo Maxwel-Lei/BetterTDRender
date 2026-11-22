@@ -2,7 +2,7 @@
 # Run: MODELS = '<folder with the .obj files>'; exec(open(project.folder + '/btdr/tests/m8_showcase.py', encoding='utf-8').read())
 # Result: btdr/out/sss_<shot>_<on|off>.jpg, btdr/out/m8_showcase.txt. The scene /project1/sss_show stays for inspection.
 import traceback
-BT = project.folder + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 LOG = []
 def log(s):
     LOG.append(s); open(BT + '/out/m8_showcase.txt', 'w', encoding='utf-8').write('\n'.join(LOG))

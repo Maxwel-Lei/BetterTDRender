@@ -5,7 +5,7 @@
 import os, math, traceback
 import numpy as np
 
-BT = project.folder.replace('\\', '/') + '/btdr'
+BT = globals().get('BTDR_SRC', project.folder.replace('\\', '/') + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 TLOG, FAILS = [], []
 
 def check(name, ok, detail=''):

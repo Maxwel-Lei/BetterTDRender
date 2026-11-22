@@ -2,7 +2,7 @@
 # see IMPLEMENTATION_2 §11 #25). Manifest btdr/stage/<STAGE_MANIFEST>: one "dest staged_name md5" per line.
 # Run: STAGE_MANIFEST = 'manifest_x.txt'; exec(open(project.folder + '/btdr/tools/apply_stage.py', encoding='utf-8').read())
 import hashlib as _h, shutil as _sh
-_BT = project.folder + '/btdr'
+_BT = globals().get('BTDR_SRC', project.folder + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
 STAGE_RESULT = []
 for _ln in open(_BT + '/stage/' + STAGE_MANIFEST, encoding='utf-8').read().split('\n'):
     if not _ln.strip(): continue
