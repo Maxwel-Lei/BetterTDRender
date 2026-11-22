@@ -166,6 +166,26 @@ def _velocity(C, Q, key, frame):
     return st['on']
 
 
+def _focus_distance(C, Q, cam):
+    """[BTDR:UNI.FOCUSTRACK] (0.9.5) Focus Distance, or with Focus Method = Tracking the Focus Object's distance along
+    the camera's view axis (+ Focus Offset), every frame, so a moving object stays sharp. Scene units. Falls back to
+    Focus Distance when there is no object; the tracked value is shown in Tracked Distance."""
+    d = Q['Focusdistance'].eval()
+    if 'Focusmethod' not in Q or Q['Focusmethod'].eval() != 'tracking' or cam is None:
+        return d
+    o = Q['Focusobject'].eval()
+    if o is None or not hasattr(o, 'worldTransform'):
+        return d
+    c, w = cam.worldTransform.vals, o.worldTransform.vals            # column-major: translation 12..14, z axis 8..10
+    nz = _norm(*c[8:11])
+    t = ((w[12] - c[12]) * -c[8] + (w[13] - c[13]) * -c[9] + (w[14] - c[14]) * -c[10]) / nz + Q['Focusoffset'].eval()
+    t = max(t, 0.05)
+    p = Q.get('Focustracked')
+    if p is not None and abs(p.eval() - t) > 1e-4:
+        p.val = round(t, 4)
+    return t
+
+
 def onCook(scriptOp):
     C = scriptOp.parent()
     Q = _pars(C)
@@ -392,7 +412,7 @@ def onCook(scriptOp):
     flen = Q['Focallength'].eval()
     if flen <= 0.0 and cam is not None:                       # from the camera's horizontal view angle
         flen = Q['Sensorwidth'].eval() / (2.0 * max(_tan_half_fov(cam, aspect), 1e-4))
-    a[24] = (max(flen, 1.0), Q['Fstop'].eval(), Q['Focusdistance'].eval() * um, Q['Dofmaxblur'].eval())   # metres (dof.frag)
+    a[24] = (max(flen, 1.0), Q['Fstop'].eval(), _focus_distance(C, Q, cam) * um, Q['Dofmaxblur'].eval())   # metres (dof.frag)
     # [BTDR:CAM.ORTHO] no depth of field with an orthographic camera
     a[25] = (Q['Sensorwidth'].eval(), 1.0 if Q['Dof'].eval() and a[19][3] < 0.5 else 0.0, 1.25 if high else 2.0, Q['Fogshadowblur'].eval())
     a[26] = (Q['Shutter'].eval(), Q['Mbmaxblur'].eval(), 12.0 if high else 6.0, 1.0 if Q['Motionblur'].eval() else 0.0)

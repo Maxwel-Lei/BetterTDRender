@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.9.4'
+VERSION = '0.9.5'
 BLOG = []
 
 def _read(rel):
@@ -227,12 +227,20 @@ def build_btdr(dest, name='renderBTDR'):
                                ('Aespeeddown', 'Adapt Speed To Darker', 1.0, 0.1, 20)):
         p = setup(pg.appendFloat(nm, label=lab)[0], d, lo, hi); p.enableExpr = 'me.par.Autoexposure'
     setup(pg.appendToggle('Dof', label='Depth of Field')[0], False)
+    # [BTDR:BUILD.FOCUSTRACK] (0.9.5) Focus Method: Manual = Focus Distance; Tracking = the distance to Focus Object
+    # (UE5 Cine Camera "Tracking"), measured along the camera's view axis every frame
+    p = menu(pg.appendMenu('Focusmethod', label='Focus Method')[0], ['manual', 'tracking'], ['Manual', 'Tracking (Focus Object)'], 'manual')
+    p.enableExpr = 'me.par.Dof'
+    p = pg.appendOBJ('Focusobject', label='Focus Object')[0]; p.enableExpr = "me.par.Dof and me.par.Focusmethod == 'tracking'"
+    p = setup(pg.appendFloat('Focusoffset', label='Focus Offset')[0], 0.0, -5, 5); p.enableExpr = "me.par.Dof and me.par.Focusmethod == 'tracking'"
+    p = pg.appendFloat('Focustracked', label='Tracked Distance')[0]; p.readOnly = True
     for nm, lab, d, lo, hi in (('Focusdistance', 'Focus Distance', 3.0, 0.05, 100),
                                ('Fstop', 'F-Stop', 2.8, 0.7, 32),
                                ('Focallength', 'Focal Length (mm, 0 = from camera)', 0.0, 0, 600),
                                ('Sensorwidth', 'Sensor Width (mm)', 36.0, 1, 100),
                                ('Dofmaxblur', 'Max Blur Radius (px)', 14.0, 1, 40)):
-        p = setup(pg.appendFloat(nm, label=lab)[0], d, lo, hi, True); p.enableExpr = 'me.par.Dof'
+        p = setup(pg.appendFloat(nm, label=lab)[0], d, lo, hi, True)
+        p.enableExpr = "me.par.Dof and me.par.Focusmethod == 'manual'" if nm == 'Focusdistance' else 'me.par.Dof'
     setup(pg.appendToggle('Motionblur', label='Motion Blur')[0], False)
     for nm, lab, d, lo, hi in (('Shutter', 'Shutter (fraction of a frame)', 0.5, 0, 1),
                                ('Mbmaxblur', 'Max Blur Length (px)', 32.0, 1, 128)):
