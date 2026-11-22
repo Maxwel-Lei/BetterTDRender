@@ -1,7 +1,7 @@
 // [BTDR:FILE.COMMON] common.glsl — prepended to every BTDR shader by build.py
 // [BTDR:UNI.BLOCK] one shared uniform array, filled once per frame by the Script CHOP `uniforms`
 // (ext/uniforms_chop.py). Slot layout must match that file.
-uniform vec4 uB[68];
+uniform vec4 uB[108];
 #define uCamPos    uB[0]    // xyz camera position
 #define uCamRight  uB[1]    // xyz camera right
 #define uCamUp     uB[2]    // xyz camera up
@@ -45,7 +45,7 @@ uniform vec4 uB[68];
 #define uAmb       uB[40]   // 0.7.5: rgb Ambient Light COMPs (colour x dimmer, summed)
 #define uSSSG      uB[41]   // 0.8.0 subsurface: x on, y Scatter Scale, z taps per side, w transmission on
 #define uUnit      uB[42]   // 0.8.3 [BTDR:UNI.UNIT] x scene units per metre, y metres per scene unit
-#define uMisc      uB[43]   // 0.8.4: x energy compensation on ([BTDR:LIGHT.ENERGY]); yzw free
+#define uMisc      uB[43]   // 0.8.4: x energy compensation on ([BTDR:LIGHT.ENERGY]); 0.9.0: y local light count; zw free
 #define UM(m_)     ((m_) * uUnit.x)  // a length designed in metres, in scene units (parameter not named x: .x would expand)
 // [BTDR:UNI.SSS] subsurface profile k (0..7) = Subsurface slot k: three slots each, 44 + 3k ..
 #define SSS_A(k)   uB[44 + 3 * (k)]   // rgb scatter distance per channel (m, x Scatter Scale), w scatter strength (0 = thin)
@@ -59,3 +59,13 @@ float hash12(vec2 p)
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
+// [BTDR:UNI.LOCALLIGHTS] (0.9.0) local lights: 8 x 5 slots from 68 ([BTDR:LIGHT.LOCAL])
+//   0 xyz position, w type (1 point, 2 spot, 3 distant)
+//   1 rgb colour x intensity (Dimmer x pi x Intensity Multiplier x Local Intensity), w attenuation end
+//   2 xyz direction the light points (spot axis; distant: direction TO the light), w cos of the outer cone half-angle
+//   3 x attenuation start, y attenuation exponent, z cos of the inner cone half-angle, w falloff (0 none, 1 the
+//     Light COMP's attenuation, 2 physical inverse square)
+//   4 x cone roll-off exponent
+#define LL_MAX 8
+#define LL_COUNT int(uMisc.y + 0.5)
+#define LL(i, k) uB[68 + 5 * (i) + (k)]

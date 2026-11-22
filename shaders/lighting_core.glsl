@@ -109,6 +109,50 @@ float sunShadow(vec3 wp, vec3 n, float NoL)
     return lit / 24.0;
 }
 
+// [BTDR:LIGHT.LOCAL] (0.9.0) point, spot and extra distant lights (Light COMPs matched by Lights other than the main
+// light), up to 8, looped over directly, no shadows (0.9.1 adds tiled culling and shadows). Same BRDF as the sun
+// (GGX + Smith + Schlick + energy compensation, Lambert diffuse); brightness follows BTDR's convention (Dimmer x pi).
+// Falloff: the Light COMP's own Attenuation (Start / End / Exp; none when Attenuated is off, like a TouchDesigner
+// light) or physical inverse square (the Dimmer x pi irradiance is reached at 1 m).
+vec3 localLight(int i, vec3 P, vec3 N, vec3 V, vec3 diff, vec3 F0, float a, float a2, float rough, float NoV)
+{
+    vec4 l0 = LL(i, 0), l1 = LL(i, 1), l2 = LL(i, 2), l3 = LL(i, 3), l4 = LL(i, 4);
+    int t = int(l0.w + 0.5);
+    vec3 L;
+    float att = 1.0;
+    if (t == 3) {
+        L = normalize(l2.xyz);
+    } else {
+        vec3 d = l0.xyz - P;
+        float dist = length(d);
+        L = d / max(dist, 1e-6);
+        int f = int(l3.w + 0.5);
+        if (f == 1) att = pow(clamp((l1.w - dist) / max(l1.w - l3.x, 1e-4), 0.0, 1.0), max(l3.y, 1e-3));
+        else if (f == 2) { float m = UM(1.0); att = m * m / max(dist * dist, UM(0.01) * UM(0.01)); }
+        if (t == 2) {
+            float c = dot(-L, normalize(l2.xyz));
+            att *= pow(smoothstep(l2.w, max(l3.z, l2.w + 1e-4), c), max(l4.x, 1e-3));
+        }
+    }
+    float NoL = dot(N, L);
+    if (NoL <= 0.0 || att <= 0.0) return vec3(0.0);
+    vec3 H = normalize(V + L);
+    float NoH = clamp(dot(N, H), 0.0, 1.0);
+    float VoH = clamp(dot(V, H), 0.0, 1.0);
+    vec3 spec = D_GGX(a2, NoH) * V_SmithJointApprox(a, NoV, NoL) * F_Schlick(F0, VoH) * energyComp(F0, rough, NoV);
+    return (diff / PI + spec) * l1.rgb * NoL * att;
+}
+vec3 localLights(vec3 P, vec3 N, vec3 V, vec3 diff, vec3 F0, float a, float a2, float rough, float NoV)
+{
+    vec3 s = vec3(0.0);
+    int n = min(LL_COUNT, LL_MAX);
+    for (int i = 0; i < LL_MAX; i++) {
+        if (i >= n) break;
+        s += localLight(i, P, N, V, diff, F0, a, a2, rough, NoV);
+    }
+    return s;
+}
+
 // [BTDR:LIGHT.SSSIRR] (0.8.0) the subsurface pass needs irradiance without the base colour: lightingTerms leaves the
 // sun's diffuse irradiance (shadowed, before the distance fade) and the environment irradiance (before AO) here
 vec3 gSunIrr = vec3(0.0);
@@ -160,6 +204,7 @@ void lightingTerms(vec2 uv, out vec4 oDirect, out vec4 oAmbDiff, out vec4 oAmbSp
         direct = (diffuseColor / PI + spec) * uSunColor.rgb * uSunDir.w * NoL * sh;
         gSunIrr = uSunColor.rgb * uSunDir.w * NoL * sh / PI;
     }
+    if (LL_COUNT > 0) direct += localLights(wp, N, V, diffuseColor, F0, a, a2, rough, NoV);
 
     // [BTDR:LIGHT.IBL]
     vec3 R = reflect(-V, N);

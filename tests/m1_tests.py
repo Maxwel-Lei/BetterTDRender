@@ -136,7 +136,7 @@ try:
             w = ' | '.join(st.get('warnings', []))
             check('warnings for phong / constant / custom', all(k in w for k in ('Phong', 'not supported')), w[:300])
             u = R.op('uniforms')
-            check('uniform block 4 x 68', u.numChans == 4 and u.numSamples == 68, '%d chans %d samples' % (u.numChans, u.numSamples))
+            check('uniform block 4 x 108 (0.9.0)', u.numChans == 4 and u.numSamples == 108, '%d chans %d samples' % (u.numChans, u.numSamples))
             mats = R.findChildren(type=glslMAT, path='*/scene/*')
             check('materials: no per-frame uniform, 4x anisotropic; G-Buffer through cam_jit',
                   mats and all(all(getattr(m.par, 'array%dchop' % i).eval() is None for i in range(m.seq.array.numBlocks)) and m.par.sampler0anisotropy.eval() == '4x' for m in mats)
@@ -214,7 +214,8 @@ try:
                       R.fetch('shadow_watch', None)))
             st = R.fetch('status', {}); w = ' | '.join(st.get('warnings', []))
             d = arr(R.op('lighting'))[..., :3]; wp = worldpos(R)
-            check('non-distant light treated as distant', 'not a distant light' in w and d[region(5, wp)].mean() > 0.01, 'direct mean %.3f' % d[region(5, wp)].mean())
+            # (0.9.0) a non-distant light is a local light now ([BTDR:EXT.LIGHTS]): lit, and the readout counts it
+            check('non-distant light is a local light', 'point' in R.par.Lightcount.eval() and d[region(5, wp)].mean() > 0.01, '%s, direct mean %.3f' % (R.par.Lightcount.eval(), d[region(5, wp)].mean()))
             light.par.lighttype = 'distant'; R.par.Quality = 'high'
             R.par.Lights = 'nothing_here'
             run("args[0]()", s6, delayFrames=12)

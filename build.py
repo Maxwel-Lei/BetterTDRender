@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = project.folder.replace('\\', '/') + '/btdr'
-VERSION = '0.8.5'
+VERSION = '0.9.0'
 BLOG = []
 
 def _read(rel):
@@ -153,6 +153,12 @@ def build_btdr(dest, name='renderBTDR'):
     setup(pg.appendFloat('Lightmult', label='Intensity Multiplier')[0], 1.0, 0, 4, True)
     # [BTDR:BUILD.ENERGY] (0.8.4) multiple-scattering energy compensation for rough metals ([BTDR:LIGHT.ENERGY])
     setup(pg.appendToggle('Energycomp', label='Energy Compensation')[0], True)
+    # [BTDR:BUILD.LOCALLIGHTS] (0.9.0) point / cone / extra distant lights ([BTDR:LIGHT.LOCAL])
+    setup(pg.appendToggle('Locallights', label='Local Lights')[0], True)
+    p = pg.appendStr('Lightcount', label='Light Count')[0]; p.readOnly = True
+    setup(pg.appendFloat('Localintensity', label='Local Intensity')[0], 1.0, 0, 4, True)
+    menu(pg.appendMenu('Localfalloff', label='Local Falloff')[0], ['light', 'physical'],
+         ['Light COMP Attenuation', 'Physical (inverse square)'], 'light')
     setup(pg.appendToggle('Shadows', label='Shadows')[0], True)
     setup(pg.appendFloat('Shadowsoftness', label='Shadow Softness')[0], 1.0, 0, 4, True)
     setup(pg.appendToggle('Shadowfit', label='Auto Fit Shadow Range')[0], True)

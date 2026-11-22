@@ -5,7 +5,7 @@
 import math
 import numpy as np
 
-NSLOT = 68
+NSLOT = 108                 # 0.9.0: + 8 local lights x 5 slots from 68 ([BTDR:UNI.LOCALLIGHTS])
 _STATE = {}      # per-CHOP runtime state (previous camera, frame counter); not saved with the file
 
 def _halton(i, b):
@@ -55,6 +55,48 @@ def _pars(o):
         _PARS[k] = d
     return d
 
+def _local_lights(C, Q, a):
+    """[BTDR:UNI.LOCALLIGHTS] (0.9.0) the local lights (stored by Refresh in 'local_lights') into slots 68.. every
+    frame, so moving a light or changing its colour needs no Refresh. Returns how many were written."""
+    if 'Locallights' in Q and not Q['Locallights'].eval():
+        return 0
+    paths = C.fetch('local_lights', [])
+    mult = Q['Lightmult'].eval() * (Q['Localintensity'].eval() if 'Localintensity' in Q else 1.0)
+    physical = 'Localfalloff' in Q and Q['Localfalloff'].eval() == 'physical'
+    K = a[42][0]
+    n = 0
+    for path in paths[:8]:
+        l = op(path)
+        if l is None or not l.valid:
+            continue
+        p = _pars(l)
+        t = p['lighttype'].eval()
+        typ = {'point': 1.0, 'cone': 2.0, 'distant': 3.0}.get(t, 1.0)
+        M = l.worldTransform
+        z = _norm(M[0, 2], M[1, 2], M[2, 2])
+        zx, zy, zz = M[0, 2] / z, M[1, 2] / z, M[2, 2] / z
+        inten = p['dimmer'].eval() * math.pi * mult
+        col = (p['cr'].eval() * inten, p['cg'].eval() * inten, p['cb'].eval() * inten)
+        if typ == 3.0:
+            d = (zx, zy, zz)                         # direction TO a distant light (its +Z), like the sun
+        else:
+            d = (-zx, -zy, -zz)                      # a light points down its -Z
+        half = math.radians(max(p['coneangle'].eval(), 0.1)) * 0.5
+        delta = math.radians(max(p['conedelta'].eval(), 0.0))
+        cos_in, cos_out = math.cos(half), math.cos(min(half + delta, math.pi * 0.5))
+        if physical:
+            fall = 2.0
+        else:
+            fall = 1.0 if p['attenuated'].eval() else 0.0
+        base = 68 + 5 * n
+        a[base] = (M[0, 3], M[1, 3], M[2, 3], typ)
+        a[base + 1] = (col[0], col[1], col[2], p['attenuationend'].eval())
+        a[base + 2] = (d[0], d[1], d[2], cos_out)
+        a[base + 3] = (p['attenuationstart'].eval(), p['attenuationexp'].eval(), cos_in, fall)
+        a[base + 4] = (p['coneroll'].eval(), 0.0, 0.0, 0.0)
+        n += 1
+    return n
+
 def onCook(scriptOp):
     C = scriptOp.parent()
     Q = _pars(C)
@@ -69,8 +111,9 @@ def onCook(scriptOp):
         um = max(Q['Unitsize'].eval(), 1e-6)
     K = 1.0 / um
     a[42] = (K, um, 0.0, 0.0)
-    # [BTDR:UNI.MISC] (0.8.4) x energy compensation ([BTDR:LIGHT.ENERGY])
-    a[43] = (1.0 if ('Energycomp' not in Q or Q['Energycomp'].eval()) else 0.0, 0.0, 0.0, 0.0)
+    # [BTDR:UNI.MISC] (0.8.4) x energy compensation ([BTDR:LIGHT.ENERGY]); (0.9.0) y local light count
+    nll = _local_lights(C, Q, a)
+    a[43] = (1.0 if ('Energycomp' not in Q or Q['Energycomp'].eval()) else 0.0, float(nll), 0.0, 0.0)
 
     # [BTDR:UNI.CAMERA] current + previous camera
     cp = C.fetch('cam_path', '')
@@ -209,6 +252,8 @@ def onCook(scriptOp):
         inten = lc['dimmer'].eval() * math.pi            # native PBR MAT: dimmer 1 == irradiance PI
     else:
         color, inten = (1.0, 0.94, 0.84), 5.0          # built-in key light when Lights matches nothing
+    if light is None and C.fetch('sun_off', False):
+        inten = 0.0                                    # (0.9.0) only point / spot lights matched: no sun
     a[10] = (v[8] / nz, v[9] / nz, v[10] / nz, inten * Q['Lightmult'].eval())
     a[11] = (color[0], color[1], color[2], Q['Shadowsoftness'].eval())
     a[12] = (v[12], v[13], v[14], 1.0 if Q['Shadows'].eval() else 0.0)

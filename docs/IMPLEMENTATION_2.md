@@ -198,6 +198,10 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - 开放的房间（地面、三面 0.1 厚的墙、天花板、一个小方块）：阴影范围的中心高度落在房间中部、范围大于 8 m；探针网格的顶到天花板、背面到后墙；阴影图只排除地面（5 个投射物）。室外（40 m 的地面 + 一个物体）：阴影范围仍然只框住物体（< 6 m）。
 - 参考图（`tools/pt_reference.py`，房间场景，约 1200 spp）。0.8.5 修完后 BTDR / 路径追踪：地面受光 0.978、方块下 0.960、后墙 0.982、红墙 0.999、绿墙 1.193、方块顶 0.977、方块背光面 0.897、粗糙金属球 0.759、塑料球 0.987、天花板 1.024；墙面的蓝通道高 11–47 %（颜色渗透弱、天光多）。
 
+## 11b-9. 0.9.0 测试（`tests/m90_tests.py`）
+
+地面 + 主光 + 一盏点光（Attenuated，Start 0.5 / End 3）+ 一盏朝下的聚光（30° + 5°）。地面上的点按 G-Buffer 的世界坐标取（半径 0.3 m），在 `composite`（TAA 之前）上比较：点光下方变亮、Attenuation End 外不变、聚光锥内亮锥外不变、移动点光后亮斑跟着走（不刷新）、Local Lights 关 = 只有主光（平均差 < 0.002，SSAO 每帧有噪声所以不比最大值）、Physical 衰减随距离下降、只匹配局部灯时没有主光、读数和无报错。
+
 ## 11c. 开发者流程
 
 都在 Textport（Alt+T）里执行，结果写 `btdr/out/`，第一行是 `STATUS ...`：
@@ -210,6 +214,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 0.8.1 专项 | `tests/m81_tests.py` | 8 项：POP 贴图、薄壁按距离模糊、圆盘旋转逐帧变化、边缘无暗带、薄壁透射提亮 |
 | 0.8.3 专项 | `tests/m83_tests.py` | 18 项，§11b-6：贴图坐标和原生逐像素对比、场景比例 |
 | 0.8.4 专项 | `tests/m84_tests.py` | 15 项，§11b-7：能量补偿、光追反射的方块结构对比 0.8.3、Refraction Scale、吸收颜色、哈希镂空 |
+| 0.9.0 专项 | `tests/m90_tests.py` | 12 项，§11b-9：局部灯 |
 | 0.8.5 专项 | `tests/m85_tests.py` | 5 项，§11b-8：阴影范围、探针网格包含墙和天花板 |
 | 路径追踪参考图 | `tools/pt_reference.py`（要本机有 Josef Pelz 的 `PT_FAM.tox`，`PTREF_TOX` 指路径；`PTREF_SPP`、`PTREF_PARS`、`PTREF_KEEP`） | `out/pt_ref_<tag>.txt` 逐区域比值，`out/pt_ref_<tag>.jpg` 并排图 + 热力图 |
 | 顺序跑多个测试 | `tools/run_regression.py`（`REG_TESTS = [...]` 指定，默认全套回归） | `out/regression.txt`，每个测试一行结果；一个跑完再开始下一个（§11 第 65 条） |
@@ -248,6 +253,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-22 | 0.9.0 | 多光源第一阶段（`ROADMAP_0.9.md` §1）。**局部灯**（`LIGHT.LOCAL` / `UNI.LOCALLIGHTS` / `EXT.LIGHTS` / `BUILD.LOCALLIGHTS`）：第一盏平行光是主光，其余 Light COMP（点光、聚光、多出来的平行光）最多 8 盏；`uB` 从 68 扩到 108 槽，每盏灯 5 个 vec4（位置 \| 类型、颜色 × 强度 \| 衰减终点、朝向 \| 外锥 cos、衰减起点 / 指数 / 内锥 cos \| 衰减方式、锥体 roll），`uniforms` 每帧写（移动灯不用 Refresh），`uMisc.y` = 灯数；`lighting_core` 的 `localLights()` 直接循环（GGX + 能量补偿 + Lambert，无阴影）。亮度约定同主光（Dimmer × π，§11 第 67 条）；衰减读灯的 Attenuation，或 Local Falloff = Physical（平方反比，1 m 处 = Dimmer）。只匹配到点光 / 聚光时没有主光（`sun_off`）。`scene_watch` 的签名加上灯的类型，改类型会自动刷新。Light 页新增 Local Lights、Light Count、Local Intensity、Local Falloff。新测试 `tests/m90_tests.py` 12 项 |
 | 2026-11-22 | 0.8.5 | 路径追踪参考图（J2，`ROADMAP_0.9.md` §8.1）。新工具 `tools/pt_reference.py`（`TOOL.PTREF`）：同一个原生场景（Geometry COMP + PBR MAT + 平行光 + 纯色天空）由 BTDR 和 Josef Pelz 的 Pathtracer（只在本机当参考，不随 BTDR 分发）各渲一份，线性 HDR 逐区域比较，出并排图和 log2 比值热力图（`docs/images/pt_reference.jpg`）。比较时 BTDR 用线性颜色、Intensity Multiplier 1/π（§11 第 67 条）。按约定对齐后整幅亮度差 2 %，查出两个 bug 并修复：**阴影范围和探针网格的自动适配把墙、天花板当成地面排除了**（`EXT.SOLIDBOXES`：现在只排除地面，规则和 `EXT.CASTERS` 一样）——室内场景的阳光从阴影图外面的天花板漏进来、后墙上探针外推出竖条纹，两处都没了。其余差异记进 §12。新测试 `tests/m85_tests.py` 5 项 |
 | 2026-11-22 | 0.8.4 | 画质修补和玻璃控制（`ROADMAP_0.9.md` §8.2）。**能量补偿**（J1，`LIGHT.ENERGY` / `BUILD.ENERGY` / `UNI.MISC`）：Light 页 Energy Compensation（默认开），`uB[43]`（`uMisc`）x；直接光和环境的镜面项乘 `1 + F0 (1/E − 1)`，E 查离线算好的 16 × 16 GGX 方向反照率表（§11 第 62 条）。**光追反射的放大**（`COMP.RTUP` / `ACCUM.RTEDGE`）：composite 对 1/4 分辨率的比值做联合双边上采样（四个邻近纹素按法线、平面距离加权），`rt_acc` 的 3 × 3 预滤波和邻域统计只算同一表面（§11 第 64 条）。**Refraction Scale**（G3，`BUILD.REFRSCALE` / `REFR.SCALE`）和**吸收颜色**（G5，`BUILD.ABSORBCOLOR` / `REFR.ABSORBCOLOR`）：透明槽多三项（块大小 9 → 14），材质 `uTrans3`，透明层多一个输出 RT5（`tgbuffer` 6 个缓冲，`tgbuf5`，`GBUF.TRANS2`），`refract` 读输入 13，`rt_refr` 的 `sTBase` 改读 RT5、`rt_mat` 的 [2i] 存吸收颜色、[2i+1].x 存倍数。**哈希镂空**（G4，`BUILD.ALPHAHASH` / `GBUF.HASHALPHA`）：Transparency 页 Alpha Test Mode，材质 `uOpt.x`，Wyman & McGuire 2017。**实心玻璃的边缘**（`REFR.RIMBLEND`）：出射方向在临界角附近渐变到视线方向，去掉“球里还有一个球”的硬圆圈。M6c 首帧：测试读到 NaN 时隔 30 帧重读（`TEST.M6CWARM`，实测第二次就正常）。新工具 `tools/run_regression.py`。新测试 `tests/m84_tests.py` 15 项；回归 m1 39、m81 8、m8 18、m7 13、m6 24、m5 7、m83 18 全过。能量补偿关、光追关时和 0.8.3 的 A/B 差值为 0 |
 | 2026-11-19 | 0.8.3 | 贴图坐标和场景比例（`ROADMAP_0.9.md` §3）。**贴图坐标**（`GBUF.UVSET` / `EXT.UVSET` / `EXT.SAMPLERSTATE`）：镜像材质每张贴图的 Extend U / V、Filter 用表达式绑到 PBR MAT（各向异性取材质的、最低 4×）；新增 `uUV0` / `uUV1`（每张贴图的代码 = UV 套 + 2 × 屏幕空间，`uUV1.w` = 额外那套 UV 的编号）和 `uScr`（1 / 分辨率），`gbuffer.vert` 多传一套 `texCoord1 = TDTexAttrib_Tex(uUV1.w)`，`gbuffer.frag` 的 `uvOf()` 按代码取 uv0 / uv1 / 屏幕坐标，法线贴图的切线框架用它自己的坐标。Triplanar 不支持（§11 第 58 条），用了会提示。和原生逐像素一致（§11b-6）。**场景比例**（`BUILD.SCENEUNIT` / `UNI.UNIT`）：Render 页 Scene Unit（Meters / Centimeters / Millimeters / Inches / Feet / Custom + Unit Size）；`uniforms` 算 K = 每米多少场景单位，写进 `uB[42]`（`uUnit`），按米设计的参数乘 K（AO / GI 半径、SSR 距离和厚度、雾的浓度 / 衰减 ÷ K、基准高度和距离 × K、HF AO 半径、散射半径、薄片厚度），景深在米里算（对焦距离 × 米每单位，`dof.frag` 把深度换成米），吸收距离在 `refract` / `rt_refr` 里用 `UM()`；着色器里按米写死的常数都包上 `UM()`（阴影 / 雾的偏移和 PCSS 搜索范围、SSR / 光追的起点偏移、光追反射的最远距离、SSS 透射的偏移和薄片衰减、折射步进起点、雾的噪声频率），探针网格的边距也乘 K。改 Scene Unit 自动 Refresh。**备份保护**：`RELEASED.txt`（§11 第 59 条）。新测试 `tests/m83_tests.py` 18 项；回归 m1 39、m81 8、m8 18、m7 13、m5 7 全过；m6 除 M6c 两项外全过（0.8.2 同样失败，§12）。Meters 下和 0.8.2 的 A/B 差 0 |

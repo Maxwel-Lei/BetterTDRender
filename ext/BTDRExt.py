@@ -110,7 +110,8 @@ class BTDRExt:
                     tuple(c.name for c in g.children if c.family in ('SOP', 'POP') and c.render))
         return (cam.path if (cam is not None and cam.OPType == 'cameraCOMP') else '',
                 tuple(one(g) for g in self._geos()),
-                tuple(l.path for l in self._find(C.par.Lights.eval(), ('lightCOMP', 'ambientlightCOMP'))),
+                tuple((l.path, l.par.lighttype.eval() if l.OPType == 'lightCOMP' else '')        # (0.9.0) main / local
+                      for l in self._find(C.par.Lights.eval(), ('lightCOMP', 'ambientlightCOMP'))),
                 tuple((e.path, bool(e.par.envlightmap.eval())) for e in self._find(C.par.Lights.eval(), ('environmentlightCOMP',))))
 
     def WatchScene(self):
@@ -970,19 +971,28 @@ class BTDRExt:
         lights = self._find(C.par.Lights.eval(), ('lightCOMP',))
         # [BTDR:EXT.AMBIENT] Ambient Light COMPs matched by Lights add their colour x dimmer to the diffuse ambient
         C.store('ambient_paths', [a.path for a in self._find(C.par.Lights.eval(), ('ambientlightCOMP',))])
+        # [BTDR:EXT.LIGHTS] (0.9.0) the first distant light is the main light (sun: shadows, fog shafts, subsurface
+        # transmission, probe GI); every other Light COMP (point, cone, further distant lights) is a local light, up
+        # to 8, lit without shadows ([BTDR:LIGHT.LOCAL]). With only point / cone lights there is no sun. Before 0.9.0
+        # a point or cone light was treated as a distant one (direction only).
         distant = [l for l in lights if l.par.lighttype.eval() == 'distant']
-        light = (distant or lights or [None])[0]
-        if light is None:
+        light = distant[0] if distant else None
+        local = [l for l in lights if l is not light]
+        C.store('sun_off', light is None and bool(lights))
+        if not lights:
             warn.append('Lights: no Light COMP matches "%s"; using the built-in key light.' % C.par.Lights.eval())
-        else:
-            if not distant:
-                warn.append('%s is not a distant light: it is treated as one (direction only).' % light.path)
-            if len(lights) > 1:
-                warn.append('Only one light is supported for now: using %s.' % light.path)
+        if len(local) > 8:
+            warn.append('%d local lights matched: only the first 8 are used (%s ...).' % (len(local), ', '.join(l.name for l in local[8:11])))
+        C.store('local_lights', [l.path for l in local[:8]])
+        if hasattr(C.par, 'Lightcount'):
+            kinds = [l.par.lighttype.eval() for l in local[:8]]
+            C.par.Lightcount = '%s, %d point, %d cone, %d distant' % (
+                '1 main' if light is not None else ('built-in main' if not lights else 'no main'),
+                kinds.count('point'), kinds.count('cone'), kinds.count('distant'))
 
         C.store('cam_path', cam.path if cam is not None else '')
         C.store('light_path', light.path if light is not None else '')
-        C.par.Mainlight = light.path if light is not None else '(built-in key light)'
+        C.par.Mainlight = light.path if light is not None else ('(none: only local lights)' if lights else '(built-in key light)')
         # [BTDR:EXT.ENVLIGHT] the first Environment Light COMP matched by Lights that has a map (used by Source = Auto)
         envl = [e for e in self._find(C.par.Lights.eval(), ('environmentlightCOMP',)) if e.par.envlightmap.eval() is not None]
         C.par.Envlight = envl[0].path if envl else ''

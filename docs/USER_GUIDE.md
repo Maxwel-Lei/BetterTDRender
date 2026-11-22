@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.8.5。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.9.0。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -119,6 +119,10 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 | Main Light | 只读，显示当前用的是哪盏灯 |
 | Intensity Multiplier | 在灯光 Dimmer 基础上再乘的倍数 |
 | Energy Compensation | 默认开（0.8.4）：粗糙金属的能量补偿。普通的 GGX 高光只算光在表面反射一次，粗糙度高时，在微观凹凸之间来回反射的那部分光丢了，粗糙金属会偏暗（粗糙度 0.8 时最多丢掉约四成）。开着时把这部分补回来，粗糙金属更亮、颜色更饱和；光滑表面和非金属几乎不变。关掉 = 0.8.3 的效果 |
+| Local Lights | （0.9.0）点光、聚光和第二盏以后的平行光（局部灯）开关，默认开 |
+| Light Count | 只读：例如 `1 main, 2 point, 1 cone, 0 distant` |
+| Local Intensity | 所有局部灯的亮度倍数 |
+| Local Falloff | 局部灯的衰减。**Light COMP Attenuation**（默认）：按灯自己的 Attenuated / Attenuation Start / End / Exp，Attenuated 关时不衰减（和 TD 的灯一样）。**Physical**：平方反比，在 1 米处达到 Dimmer 的亮度 |
 | Shadows | 阴影开关 |
 | Shadow Softness | 半影宽度的倍数。0 接近硬阴影 |
 | Auto Fit Shadow Range | 开：刷新场景时按几何体包围盒自动设置下面两项（地面不参与计算；0.8.5 起墙、天花板这类薄板参与计算，室内场景的阳光不会再从天花板漏进来） |
@@ -130,7 +134,9 @@ TAA 的副作用：镜头切换（相机瞬间跳到别处）后约 4 帧画面�
 
 地面这类只接收阴影的扁平物体（比其他物体都低、几乎没有高度）会自动不参与画阴影图，省掉一次绘制。
 
-灯光的方向、颜色、强度直接读 Light COMP：方向取它的朝向，位置不影响结果。
+灯光的方向、颜色、强度直接读 Light COMP。**主光**是 Lights 匹配到的第一盏平行光（distant）：方向取它的朝向，位置不影响结果，它有软阴影、雾里的光束、次表面透射和探针 GI。
+
+**局部灯（0.9.0）**：其余的 Light COMP——点光（point）、聚光（cone）、第二盏以后的平行光——最多 8 盏，读颜色、Dimmer、位置和朝向（每帧更新，移动灯不用刷新），聚光读 Cone Angle / Cone Delta / Cone Roll。局部灯这一版**没有阴影**，也还不进雾、探针 GI 和光追反射（0.9.1）。只匹配到点光、聚光时就没有主光（以前会把点光当平行光用）。
 
 **亮度约定（和原生不同，有意为之）**：BTDR 把灯的 Dimmer × π 当作照度，颜色参数和颜色贴图按 sRGB 解码（Render 页 sRGB Colors and Color Maps）。所以同一盏灯、同一个材质，BTDR 比原生 Render TOP 亮（中灰约 1.4 倍，浅色更多），画面更接近 UE5 的默认观感。想和原生亮度接近，把 Intensity Multiplier 调到 0.3–0.5 左右，或关掉 sRGB Colors。
 `Lights` 没匹配到任何灯时用内置的一盏主光，节点上会有提示。
@@ -446,7 +452,7 @@ TD 里贴图的**平铺**（Repeat 次数）和**偏移**不在材质上，要�
 ## 6. 当前限制
 
 - POP 几何体的贴图 0.8.1 起正常显示（以前只读到一个角的颜色）。
-- 只支持一盏平行光；点光、聚光会被当作平行光处理（只取方向）。次表面散射的透射也只来自这盏灯。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
+- 主光是一盏平行光，另外最多 8 盏局部灯（点光、聚光、平行光），局部灯没有阴影、不进雾和光追（0.9.1 补）。次表面散射的透射只来自主光。Ambient Light COMP 会加到环境漫反射上（0.7.5），Environment Light COMP 见 Environment 页。
 - 只支持透视相机。
 - 不读取：高度图和视差、Specular Level、Rim；Texture Sampling Mode 的 Triplanar（三平面投影，按 Regular 处理并在节点上提示：原生 PBR MAT 在 TD 2025.33230 里这个模式本身就不起作用，没有可对齐的效果）；POP 上自定义的 Texture Coord Attribute（只读 `Tex`）；一个材质里第三套及以后的 UV。透明见 Transparency 页一节（Alpha Test 镂空在阴影里还按不镂空投影；Hashed 镂空的噪点图案按世界坐标生成，运动的物体上图案会轻微“游动”）。
 - 不支持：骨骼变形、Material SOP 逐面材质。Geometry COMP 嵌套（子级里的 Geometry COMP）0.7.5 起支持；Geometry COMP 的 Render 标志关掉就不画（和原生一样）。线条（Line SOP 等）能画，但不参与光追。
