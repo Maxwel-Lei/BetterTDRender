@@ -474,11 +474,13 @@ def build_btdr(dest, name='renderBTDR'):
     for k in range(4):
         lc = place(C.create(cameraCOMP, 'llcam%d' % k), -800, -1600 - k * 200)
         lc.par.near = 0.05; lc.par.far = 50
+        lc.par.tx = lc.par.ty = lc.par.tz = 0      # a new Camera COMP sits at z 5: it must sit on the light it is parented to
+        lc.par.rx = lc.par.ry = lc.par.rz = 0
         lr = place(C.create(renderTOP, 'llsh%d' % k), -600, -1600 - k * 200)
         lr.par.camera = 'llcam%d' % k; lr.par.lights = ''
         lr.par.geometry.expr = "op('shadow').par.geometry.eval()"
         lr.par.overridemat = msh
-        res(lr, 'int(parent.BTDR.par.Localshadowres)', 'int(parent.BTDR.par.Localshadowres)', ['r32float', 'mono32float', 'rgba32float'])
+        res(lr, 'int(parent.BTDR.par.Localshadowres.eval())', 'int(parent.BTDR.par.Localshadowres.eval())', ['r32float', 'mono32float', 'rgba32float'])
         _menu(lr.par.antialias, ['aa1', '1x', '1'])
         lr.par.bgcolorr = lr.par.bgcolorg = lr.par.bgcolorb = lr.par.bgcolora = 0
         sw_ = place(C.create(switchTOP, 'llsw%d' % k), -400, -1600 - k * 200)
