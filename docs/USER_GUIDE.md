@@ -1,6 +1,6 @@
 # BetterTDRender（BTDR）使用手册
 
-版本 0.9.6。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
+版本 0.9.7。BetterTDRender 是 TouchDesigner 里的一个渲染节点 `renderBTDR`，用法和原生 Render TOP 一样：
 填上相机、几何体、灯光就出画面。区别是它内部走延迟渲染管线，画面接近虚幻引擎 5 的默认效果：
 
 - PBR 材质（直接用原生 PBR MAT）、软阴影、摄影棚或 HDRI 环境光照、ACES 色调映射
@@ -51,7 +51,7 @@
 
 接下来通常会调的几项：
 - 想要天空和真实的环境反射：**Environment 页**换成 HDRI（§3 Environment 页）。
-- 画面太亮 / 太暗：**Grade 页 → Exposure**。
+- 画面太亮 / 太暗：**Grade 页 → Exposure**（自动曝光默认开，Exposure 是在它之上的补偿；要完全手动就关掉 Post 页的 Auto Exposure）。
 - 显卡比较弱：**Render 页 → Quality = Low**。
 
 ### 2.3 安装到 Palette（可选）
@@ -361,7 +361,7 @@ Height-Field AO 的范围和阴影一样（Light 页的 Shadow Center / Range）
 | Bloom Intensity | 泛光（Bloom）强度：很亮的地方向周围散出光晕。默认 0.05（很轻），0 关闭，0.3 左右明显 |
 | Bloom Threshold / Knee | 多亮才开始发光。阈值按曝光之后的亮度算：1 = 屏幕上刚好变白的亮度；Knee 越大过渡越柔 |
 | Bloom Radius | 光晕散多远（0–0.95，默认 0.65）。只改变光晕大小，不改变总亮度；小 = 紧贴亮处，大 = 像镜头那样大范围的柔光。Quality = Low 时少算最大的两级，光晕的最大范围约为 High 的 1/4 |
-| Auto Exposure | 自动曝光（眼睛适应）：按画面平均亮度自动调亮或调暗，从暗处转向亮处时有逐渐适应的过程。Grade 页的 Exposure 在它之上再做补偿 |
+| Auto Exposure | 自动曝光（眼睛适应）：按画面平均亮度自动调亮或调暗，从暗处转向亮处时有逐渐适应的过程。Grade 页的 Exposure 在它之上再做补偿。**0.9.7 起默认开**（和 UE5 一样；以前默认关，室内场景会很暗）。想要固定的曝光（比如和别的画面拼接、做亮度对比）就关掉，用 Exposure 手调 |
 | Min / Max Luminance (EV) | 自动曝光的工作范围：画面比 Min 还暗时不再继续提亮，比 Max 还亮时不再继续压暗 |
 | Target Grey | 把画面平均亮度调到多少，默认 0.18（中灰）。整体偏暗就调大 |
 | Adapt Speed To Brighter / Darker | 适应速度，数值越大越快。默认变亮快（3）、变暗慢（1），和人眼一样 |
@@ -506,6 +506,7 @@ BTDR 默认按 OpenGL 约定读取，和 Blender、Tripo 等工具的默认导�
 ## 8. 更新到新版本
 
 用新的 `BTDR.tox` 覆盖 Palette 里的旧文件，然后把工程里的 `renderBTDR` 删掉重新拖入。
+0.9.7 起 Auto Exposure 默认开：旧工程里没改过它的节点换成新版后会自动曝光，画面亮度可能和以前不同，想保持原样就把它关掉。
 已经在工程里的节点不会自动更新；参数要重新设置（只改过几项的话，可以先记下 Version 和改过的参数）。
 当前版本号在节点的 Info 页（0.7.4 以前叫 About 页）。
 

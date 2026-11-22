@@ -43,6 +43,9 @@ try:
             check('picture: finite, not empty, object lit', np.isfinite(a).all() and a.std() > 0.02 and a.max() > 0.3,
                   'mean %.3f std %.3f max %.3f' % (a.mean(), a.std(), a.max()))
             check('ray tracing available and on', R.par.Rtavailable.eval() and R.par.Raytracing.eval())
+            # BUILD.AEDEFAULT (0.9.7): auto exposure on out of the box, like UE5
+            check('auto exposure on by default', bool(R.par.Autoexposure.eval()) and R.op('ae_src').par.index.eval() == 1,
+                  'Autoexposure %s, ae_src %s' % (R.par.Autoexposure.eval(), R.op('ae_src').par.index.eval()))
             import re as _re
             _v = _re.search(r"^VERSION = '([^']+)'", open(BT + '/build.py', encoding='utf-8').read(), _re.M).group(1)
             check('version (same as build.py)', R.par.Version.eval() == _v, '%s / %s' % (R.par.Version.eval(), _v))

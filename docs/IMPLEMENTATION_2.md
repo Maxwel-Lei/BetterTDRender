@@ -163,7 +163,8 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 自动找到相机、灯、几何体 | `status` 里的 camera / light 以 `cam1` / `light1` 结尾，镜像 1 个 |
 | 无警告、无报错 | `status` 的 warnings 为空，所有子节点 `errors()` 为空 |
 | 画面 | 有限值、std > 0.02、最大值 > 0.3 |
-| 光追可用且开启、版本号 | `Rtavailable`、`Raytracing`、`Version` 以 0.5 开头 |
+| 光追可用且开启、版本号 | `Rtavailable`、`Raytracing`、`Version` 和 `build.py` 一致 |
+| 自动曝光默认开（0.9.7，`BUILD.AEDEFAULT`） | `Autoexposure` 为开、`ae_src` 在曝光分支 |
 | `TEST.COLDSTART` | 载入 `release/BTDR_Example.tox`、关掉它的 `keep_cooking`，60 帧没人拉取后第一次 `cook(force=True)` 的画面，和再连续拉取 60 帧后的画面比：平均差 < 0.08、饱和像素 < 5%、无 NaN（0.4.0 时这张图满是彩色亮点，§11 第 32 条） |
 
 0.5.0：7 项全过，从空网络到最后一项检查约 4.5 s（含 210 帧等待）。
@@ -288,7 +289,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 - 0.8.3 遗留：三平面投影（原生本身不起作用，§11 第 58 条；需要时可以自己实现）、POP 的自定义贴图坐标属性、一个材质里第三套 UV、实例纹理坐标（Instance Texture）。（M6c 首帧失败、方格暗斑在 0.8.4 处理，见 §11 第 64 条和 `TEST.M6CWARM`。）
 - 0.8.5 参考图里剩下的差异（§11b-8）：粗糙金属偏暗约 24 %（光追反射比值或镜面遮蔽）、彩色墙面的颜色渗透弱（探针只有一次反弹）、方块背光面偏暗约 10 %。
 - 0.8.4 遗留：阴影图不做 Alpha Test（镂空的叶子按整片投影，哈希镂空同样）；哈希镂空按世界坐标取噪声，运动物体上图案会游动（要物体空间坐标，0.9.2 没做：G-Buffer 材质要多传一个物体空间坐标）；能量补偿只用于不透明物体（玻璃的 F0 很小，影响可以忽略）；透明层的表层质感（G2）。
-- 开源场景实测（§11b-15）发现的：室内场景要开 Auto Exposure 才不暗（考虑默认开，待定）；大场景里探针 GI 的反弹弱、没有颜色渗透（多次反弹 / 更密的探针）。
+- 开源场景实测（§11b-15）发现的：室内场景要开 Auto Exposure 才不暗（0.9.7 改成默认开）；大场景里探针 GI 的反弹弱、没有颜色渗透（多次反弹 / 更密的探针）。
 - 0.9.4 遗留（`CAM.ORTHO` / `GBUF.SPRITE`）：雾的深度切片在正交时仍是透视的分布；Perspective Ortho Blend、Custom Matrix；精灵的深度（`gl_FragDepth` 会关掉提前深度测试，没写）、精灵投影、精灵进光追（加速结构只收三角形）、精灵的运动矢量只有中心像素；SOP 的点（Particle 图元）检测没有实测，只测了 POP。
 - 0.9.3 遗留（`EXT.RTINST`）：实例来源是 TOP / SOP / POP 时不进光追（Script CHOP 只读 CHOP 通道和表格列）；Pivot、Rotate to Vector、Instance Order = World then Instance、Instance Count Mode 不读；Instance Color 不进光追（同一 ObjId，一个平均色）；探针网格和阴影范围的自动适配只按原型的包围盒，不按实例的分布。
 - 0.9.2 遗留（`VEL.LIMITS`）：实例的各自运动（要 Cache CHOP 存上一帧的实例变换，S2）；SOP 变形（无速度属性时）；Particle POP 的 `PartVel` 路径编译通过但没有实测粒子（G-Buffer 画点要等 0.9.4 的点精灵）；运动模糊的瓦片最大速度 + 重建滤波（McGuire 2012）；SSGI / SSR / 光追 / 雾的时间累积仍只按相机重投影；J4 折射区域的运动矢量（玻璃后面的物体按玻璃表面算）；透明、混合物体不写速度。
@@ -300,6 +301,7 @@ TD 自带的 Samples 里没有 HDR 全景图，所以自动测试里的 HDRI 用
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-11-11 | — | M0 技术验证，方案第 3 版（单节点 + 原生 PBR MAT + 场景镜像），见 `archive/ue5r/docs/TOOLKIT_PLAN.md` |
+| 2026-11-22 | 0.9.7 | Auto Exposure 默认开（用户决定，`BUILD.AEDEFAULT`；§11b-15 开源场景实测：Sponza 等室内场景不开就太暗，UE5 也默认开）。只改默认值，着色器不变。验收测试 m5 加一项“自动曝光默认开”（8 项）；回归 m1–m96 全过；Auto Exposure 关时和 0.9.6 的 A/B 差 0 |
 | 2026-11-22 | 0.9.6 | 防闪烁（用户反馈：Sponza 院子里有闪烁，§11b-15）。先量化：相机不动抓 40–60 帧，每个像素的亮度相对标准差 > 5 % 算闪烁，Sponza 3.8 %，集中在镂空的植物、细挂杆、花盆、帘子上的徽章；逐项关效果测，探针 GI 和光追反射各占一部分（探针本身不重算，是查探针时法线、位置随抖动跳），镜面高光不是主因。**`TAA.STATIC`**：屏幕上不动的像素（相机和物体运动都 < 0.05 px，没有物体运动矢量）在历史帧离正常裁剪框不超过 2 σ 时，裁剪框放宽到 2 倍、当前帧权重乘 0.3；真的变化（阴影移动、灯开关）超出 2 σ 立即退回正常。Render 页 TAA Static Stabilization（默认开，`uTAA.w`）。Sponza：3.8 % → 1.9 %（1.6 倍框、0.4 倍权重）→ 1.15 %（现在的 2 倍、0.3 倍）。**`GBUF.SPECAA`**：几何镜面抗锯齿（Kaplanyan 2016 / Tokuyoshi & Kaplanyan 2019），α² += min(2 · 法线的屏幕空间方差, 0.18)，Render 页 Specular Anti-Aliasing（默认开，材质 `uOpt.y`）；**限制**：静止判断只看运动矢量，在动却没有运动矢量的东西（视频贴图、没有速度属性的形变网格）会多留历史、轻微重影——m92 关掉运动矢量的对照组纹理梯度 0.0344 → 0.0465（重影的双重边缘），所以 m92 测试里关掉了它；有运动矢量的物体两版一样（0.0447）。Specular AA 在 Sponza 上只降了 0.1 个百分点，留着是因为对细高光（金属细杆、珠宝）有用，平面不受影响。**工具**：所有构建、测试、发布脚本的源码目录可以用 `BTDR_SRC` 指定（以前写死 `project.folder + '/btdr'`），能在别的工程里构建和测试。新测试 `tests/m96_tests.py` 5 项；m92 关掉 Static Stabilization（见上）；回归 m1–m96 全过。两项都关时和 0.9.5 的 A/B 差 0；默认（都开）HDR 有 1.9 % 的像素变了（示例场景）。对比图 `docs/images/anti_flicker.jpg`（Sponza，32 帧相对标准差 > 5 % 的像素标黄：关 1.61 %、开 0.44 %，自动曝光开，每隔一帧取一张共 40 张） |
 | 2026-11-22 | 0.9.5 | 景深的跟踪对焦（用户提的需求：“景深能不能加一个 Look At”；TD 相机的 Look At 管朝向，对焦对应 UE5 Cine Camera 的 Focus Method = Tracking）。**`UNI.FOCUSTRACK` / `BUILD.FOCUSTRACK`**：Post 页新增 Focus Method（Manual / Tracking）、Focus Object（OBJ 参数，相对路径按 BTDR 所在网络解析，和 Camera 一样）、Focus Offset、Tracked Distance（只读）；`uniforms` 每帧算物体原点到相机的距离（沿视线轴，Python 直接读两个 worldTransform，不经过 numpy）+ Offset，下限 0.05，写进 `uDOF.z`（再乘米每单位）；没有物体时退回 Focus Distance。着色器不变。对比图 `docs/images/focus_tracking.jpg`。新测试 `tests/m95_tests.py` 7 项；回归 m1 ~ m94 全过；默认 Manual 时和 0.9.4 的 A/B 差 0 |
 | 2026-11-22 | 0.9.4 | 正交相机和点精灵（`ROADMAP_0.9.md` §5，S5）。**正交相机**（`CAM.ORTHO`）：`common.glsl` 加 `ORTHO`（`uClip.w`）和 `camPoint` / `camDir` / `viewDirRel` / `camProject` / `pxPerUnit`，正交时 `uCamFwd.w` / `uPrevFwd.w` 存半个 Ortho Width；TAA、运动模糊、SSR / SSGI / 累积（`ss_common`）、SSS 核大小、雾的散射和重投影、光照的视线和背景、折射、光追反射 / 折射都改用它们（透视时算术不变，A/B 差 0）；景深在正交时关闭（`uDOF2.y`，提示）；`cam_jit` 补复制 Ortho Width 等（§11 第 71 条）；Projection 是 Blend / Custom 时提示。**点精灵**（`GBUF.SPRITE` / `EXT.SPRITE` / `BUILD.SPRITE`）：只有点的几何体（POP 只有点图元，SOP 没有面）用 G-Buffer 材质的精灵变体（`gbuffer_sprite_vert` / `gbuffer_spritescale_vert` / `gbuffer_sprite_frag`，`#define SPRITE`）：顶点里 `gl_PointSize` = 直径 × proj[1][1] × 高 / 2 / w（透视、正交通用），像素里按 `gl_PointCoord` 切成圆、球面法线和位置；有 `PointScale` 的 POP 用 `SPRITE_SCALE` 变体。精灵不投影（不进 `shadow_casters`）、不进光追代理。Render 页新增 Point Sprite Size。对比图 `docs/images/ortho_sprites.jpg`。新测试 `tests/m94_tests.py` 12 项；回归 m1 ~ m93 全过（m92 改成接受掉帧：位移是整数帧 × 0.04）；和 0.9.3 的示例场景 A/B：最终画面差 0，HDR 输出 0.001 % 像素不同 |

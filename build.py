@@ -6,7 +6,7 @@
 import os, re, traceback
 
 BT = globals().get('BTDR_SRC', project.folder.replace('\\', '/') + '/btdr')   # BTDR_SRC: run from another project (0.9.6)
-VERSION = '0.9.6'
+VERSION = '0.9.7'
 BLOG = []
 
 def _read(rel):
@@ -223,7 +223,7 @@ def build_btdr(dest, name='renderBTDR'):
     setup(pg.appendFloat('Bloomthreshold', label='Bloom Threshold')[0], 1.0, 0, 10, True)
     setup(pg.appendFloat('Bloomknee', label='Bloom Knee')[0], 0.5, 0, 2, True)
     setup(pg.appendFloat('Bloomradius', label='Bloom Radius')[0], 0.65, 0, 0.95, True, True)
-    setup(pg.appendToggle('Autoexposure', label='Auto Exposure')[0], False)
+    setup(pg.appendToggle('Autoexposure', label='Auto Exposure')[0], True)   # [BTDR:BUILD.AEDEFAULT] on since 0.9.7 (UE5 default; indoor scenes were dark)
     for nm, lab, d, lo, hi in (('Aeminev', 'Auto Exposure Min Luminance (EV)', -6.0, -12, 4),
                                ('Aemaxev', 'Auto Exposure Max Luminance (EV)', 4.0, -4, 16),
                                ('Aekey', 'Auto Exposure Target Grey', 0.18, 0.02, 1.0),
